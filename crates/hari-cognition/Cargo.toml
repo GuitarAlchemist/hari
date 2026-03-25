@@ -1,0 +1,16 @@
+[package]
+name = "hari-cognition"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Lie algebra inspired cognitive architecture for AGI research"
+
+[dependencies]
+serde = { workspace = true }
+nalgebra = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

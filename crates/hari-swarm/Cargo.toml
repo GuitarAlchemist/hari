@@ -1,0 +1,18 @@
+[package]
+name = "hari-swarm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Multi-agent swarm system with hexavalent consensus"
+
+[dependencies]
+serde = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+hari-lattice = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

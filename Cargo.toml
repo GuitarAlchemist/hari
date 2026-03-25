@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/hari-core",
+    "crates/hari-lattice",
+    "crates/hari-swarm",
+    "crates/hari-cognition",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["GuitarAlchemist"]
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+rand = "0.9"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+petgraph = "0.7"
+nalgebra = "0.33"
+hari-lattice = { path = "crates/hari-lattice" }
+hari-cognition = { path = "crates/hari-cognition" }
+hari-swarm = { path = "crates/hari-swarm" }
