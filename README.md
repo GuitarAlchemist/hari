@@ -1,25 +1,34 @@
-# Project Hari: AGI Research Platform
+# Project Hari: Cognitive-State Research Sandbox
 
 ## Purpose
 
-Project Hari is an **experimental AGI research initiative** exploring a novel cognitive architecture based on **Lie algebra symmetries** and **hexavalent logic**. Rather than building on transformer LLMs, it investigates whether continuous mathematical structures (Lie groups and algebras) can form the foundation of a reasoning system that combines:
+Project Hari is an **experimental Rust sandbox for belief-state reasoning, cognitive-state dynamics, and multi-agent consensus under uncertainty**.
+
+The project explores whether a small cognitive loop can combine:
 
 - **Discrete epistemic reasoning** (6-valued logic: True/Probable/Unknown/Doubtful/False/Contradictory)
-- **Continuous cognitive dynamics** (Lie algebra evolution of cognitive state)
-- **Multi-agent consensus** (swarm-based belief integration)
+- **Continuous state evolution** (Lie algebra-inspired transformations over an attention/state vector)
+- **Multi-agent consensus** (swarm-based belief sharing and voting)
 
-The hypothesis: cognitive operations can be viewed as infinitesimal generators of symmetry transformations. Complex reasoning emerges from composing simple algebraic generators — just as physical symmetries compose in particle physics.
+The working hypothesis is deliberately narrower than "build AGI": some cognitive operations may be modeled as composable transformations over state, and the structure of those transformations may expose useful patterns in belief revision, goal selection, or agent coordination.
+
+This repository is for testing that hypothesis in code. Claims should be treated as experimental until the system can beat simpler baselines on concrete scenarios.
 
 ## Status
 
-**Experimental** — Active research phase. Code compiles and demonstrates basic cognitive loops with working subsystems. Not intended for production or external use. No stability guarantees.
+**Experimental / pre-proof-of-concept** — active research code with several incomplete integrations. Not intended for production or external use. No stability guarantees.
+
+Current known gaps:
+- `hari-cognition` is implemented as a standalone algebra/dynamics crate, but is not yet meaningfully driving the main cognitive loop.
+- Swarm roles define trust parameters, but trust-weighted message handling is still rudimentary.
+- The current demo is a scripted simulation, not evidence of emergent reasoning.
 
 ## Current Direction
 
-Four integrated Rust crates are under active development:
+Four Rust crates define the current research surface:
 
 ### 1. `hari-lattice` — Hexavalent Belief Logic
-A 6-valued logic system implementing a bounded lattice with join/meet operations, belief networks, and automatic propagation. Each proposition's truth value lives in {True, Probable, Unknown, Doubtful, False, Contradictory}.
+A 6-valued belief logic system with join/meet-style operations, belief networks, and propagation. Each proposition's truth value lives in {True, Probable, Unknown, Doubtful, False, Contradictory}.
 
 ### 2. `hari-core` — Cognitive Loop Orchestrator
 The central cognitive system running **Perceive → Think → Act** cycles. Manages:
@@ -29,18 +38,21 @@ The central cognitive system running **Perceive → Think → Act** cycles. Mana
 - Action selection based on cognitive state
 
 ### 3. `hari-cognition` — Lie Algebra Dynamics
-Implements cognitive evolution via Lie algebra generators. Core idea: cognitive operations form a symmetry group whose algebra gives infinitesimal "basis moves" for thought. Uses matrix exponentials and structure constants to analyze cognitive composition.
+Implements state evolution via Lie algebra-inspired generators. Core idea: cognitive operations can be represented as composable basis transformations. Uses matrix exponentials, commutators, and structure constants to analyze operation order and composition.
 
 ### 4. `hari-swarm` — Multi-Agent Swarm Consensus
 Manages a collective of independent agents with role-based trust parameters (explorer, critic, integrator, guardian). Agents exchange hexavalent belief updates and compute consensus functions designed for epistemic humility.
 
 ## Next Milestone
 
-**Proof-of-concept end-to-end workflow:**
-- Integrate `hari-cognition`'s Lie algebra evolution into the main cognitive loop
-- Implement goal-driven perturbations to the cognitive Hamiltonian
-- Run a 50+ cycle simulation with emergent multi-agent coordination
-- Document one concrete example where Lie algebra structure reveals non-obvious cognitive patterns
+**Proof-of-concept evaluation workflow:**
+- Define one reproducible scenario with conflicting evidence, changing goals, and multiple agents.
+- Add a simple non-Lie baseline for state updates.
+- Integrate `hari-cognition` so its state evolution changes action selection or goal prioritization.
+- Run both systems on the same 50+ cycle simulation.
+- Report whether the Lie-inspired model improves a measurable outcome, such as contradiction recovery, goal completion, consensus quality, or stability under noisy evidence.
+
+The milestone is successful only if the Lie-inspired path produces a measurable, explainable difference from the baseline.
 
 ## Running the Code
 
@@ -54,7 +66,7 @@ cargo build --release
 cargo run --release -p hari-core
 ```
 
-Expected output: a 10-cycle demonstration of the cognitive loop with swarm consensus votes on propositions.
+Expected output: a scripted 10-cycle demonstration of the cognitive loop with swarm consensus votes on propositions.
 
 ### Docker (Sandboxed)
 ```bash
@@ -81,17 +93,17 @@ This is **not**:
 - **Production software** — no performance tuning, minimal error recovery
 - **Stable APIs** — expect breaking changes frequently
 - **Consumer-facing** — not a tool for external users
-- **Proven effective** — the hypothesis is unproven; this is exploratory science
+- **A proven cognitive architecture** — the hypothesis is unproven; this is exploratory research code
 - **Complete** — many subsystems are stubs (e.g., Hamiltonian is hard-coded)
 - **Well-integrated** — `hari-cognition` integration into the main loop is WIP
 
 ## Design Philosophy
 
-All code is designed with **epistemic humility**:
+The project is designed around **epistemic humility**:
 - Contradictory evidence is preserved, not forced to binary
 - Consensus mechanisms acknowledge minority views
 - Goals can be escalated rather than forced to resolution
-- States are formally analyzed via algebraic structure, not heuristic
+- Algebraic structure is treated as a hypothesis to test, not an assumed explanation
 
 ## Repository Structure
 
