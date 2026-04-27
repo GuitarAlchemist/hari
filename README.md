@@ -54,6 +54,8 @@ Manages a collective of independent agents with role-based trust parameters (exp
 
 The milestone is successful only if the Lie-inspired path produces a measurable, explainable difference from the baseline.
 
+See [ROADMAP.md](ROADMAP.md) for the phased plan, including the proposed IX autoresearch integration.
+
 ## Running the Code
 
 ### Prerequisites
