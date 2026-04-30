@@ -70,7 +70,9 @@ Reviewer's note: the trace was authored as a plausible IX research scenario (ini
 
 - **Do not** declare Lie superiority. There is no evidence for it.
 - **Do not** kill the Lie path. There is also no evidence against it on this fixture, only an absence of advantage.
-- **Tighten the coupling before Phase 6**: (a) widen the generator basis to D + 1 (already done as part of this implementation); (b) introduce a longer fixture with a Contradictory→recovery sequence so the recovery metric is non-null; (c) test with the swarm consensus signal as an additional Hamiltonian source (the plan flags this as a future direction); (d) consider switching from multiplicative scoring `priority = base * (1 + α * proj)` to additive `priority = base + α * proj` — the multiplicative rule's geometry is the deeper reason for the α/dt sensitivity (see "Post-review hardening" below). Document the α=2.0/dt=0.5 setting as an experimental tuning, not a default.
+- **Tighten the coupling before Phase 6**: (a) widen the generator basis to D + 1 (already done as part of this implementation); (b) introduce a longer fixture with a Contradictory→recovery sequence so the recovery metric is non-null; (c) test with the swarm consensus signal as an additional Hamiltonian source (the plan flags this as a future direction); (d) **strengthen the Hamiltonian coupling** — multiply `h_dim` by a perception-count factor or scale Doubtful/False/Contradictory contributions more aggressively, so attention rotates further per cycle and divergence appears at smaller α. Document the α=2.0/dt=0.5 setting as an experimental tuning, not a default.
+
+> **Erratum on prior reviewer suggestion**: the post-review pass briefly proposed "switching from multiplicative scoring `base * (1 + α * proj)` to additive `base + α * proj`" as a separate fragility remediation. With `base = 1.0` (the current implementation), the two formulas are mathematically identical — `1 + α * proj` either way. So that proposal does not in fact change behavior. The actual lever is making `base` action-specific (e.g., goal-priority-weighted) OR strengthening the Hamiltonian (option (d) above). Captured here so future work doesn't waste a cycle on a no-op.
 
 ## 7. Open questions raised by the run
 
@@ -110,6 +112,42 @@ Uniform seed removes that cliff: every axis has a non-trivial projection from cy
 | `projection_axis_pinned_when_top_goal_changes_mid_replay` | Regression for Bug 1. Adds a higher-priority goal post-seed and asserts `seeded_projection_axis()` doesn't move. |
 | `contradictory_perception_moves_attention_in_lie_mode` | Behavioral check for the smear (related to Bug 2). One Contradictory perception must measurably change attention. |
 | `divergence_test_pins_alpha_and_dt` | Locks `lie_alpha = 2.0` and `lie_dt = 0.5` as the defaults the divergence fixture was authored against. Any change forces an explicit override + audit. |
+
+## 7b. Long-fixture follow-up (`long_recovery.json`)
+
+A 22-event fixture (`fixtures/ix/long_recovery.json`) was authored to exercise the `contradiction_recovery_cycles` metric, which was `null` for both paths on `cognition_divergence.json`. It covers three propositions (alpha/beta/gamma) each going through at least one True/False conflict that produces a Contradictory belief, followed by a Retraction event that clears it. Plus a few `agent_vote` events at the tail to exercise that payload type.
+
+### Bug found and fixed in the metric calculation
+
+Running the longer fixture surfaced a real bug in the recovery-metric implementation: it was looking at event payload values (`value == Contradictory`) rather than the belief network's stored value. But `Contradictory` arises from `HexLattice::combine_evidence(True, False)` *inside* the cognitive loop — no event ever carries a literal `Contradictory` value. The metric also had an ordering issue: an Escalate-action heuristic populated `first_contradictory` in a second pass, but `recovery_at` had already been computed in the first pass before those entries existed.
+
+Fix landed in this commit: the recovery metric now does (1) a unified pre-pass that detects Contradictory via Escalate-with-"contradictory" reason AND literal event values, then (2) a recovery-detection pass that finds the first event per prop after `first_contradictory[prop]` whose outcome is non-Contradictory (clearing Retraction OR an event without a contradictory-Escalate action). New regression test `long_recovery_fixture_populates_contradiction_recovery_metric` guards this.
+
+### First measurable Lie advantage
+
+On `long_recovery.json` with the bug-fixed metric:
+
+| Metric | Baseline (`RecencyDecay`) | Experimental (`Lie`) | Winner |
+|---|---|---|---|
+| `contradiction_recovery_cycles` | 5 | 5 | tie |
+| `false_acceptance_count` | 4 | **3** | **Lie** |
+| `goal_completion_rate` | 0.667 | 0.667 | tie |
+| `consensus_stability` | 0.340 | 0.340 | tie |
+| `attention_norm_max` | 0.0 | 2.747 | bounded ✓ |
+| `action_divergence` count | — | 2 | — |
+
+Lie produces one fewer false acceptance over 22 events. This is the first metric on which the Lie path measurably outperforms RecencyDecay. The mechanism: the divergent events (where Lie suppressed to `Wait` instead of accepting/investigating) include at least one case where the baseline's `Accept` was later contradicted, so suppressing it counted as avoiding a false acceptance.
+
+### Caveats on the advantage
+
+- It's **a one-event difference on a 22-event fixture** — well within statistical noise. A larger fixture set is needed before this is a reportable result.
+- Two ties (`goal_completion_rate`, `consensus_stability`) suggest the Lie effect is narrow — affecting which events get suppressed to `Wait`, not the substance of consensus or goal progress.
+- `contradiction_recovery_cycles` ties at 5 — both paths take the same 5 cycles to recover from a Contradictory belief on alpha-prompt-helps. The Lie path's algebra doesn't accelerate recovery.
+- Attention norm reached 2.747 on the longer fixture (vs 1.311 on `cognition_divergence`), still well below the 10.0 cap. Renormalization didn't fire. Boundedness holds at the longer horizon.
+
+### What this updates in §6 Decision
+
+The "Continue with caveats" verdict still stands, but it's now **slightly more defensible**: there's a single metric (`false_acceptance_count`) where Lie measurably wins, on a longer fixture. The right next step is more fixtures, not retuning — if the false-acceptance advantage holds across 5+ varied fixtures, that's a publishable finding. If it disappears on more diverse traces, the win was noise.
 
 ## 8. Artifacts
 

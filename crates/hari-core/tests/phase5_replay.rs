@@ -225,6 +225,35 @@ fn divergence_test_pins_alpha_and_dt() {
 }
 
 #[test]
+fn long_recovery_fixture_populates_contradiction_recovery_metric() {
+    // The cognition_divergence fixture is too short to exercise the
+    // contradiction_recovery_cycles metric (no Contradictory→recovery
+    // sequence). long_recovery.json is the 22-event fixture that includes
+    // explicit Retractions following True+False evidence pairs. Both Lie
+    // and RecencyDecay paths must populate the metric on this fixture; if
+    // either is None, the metric machinery has a regression.
+    let trace = load_trace("../../fixtures/ix/long_recovery.json");
+    let report = compare_replay(trace);
+    let comparison = report
+        .comparison
+        .expect("compare_replay must populate comparison");
+    assert!(
+        comparison.baseline.contradiction_recovery_cycles.is_some(),
+        "RecencyDecay must populate contradiction_recovery_cycles on long_recovery.json"
+    );
+    assert!(
+        comparison.experimental.contradiction_recovery_cycles.is_some(),
+        "Lie must populate contradiction_recovery_cycles on long_recovery.json"
+    );
+    // Boundedness still holds on the longer fixture.
+    assert!(
+        comparison.experimental.attention_norm_max < 10.0,
+        "experimental attention_norm_max must stay under 10.0 on long fixture (got {})",
+        comparison.experimental.attention_norm_max
+    );
+}
+
+#[test]
 fn lie_and_recency_agree_on_retraction_event() {
     // The plan specifies that on a Retraction event both priority models
     // should produce a Retry recommendation — that's not where we expect

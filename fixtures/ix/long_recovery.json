@@ -1,0 +1,289 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-runner-prompt-eval",
+      "payload": {
+        "type": "goal_update",
+        "key": "alpha-prompt-helps",
+        "description": "Prompt variant alpha improves pass rate",
+        "priority": 0.85,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-runner-tool-bench",
+      "payload": {
+        "type": "goal_update",
+        "key": "beta-tool-stable",
+        "description": "Tool bench beta is statistically stable",
+        "priority": 0.7,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-runner-method",
+      "payload": {
+        "type": "goal_update",
+        "key": "gamma-method-correct",
+        "description": "Method gamma's reasoning chain is sound",
+        "priority": 0.6,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "alpha-prompt-helps",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "humaneval",
+          "runs": 5,
+          "delta_pass_rate": 0.04
+        }
+      }
+    },
+    {
+      "cycle": 5,
+      "source": "ix-agent-replicator-1",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "alpha-prompt-helps",
+        "value": "True",
+        "evidence": {
+          "benchmark": "humaneval-refresh",
+          "runs": 12,
+          "delta_pass_rate": 0.06,
+          "note": "independent rerun confirms"
+        }
+      }
+    },
+    {
+      "cycle": 6,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "beta-tool-stable",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "tool-bench-v2",
+          "runs": 4,
+          "variance": 0.22
+        }
+      }
+    },
+    {
+      "cycle": 7,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "alpha-prompt-helps",
+        "value": "False",
+        "evidence": {
+          "benchmark": "humaneval-paraphrased",
+          "runs": 20,
+          "delta_pass_rate": -0.09,
+          "note": "later replication run reverses sign — possibly contaminated; produces Contradictory"
+        }
+      }
+    },
+    {
+      "cycle": 8,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "gamma-method-correct",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "reasoning-suite",
+          "runs": 8,
+          "note": "method gamma succeeds on most chains"
+        }
+      }
+    },
+    {
+      "cycle": 10,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "beta-tool-stable",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "tool-bench-v3",
+          "runs": 16,
+          "variance": 0.04,
+          "note": "v3 with stricter timeouts is much more stable"
+        }
+      }
+    },
+    {
+      "cycle": 12,
+      "source": "ix-runner",
+      "payload": {
+        "type": "retraction",
+        "proposition": "alpha-prompt-helps",
+        "reason": "humaneval-paraphrased run at cycle 7 used a stale artifact; results withdrawn — clears Contradictory"
+      }
+    },
+    {
+      "cycle": 13,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "alpha-prompt-helps",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "humaneval-clean",
+          "runs": 10,
+          "delta_pass_rate": 0.05,
+          "note": "rerun on fresh artifacts — recovery confirmed"
+        }
+      }
+    },
+    {
+      "cycle": 14,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "beta-tool-stable",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "tool-bench-v3-stress",
+          "runs": 6,
+          "note": "stress test reintroduces variance — beta now Contradictory"
+        }
+      }
+    },
+    {
+      "cycle": 16,
+      "source": "ix-agent-replicator-2",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "gamma-method-correct",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "reasoning-adversarial",
+          "runs": 7,
+          "note": "adversarial chains break gamma; contradicts prior Probable"
+        }
+      }
+    },
+    {
+      "cycle": 18,
+      "source": "ix-runner",
+      "payload": {
+        "type": "retraction",
+        "proposition": "beta-tool-stable",
+        "reason": "stress-test harness was misconfigured; clearing beta-tool-stable Contradictory"
+      }
+    },
+    {
+      "cycle": 19,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "beta-tool-stable",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "tool-bench-v3-fixed",
+          "runs": 22,
+          "variance": 0.05,
+          "note": "stable after harness fix — beta recovered"
+        }
+      }
+    },
+    {
+      "cycle": 21,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "alpha-prompt-helps",
+        "value": "True",
+        "evidence": {
+          "benchmark": "humaneval-extended",
+          "runs": 30,
+          "delta_pass_rate": 0.07,
+          "note": "large-N rerun strongly confirms alpha"
+        }
+      }
+    },
+    {
+      "cycle": 22,
+      "source": "ix-runner",
+      "payload": {
+        "type": "retraction",
+        "proposition": "gamma-method-correct",
+        "reason": "adversarial benchmark was out-of-distribution; reverting gamma to clean state"
+      }
+    },
+    {
+      "cycle": 23,
+      "source": "ix-agent-replicator-3",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "gamma-method-correct",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "reasoning-suite-v2",
+          "runs": 12,
+          "note": "in-distribution rerun confirms; gamma recovered"
+        }
+      }
+    },
+    {
+      "cycle": 25,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "alpha-prompt-helps",
+        "value": "True",
+        "evidence": {
+          "voter_role": "critic",
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "cycle": 26,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "beta-tool-stable",
+        "value": "Probable",
+        "evidence": {
+          "voter_role": "integrator",
+          "confidence": 0.72
+        }
+      }
+    },
+    {
+      "cycle": 28,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "gamma-method-correct",
+        "value": "Probable",
+        "evidence": {
+          "voter_role": "guardian",
+          "confidence": 0.65
+        }
+      }
+    },
+    {
+      "cycle": 30,
+      "source": "ix-runner-prompt-eval",
+      "payload": {
+        "type": "goal_update",
+        "key": "alpha-prompt-helps",
+        "description": "Prompt variant alpha improves pass rate",
+        "priority": 0.95,
+        "status": "Probable"
+      }
+    }
+  ]
+}

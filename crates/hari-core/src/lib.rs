@@ -1306,45 +1306,84 @@ fn compute_metrics(
     // First cycle at which any belief became Contradictory minus first cycle
     // afterwards at which the same belief left Contradictory. Per-prop, take
     // the minimum across props.
+    //
+    // A belief is detected as Contradictory via two signals (in order):
+    // 1. An event whose payload value is literally HexValue::Contradictory.
+    // 2. An Action::Escalate emitted by the loop with "contradictory" in its
+    //    reason — the loop only emits this when the belief network's stored
+    //    value is Contradictory after combining evidence (e.g. True + False
+    //    via combine_evidence).
+    //
+    // Recovery is the first subsequent event for that proposition whose
+    // outcome leaves the belief non-Contradictory: any non-Contradictory
+    // event value, OR a Retraction (which clears the belief to Unknown), OR
+    // simply the absence of further Escalate-with-contradictory actions on
+    // a later event for the same proposition.
     let mut first_contradictory: BTreeMap<String, u64> = BTreeMap::new();
-    let mut recovery_at: BTreeMap<String, u64> = BTreeMap::new();
-    for o in outcomes {
-        // Inspect the underlying event payload to track belief state per prop.
-        let (prop, value) = match &o.event.payload {
-            ResearchEventPayload::BeliefUpdate { proposition, value, .. }
-            | ResearchEventPayload::ExperimentResult { proposition, value, .. }
-            | ResearchEventPayload::AgentVote { proposition, value, .. } => {
-                (proposition.clone(), Some(*value))
-            }
-            ResearchEventPayload::Retraction { proposition, .. } => {
-                (proposition.clone(), Some(HexValue::Unknown))
-            }
-            ResearchEventPayload::GoalUpdate { .. } => continue,
-        };
-        let cycle = o.event.cycle;
-        if matches!(value, Some(HexValue::Contradictory)) {
-            first_contradictory.entry(prop.clone()).or_insert(cycle);
-        } else if first_contradictory.contains_key(&prop) && !recovery_at.contains_key(&prop) {
-            recovery_at.insert(prop.clone(), cycle);
-        }
-    }
-    // The post-hoc loop above tracks only the per-event payload, but the
-    // belief network can become Contradictory via *combination* of two
-    // earlier events. Walk the outcomes a second time and look at the
-    // emitted Escalate-with-"contradictory evidence" actions, which the
-    // loop only emits when the network's stored belief is Contradictory.
+    // Pre-pass: detect Contradictory via Escalate signal (since combined
+    // evidence can produce Contradictory even when no event payload carries
+    // that value literally).
     for o in outcomes {
         let cycle = o.event.cycle;
+        let prop_opt = o.event.payload.proposition().map(|p| p.to_string());
         for a in &o.actions {
             if let Action::Escalate { reason, .. } = a {
                 if reason.contains("contradictory") || reason.contains("Contradictory") {
-                    if let Some(prop) = o.event.payload.proposition() {
+                    if let Some(ref prop) = prop_opt {
                         first_contradictory
-                            .entry(prop.to_string())
+                            .entry(prop.clone())
                             .or_insert(cycle);
                     }
                 }
             }
+        }
+        // Also catch literal Contradictory event values.
+        let value = match &o.event.payload {
+            ResearchEventPayload::BeliefUpdate { value, .. }
+            | ResearchEventPayload::ExperimentResult { value, .. }
+            | ResearchEventPayload::AgentVote { value, .. } => Some(*value),
+            _ => None,
+        };
+        if matches!(value, Some(HexValue::Contradictory)) {
+            if let Some(ref prop) = prop_opt {
+                first_contradictory.entry(prop.clone()).or_insert(cycle);
+            }
+        }
+    }
+
+    // Recovery pass: now that first_contradictory has all the props that
+    // ever became Contradictory, walk forward and find the first event per
+    // prop AFTER its first_contradictory cycle that returns the belief to
+    // a non-Contradictory state.
+    let mut recovery_at: BTreeMap<String, u64> = BTreeMap::new();
+    for o in outcomes {
+        let cycle = o.event.cycle;
+        let prop = match o.event.payload.proposition() {
+            Some(p) => p.to_string(),
+            None => continue,
+        };
+        let Some(&start) = first_contradictory.get(&prop) else { continue };
+        if cycle <= start {
+            continue;
+        }
+        if recovery_at.contains_key(&prop) {
+            continue;
+        }
+        // Recovery signals (any of):
+        // - Retraction (clears belief to Unknown).
+        // - An event with a non-Contradictory value AND no Escalate-with-
+        //   contradictory action (i.e. the belief network is no longer
+        //   Contradictory after this event).
+        let cleared_by_retraction = matches!(
+            &o.event.payload,
+            ResearchEventPayload::Retraction { .. }
+        );
+        let still_contradictory = o.actions.iter().any(|a| {
+            matches!(a, Action::Escalate { reason, .. }
+                if reason.contains("contradictory") || reason.contains("Contradictory"))
+        });
+        if cleared_by_retraction || !still_contradictory {
+            recovery_at.insert(prop, cycle);
         }
     }
 
