@@ -18,6 +18,7 @@
 //! async execution with tokio.
 
 use hari_lattice::{BeliefNetwork, HexLattice, HexValue};
+use nalgebra::DVector;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -89,13 +90,19 @@ pub struct AgentRole {
 }
 
 /// A cognitive agent in the swarm.
+///
+/// Each agent combines a hexavalent belief network (from hari-lattice)
+/// with a cognitive state vector (from hari-cognition), enabling both
+/// discrete logical reasoning and continuous cognitive dynamics.
 pub struct Agent {
     /// Unique identifier for this agent
     pub id: String,
     /// The agent's role, which affects its behavior
     pub role: AgentRole,
-    /// The agent's local belief network
+    /// The agent's local belief network (discrete hexavalent logic)
     pub beliefs: BeliefNetwork,
+    /// The agent's cognitive state vector (continuous Lie algebra space)
+    pub cognitive_state: DVector<f64>,
     /// Inbox of received messages
     inbox: Vec<Message>,
 }
@@ -103,10 +110,20 @@ pub struct Agent {
 impl Agent {
     /// Create a new agent with the given ID and role.
     pub fn new(id: impl Into<String>, role: AgentRole) -> Self {
+        Self::with_cognitive_dimension(id, role, 4)
+    }
+
+    /// Create a new agent with an explicit cognitive state dimension.
+    pub fn with_cognitive_dimension(
+        id: impl Into<String>,
+        role: AgentRole,
+        cognitive_dimension: usize,
+    ) -> Self {
         Self {
             id: id.into(),
             role,
             beliefs: BeliefNetwork::new(),
+            cognitive_state: DVector::zeros(cognitive_dimension),
             inbox: Vec::new(),
         }
     }
@@ -218,10 +235,10 @@ pub fn compute_consensus(votes: &HashMap<String, HexValue>) -> HexValue {
     }
 
     // Check for strong disagreement: significant True-ish AND False-ish votes
-    let positive = counts.get(&HexValue::True).unwrap_or(&0)
-        + counts.get(&HexValue::Probable).unwrap_or(&0);
-    let negative = counts.get(&HexValue::False).unwrap_or(&0)
-        + counts.get(&HexValue::Doubtful).unwrap_or(&0);
+    let positive =
+        counts.get(&HexValue::True).unwrap_or(&0) + counts.get(&HexValue::Probable).unwrap_or(&0);
+    let negative =
+        counts.get(&HexValue::False).unwrap_or(&0) + counts.get(&HexValue::Doubtful).unwrap_or(&0);
 
     if positive > 0 && negative > 0 {
         let min_faction = positive.min(negative) as f64;
@@ -404,6 +421,22 @@ mod tests {
         assert_eq!(agent.id, "alice");
         assert_eq!(agent.inbox_len(), 0);
         assert!(agent.beliefs.is_empty());
+        assert_eq!(agent.cognitive_state.len(), 4);
+    }
+
+    #[test]
+    fn test_agent_creation_with_explicit_cognitive_dimension() {
+        let agent = Agent::with_cognitive_dimension(
+            "alice",
+            AgentRole {
+                name: "tester".to_string(),
+                self_trust: 0.8,
+                message_trust: 0.5,
+            },
+            8,
+        );
+
+        assert_eq!(agent.cognitive_state.len(), 8);
     }
 
     #[test]
@@ -565,13 +598,18 @@ mod tests {
         let mut swarm = Swarm::new();
 
         let mut alice = make_agent("alice", 0.9);
-        alice.beliefs.add_proposition("agi-possible", HexValue::True);
+        alice
+            .beliefs
+            .add_proposition("agi-possible", HexValue::True);
 
         let mut bob = make_agent("bob", 0.8);
-        bob.beliefs.add_proposition("agi-possible", HexValue::Probable);
+        bob.beliefs
+            .add_proposition("agi-possible", HexValue::Probable);
 
         let mut charlie = make_agent("charlie", 0.7);
-        charlie.beliefs.add_proposition("agi-possible", HexValue::Probable);
+        charlie
+            .beliefs
+            .add_proposition("agi-possible", HexValue::Probable);
 
         swarm.add_agent(alice);
         swarm.add_agent(bob);

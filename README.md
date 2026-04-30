@@ -70,6 +70,13 @@ cargo run --release -p hari-core
 
 Expected output: a scripted 10-cycle demonstration of the cognitive loop with swarm consensus votes on propositions.
 
+### Replay an IX Research Trace
+```bash
+cargo run --release -p hari-core -- replay fixtures/ix/conflicting_benchmark.json
+```
+
+Expected output: a JSON report with event outcomes, final touched beliefs, final goals, and a final state summary.
+
 ### Docker (Sandboxed)
 ```bash
 docker-compose up hari-core

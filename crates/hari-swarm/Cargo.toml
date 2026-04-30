@@ -13,6 +13,8 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
 hari-lattice = { workspace = true }
+hari-cognition = { workspace = true }
+nalgebra = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

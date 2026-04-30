@@ -117,7 +117,9 @@ dependencies = [
 name = "hari-swarm"
 version = "0.1.0"
 dependencies = [
+ "hari-cognition",
  "hari-lattice",
+ "nalgebra",
  "rand",
  "serde",
  "serde_json",
