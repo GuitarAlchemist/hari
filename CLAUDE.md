@@ -57,7 +57,7 @@ hari-core     (depends on all three)      — CognitiveLoop, ResearchEvent bound
 
 ### Swarm (`hari-swarm`)
 
-`Agent` carries an `AgentRole` with `self_trust` and `message_trust` parameters; the four canonical roles seeded in the demo are `explorer / critic / integrator / guardian` with distinct trust profiles. Message routing supports `to: "*"` for broadcast. `Swarm::process_all()` and `Swarm::consensus(prop)` are the two main integration points. Trust parameters exist on the type but are not yet meaningfully applied during belief integration — that's Phase 4.
+`Agent` carries an `AgentRole` with `self_trust` and `message_trust` parameters; the four canonical roles seeded in the demo are `explorer / critic / integrator / guardian` with distinct trust profiles. Message routing supports `to: "*"` for broadcast. `Swarm::process_all()` and `Swarm::consensus(prop)` are the two main integration points and remain trust-blind by default. `TrustModel::RoleWeighted` (Phase 4, opt-in) enables `self_trust`-weighted consensus via `Swarm::consensus_with` and message-filtering by `message_trust >= MESSAGE_TRUST_THRESHOLD` (0.5) via `Swarm::process_all_with`; filtered messages are reported via `InboxStats::filtered`. The default stays `Equal` — switching the default is a project-direction call like the cognition substrate one, not a refactor. Source-reliability tracking across scenarios is **not** part of Phase 4's current slice — that's deferred until scenario-replay infra in `hari-core` exists to own it.
 
 ## Scenario Fixtures
 

@@ -24,6 +24,57 @@ use std::collections::HashMap;
 use std::fmt;
 
 // ---------------------------------------------------------------------------
+// TrustModel — Phase 4: how `AgentRole::self_trust` and `message_trust`
+// are applied during belief integration and consensus
+// ---------------------------------------------------------------------------
+
+/// How the swarm uses each agent's trust parameters.
+///
+/// Two modes, both A/B-able against each other on the same scenario:
+///
+/// - [`TrustModel::Equal`] — current behavior preserved bit-for-bit.
+///   Trust fields on `AgentRole` are stored but ignored. One agent, one
+///   vote. Every message is integrated. **Default.**
+/// - [`TrustModel::RoleWeighted`] — Phase 4 trust-aware behavior.
+///   Consensus weights each vote by the voter's `self_trust`. Inbox
+///   integration drops messages whose recipient `message_trust` is below
+///   [`MESSAGE_TRUST_THRESHOLD`] — those are surfaced separately as a
+///   "minority report" count via [`InboxStats::filtered`].
+///
+/// The threshold and the weighting are intentionally simple and explicit
+/// (not learned, not scenario-adaptive) so the difference between modes
+/// is attributable to one knob, not to a black-box policy. Phase 4's
+/// "track source reliability over repeated scenarios" sub-task is
+/// deliberately deferred — it needs scenario-replay infrastructure that
+/// the swarm crate alone does not own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum TrustModel {
+    /// Trust fields ignored; equal-weight one-vote-per-agent. Default.
+    #[default]
+    Equal,
+    /// Consensus weighted by `self_trust`; inbox messages dropped when
+    /// `message_trust < MESSAGE_TRUST_THRESHOLD`.
+    RoleWeighted,
+}
+
+/// Threshold above which a message is integrated under
+/// [`TrustModel::RoleWeighted`]. Pinned by `message_trust_threshold_is_pinned`.
+pub const MESSAGE_TRUST_THRESHOLD: f64 = 0.5;
+
+/// Outcome of a single agent processing its inbox under a given
+/// `TrustModel`. `applied + filtered <= number_of_messages_received`
+/// (queries and text messages are neither applied nor filtered).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxStats {
+    /// Belief updates that landed.
+    pub applied: usize,
+    /// Belief-bearing messages that were dropped because the recipient's
+    /// `message_trust` was below the threshold (only ever non-zero under
+    /// `TrustModel::RoleWeighted`).
+    pub filtered: usize,
+}
+
+// ---------------------------------------------------------------------------
 // Message — inter-agent communication
 // ---------------------------------------------------------------------------
 
@@ -135,34 +186,57 @@ impl Agent {
 
     /// Process all messages in the inbox, updating beliefs accordingly.
     ///
-    /// Returns the number of belief updates made.
+    /// Trust-blind. Returns the number of belief updates made. Equivalent
+    /// to `self.process_inbox_with(TrustModel::Equal).applied`.
     pub fn process_inbox(&mut self) -> usize {
+        self.process_inbox_with(TrustModel::Equal).applied
+    }
+
+    /// Process all messages in the inbox under the given [`TrustModel`].
+    ///
+    /// Under [`TrustModel::Equal`] every belief-bearing message is
+    /// integrated (current behavior). Under [`TrustModel::RoleWeighted`],
+    /// belief-bearing messages are dropped without update when the
+    /// recipient's `message_trust` is below [`MESSAGE_TRUST_THRESHOLD`];
+    /// each dropped message increments [`InboxStats::filtered`].
+    ///
+    /// Query and text messages are neither applied nor filtered — they
+    /// don't touch beliefs in either mode.
+    pub fn process_inbox_with(&mut self, model: TrustModel) -> InboxStats {
         let messages: Vec<Message> = self.inbox.drain(..).collect();
-        let mut updates = 0;
+        let mut stats = InboxStats::default();
+        let trust_gates = matches!(model, TrustModel::RoleWeighted)
+            && self.role.message_trust < MESSAGE_TRUST_THRESHOLD;
 
         for msg in messages {
             match msg.payload {
                 MessagePayload::BeliefUpdate { proposition, value } => {
-                    // Integrate the incoming belief weighted by message_trust
+                    if trust_gates {
+                        stats.filtered += 1;
+                        continue;
+                    }
                     if let Some(prop) = self.beliefs.get_mut(&proposition) {
                         let combined = HexLattice::combine_evidence(prop.value, value);
                         if combined != prop.value {
                             prop.value = combined;
-                            updates += 1;
+                            stats.applied += 1;
                         }
                     } else {
                         // New proposition — add it with the received value
                         self.beliefs.add_proposition(proposition, value);
-                        updates += 1;
+                        stats.applied += 1;
                     }
                 }
                 MessagePayload::BeliefResponse { proposition, value } => {
-                    // Same as belief update for now
+                    if trust_gates {
+                        stats.filtered += 1;
+                        continue;
+                    }
                     if let Some(prop) = self.beliefs.get_mut(&proposition) {
                         let combined = HexLattice::combine_evidence(prop.value, value);
                         if combined != prop.value {
                             prop.value = combined;
-                            updates += 1;
+                            stats.applied += 1;
                         }
                     }
                 }
@@ -171,7 +245,7 @@ impl Agent {
             }
         }
 
-        updates
+        stats
     }
 
     /// Get this agent's vote on a proposition.
@@ -276,6 +350,88 @@ pub fn compute_consensus(votes: &HashMap<String, HexValue>) -> HexValue {
     }
 }
 
+/// Trust-weighted variant of [`compute_consensus`].
+///
+/// Same algorithm, but every count is replaced by a sum of the voter's
+/// weight from `weights`. Voters not present in `weights` get weight 0
+/// (they don't influence the outcome). When all weights in `weights` are
+/// equal and non-zero across the voters in `votes`, this MUST return the
+/// same value as [`compute_consensus`] — the regression invariant is
+/// pinned by `weighted_consensus_matches_unweighted_when_uniform`.
+///
+/// The weighted disagreement check uses 0.3 of total weight as the
+/// "significant minority" threshold, mirroring the unweighted version's
+/// 0.3 of total count. The 0.875 / 0.625 / 0.375 / 0.125 confidence
+/// boundaries are unchanged.
+pub fn compute_consensus_weighted(
+    votes: &HashMap<String, HexValue>,
+    weights: &HashMap<String, f64>,
+) -> HexValue {
+    if votes.is_empty() {
+        return HexValue::Unknown;
+    }
+    let weight_of = |k: &str| -> f64 { weights.get(k).copied().unwrap_or(0.0).max(0.0) };
+    let total_weight: f64 = votes.keys().map(|k| weight_of(k)).sum();
+    if total_weight == 0.0 {
+        // Pathological: no voter has any weight. Fall back to unweighted
+        // so callers always get a defined result rather than a panic.
+        return compute_consensus(votes);
+    }
+
+    // Contradictory majority by weight.
+    let c_weight: f64 = votes
+        .iter()
+        .filter(|(_, v)| **v == HexValue::Contradictory)
+        .map(|(k, _)| weight_of(k))
+        .sum();
+    if c_weight / total_weight > 0.5 {
+        return HexValue::Contradictory;
+    }
+
+    // Significant disagreement by weight.
+    let positive_weight: f64 = votes
+        .iter()
+        .filter(|(_, v)| matches!(**v, HexValue::True | HexValue::Probable))
+        .map(|(k, _)| weight_of(k))
+        .sum();
+    let negative_weight: f64 = votes
+        .iter()
+        .filter(|(_, v)| matches!(**v, HexValue::False | HexValue::Doubtful))
+        .map(|(k, _)| weight_of(k))
+        .sum();
+    if positive_weight > 0.0 && negative_weight > 0.0 {
+        let min_faction = positive_weight.min(negative_weight);
+        if min_faction / total_weight > 0.3 {
+            return HexValue::Contradictory;
+        }
+    }
+
+    // Weighted center of mass on definite (non-Contradictory) votes.
+    let mut def_weight_sum = 0.0_f64;
+    let mut def_conf_weighted_sum = 0.0_f64;
+    for (k, v) in votes.iter().filter(|(_, v)| v.is_definite()) {
+        let w = weight_of(k);
+        def_weight_sum += w;
+        def_conf_weighted_sum += w * v.confidence();
+    }
+    if def_weight_sum == 0.0 {
+        return HexValue::Contradictory;
+    }
+    let avg_confidence = def_conf_weighted_sum / def_weight_sum;
+
+    if avg_confidence >= 0.875 {
+        HexValue::True
+    } else if avg_confidence >= 0.625 {
+        HexValue::Probable
+    } else if avg_confidence >= 0.375 {
+        HexValue::Unknown
+    } else if avg_confidence >= 0.125 {
+        HexValue::Doubtful
+    } else {
+        HexValue::False
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Swarm — the collective
 // ---------------------------------------------------------------------------
@@ -331,22 +487,60 @@ impl Swarm {
         }
     }
 
-    /// All agents process their inboxes. Returns total number of belief updates.
+    /// All agents process their inboxes (trust-blind). Returns total
+    /// number of belief updates. Equivalent to
+    /// `self.process_all_with(TrustModel::Equal).applied`.
     pub fn process_all(&mut self) -> usize {
-        self.agents
-            .values_mut()
-            .map(|agent| agent.process_inbox())
-            .sum()
+        self.process_all_with(TrustModel::Equal).applied
     }
 
-    /// Run a consensus vote on a proposition across all agents.
+    /// All agents process their inboxes under the given [`TrustModel`].
+    /// Returns the summed [`InboxStats`] across the swarm.
+    pub fn process_all_with(&mut self, model: TrustModel) -> InboxStats {
+        let mut total = InboxStats::default();
+        for agent in self.agents.values_mut() {
+            let s = agent.process_inbox_with(model);
+            total.applied += s.applied;
+            total.filtered += s.filtered;
+        }
+        total
+    }
+
+    /// Run a consensus vote on a proposition across all agents
+    /// (trust-blind, equal-weight). Equivalent to
+    /// `self.consensus_with(proposition, TrustModel::Equal)`.
     pub fn consensus(&self, proposition: &str) -> ConsensusResult {
+        self.consensus_with(proposition, TrustModel::Equal)
+    }
+
+    /// Run a consensus vote on a proposition under the given
+    /// [`TrustModel`].
+    ///
+    /// Under [`TrustModel::Equal`] every agent contributes one
+    /// equally-weighted vote (current behavior). Under
+    /// [`TrustModel::RoleWeighted`] each vote is weighted by the voter's
+    /// `self_trust` from `AgentRole` and the consensus is computed via
+    /// [`compute_consensus_weighted`]. The reported `agreement` ratio in
+    /// either mode is the fraction of voters whose raw vote matches the
+    /// final consensus value — agreement is a *count*, not a weight,
+    /// because callers asking "how unanimous?" usually want a head count.
+    pub fn consensus_with(&self, proposition: &str, model: TrustModel) -> ConsensusResult {
         let mut votes = HashMap::new();
         for (id, agent) in &self.agents {
             votes.insert(id.clone(), agent.vote(proposition));
         }
 
-        let consensus = compute_consensus(&votes);
+        let consensus = match model {
+            TrustModel::Equal => compute_consensus(&votes),
+            TrustModel::RoleWeighted => {
+                let weights: HashMap<String, f64> = self
+                    .agents
+                    .iter()
+                    .map(|(id, agent)| (id.clone(), agent.role.self_trust))
+                    .collect();
+                compute_consensus_weighted(&votes, &weights)
+            }
+        };
 
         let agreement = if votes.is_empty() {
             0.0
@@ -591,6 +785,270 @@ mod tests {
         assert_eq!(swarm.agent("alice").unwrap().inbox_len(), 0);
         assert_eq!(swarm.agent("bob").unwrap().inbox_len(), 1);
         assert_eq!(swarm.agent("charlie").unwrap().inbox_len(), 1);
+    }
+
+    // -- Phase 4: trust-aware swarm --
+
+    /// Build a swarm with one high-trust "guardian" voting True and three
+    /// low-trust "integrators" voting False. Used by both
+    /// equal-vs-weighted-consensus tests.
+    fn dissenting_guardian_swarm() -> Swarm {
+        let mut s = Swarm::new();
+        let mut guardian = Agent::new(
+            "guardian",
+            AgentRole {
+                name: "guardian".into(),
+                self_trust: 0.95,
+                message_trust: 0.4,
+            },
+        );
+        guardian.beliefs.add_proposition("p", HexValue::True);
+        s.add_agent(guardian);
+
+        for id in ["int-1", "int-2", "int-3"] {
+            let mut a = Agent::new(
+                id,
+                AgentRole {
+                    name: "integrator".into(),
+                    self_trust: 0.4,
+                    message_trust: 0.8,
+                },
+            );
+            a.beliefs.add_proposition("p", HexValue::False);
+            s.add_agent(a);
+        }
+        s
+    }
+
+    #[test]
+    fn role_weighted_consensus_diverges_from_equal_when_trust_is_lopsided() {
+        // Exit criterion 1 from ROADMAP Phase 4: "Agent roles change
+        // outcomes in measurable ways."
+        let swarm = dissenting_guardian_swarm();
+
+        let equal = swarm.consensus_with("p", TrustModel::Equal).consensus;
+        let weighted = swarm
+            .consensus_with("p", TrustModel::RoleWeighted)
+            .consensus;
+
+        // Equal: 1 True + 3 False → minority faction = 0.25 of count, NOT
+        // > 0.3 → falls through to confidence avg = (1+0+0+0)/4 = 0.25 →
+        // Doubtful.
+        assert_eq!(equal, HexValue::Doubtful, "equal-weighted baseline");
+
+        // Weighted: positive_weight = 0.95, negative_weight = 1.2,
+        // total = 2.15. min_faction / total = 0.95 / 2.15 ≈ 0.442 > 0.3
+        // → Contradictory. The guardian's veto is loud enough to flip
+        // the outcome from "Doubtful" to "irreconcilable" — exactly the
+        // role-aware behaviour the milestone calls for.
+        assert_eq!(
+            weighted,
+            HexValue::Contradictory,
+            "role-weighted should escalate to Contradictory (guardian dissent ≥ 30% of weight)"
+        );
+
+        assert_ne!(equal, weighted, "TrustModel must change the outcome");
+    }
+
+    #[test]
+    fn weighted_consensus_matches_unweighted_when_uniform() {
+        // Regression invariant: with all weights equal and non-zero,
+        // compute_consensus_weighted MUST match compute_consensus across
+        // every fixture covered by the existing consensus tests.
+        let fixtures: Vec<HashMap<String, HexValue>> = vec![
+            // unanimous true
+            [
+                ("a", HexValue::True),
+                ("b", HexValue::True),
+                ("c", HexValue::True),
+            ]
+            .iter()
+            .map(|(k, v)| (k.to_string(), *v))
+            .collect(),
+            // unanimous false
+            [("a", HexValue::False), ("b", HexValue::False)]
+                .iter()
+                .map(|(k, v)| (k.to_string(), *v))
+                .collect(),
+            // mixed positive
+            [
+                ("a", HexValue::True),
+                ("b", HexValue::Probable),
+                ("c", HexValue::Probable),
+            ]
+            .iter()
+            .map(|(k, v)| (k.to_string(), *v))
+            .collect(),
+            // strong disagreement
+            [
+                ("a", HexValue::True),
+                ("b", HexValue::True),
+                ("c", HexValue::False),
+                ("d", HexValue::False),
+            ]
+            .iter()
+            .map(|(k, v)| (k.to_string(), *v))
+            .collect(),
+            // all unknown
+            [("a", HexValue::Unknown), ("b", HexValue::Unknown)]
+                .iter()
+                .map(|(k, v)| (k.to_string(), *v))
+                .collect(),
+            // contradictory majority
+            [
+                ("a", HexValue::Contradictory),
+                ("b", HexValue::Contradictory),
+                ("c", HexValue::True),
+            ]
+            .iter()
+            .map(|(k, v)| (k.to_string(), *v))
+            .collect(),
+        ];
+
+        for (i, votes) in fixtures.iter().enumerate() {
+            let weights: HashMap<String, f64> = votes.keys().map(|k| (k.clone(), 1.0)).collect();
+            let unweighted = compute_consensus(votes);
+            let weighted = compute_consensus_weighted(votes, &weights);
+            assert_eq!(
+                unweighted, weighted,
+                "fixture {i} must produce identical results under uniform weights"
+            );
+        }
+    }
+
+    #[test]
+    fn role_weighted_inbox_filters_below_threshold_and_keeps_above() {
+        // Exit criterion 2 from ROADMAP Phase 4: trust must be
+        // observable. A skeptic with message_trust < 0.5 should drop
+        // belief-bearing messages under RoleWeighted but accept them
+        // under Equal.
+        let make = |mt: f64| {
+            Agent::new(
+                "skeptic",
+                AgentRole {
+                    name: "skeptic".into(),
+                    self_trust: 0.95,
+                    message_trust: mt,
+                },
+            )
+        };
+        let msg = || Message {
+            from: "noise".into(),
+            to: "skeptic".into(),
+            payload: MessagePayload::BeliefUpdate {
+                proposition: "rumour".into(),
+                value: HexValue::Probable,
+            },
+        };
+
+        // Equal mode: low message_trust ignored, message lands.
+        let mut a = make(0.2);
+        a.receive(msg());
+        let stats = a.process_inbox_with(TrustModel::Equal);
+        assert_eq!(
+            stats.applied, 1,
+            "Equal mode must apply regardless of trust"
+        );
+        assert_eq!(stats.filtered, 0);
+        assert_eq!(a.vote("rumour"), HexValue::Probable);
+
+        // RoleWeighted mode: low message_trust filters the message.
+        let mut a = make(0.2);
+        a.receive(msg());
+        let stats = a.process_inbox_with(TrustModel::RoleWeighted);
+        assert_eq!(
+            stats.applied, 0,
+            "RoleWeighted must drop low-trust messages"
+        );
+        assert_eq!(stats.filtered, 1, "minority-report counter must increment");
+        assert_eq!(a.vote("rumour"), HexValue::Unknown, "belief untouched");
+
+        // RoleWeighted, sufficient trust: message lands.
+        let mut a = make(0.8);
+        a.receive(msg());
+        let stats = a.process_inbox_with(TrustModel::RoleWeighted);
+        assert_eq!(stats.applied, 1);
+        assert_eq!(stats.filtered, 0);
+    }
+
+    #[test]
+    fn message_trust_threshold_is_pinned() {
+        // The 0.5 boundary is a constant; the test pins both sides.
+        // Pin: at exactly MESSAGE_TRUST_THRESHOLD a message is accepted
+        // (>=, not >). Just below it, the message is filtered.
+        let make = |mt: f64| {
+            let mut a = Agent::new(
+                "x",
+                AgentRole {
+                    name: "x".into(),
+                    self_trust: 0.5,
+                    message_trust: mt,
+                },
+            );
+            a.receive(Message {
+                from: "y".into(),
+                to: "x".into(),
+                payload: MessagePayload::BeliefUpdate {
+                    proposition: "q".into(),
+                    value: HexValue::True,
+                },
+            });
+            a
+        };
+
+        let mut at_threshold = make(MESSAGE_TRUST_THRESHOLD);
+        let s = at_threshold.process_inbox_with(TrustModel::RoleWeighted);
+        assert_eq!(s.applied, 1, "exactly at threshold must apply (>=, not >)");
+        assert_eq!(s.filtered, 0);
+
+        let mut just_below = make(MESSAGE_TRUST_THRESHOLD - 1e-9);
+        let s = just_below.process_inbox_with(TrustModel::RoleWeighted);
+        assert_eq!(s.applied, 0, "just below threshold must filter");
+        assert_eq!(s.filtered, 1);
+    }
+
+    #[test]
+    fn equal_mode_preserves_existing_process_inbox_signature_and_behavior() {
+        // Regression: process_inbox() (no _with) must behave exactly as
+        // pre-Phase-4. This pins the back-compat contract.
+        let mut a = Agent::new(
+            "x",
+            AgentRole {
+                name: "x".into(),
+                self_trust: 0.95,
+                // message_trust deliberately below threshold — would be
+                // filtered under RoleWeighted, but must NOT be filtered
+                // under Equal (which is what process_inbox() implies).
+                message_trust: 0.1,
+            },
+        );
+        a.receive(Message {
+            from: "y".into(),
+            to: "x".into(),
+            payload: MessagePayload::BeliefUpdate {
+                proposition: "q".into(),
+                value: HexValue::True,
+            },
+        });
+        let n: usize = a.process_inbox();
+        assert_eq!(n, 1, "process_inbox() must remain trust-blind");
+        assert_eq!(a.vote("q"), HexValue::True);
+    }
+
+    #[test]
+    fn agreement_ratio_remains_a_head_count_under_role_weighted() {
+        // Agreement is documented as fraction-of-voters-that-match, not
+        // fraction-of-weight. Pin that contract: in the lopsided fixture,
+        // weighted consensus is Contradictory but only 0 of 4 raw votes
+        // are Contradictory, so agreement should be 0.0 — proving the
+        // count-based interpretation.
+        let swarm = dissenting_guardian_swarm();
+        let result = swarm.consensus_with("p", TrustModel::RoleWeighted);
+        assert_eq!(result.consensus, HexValue::Contradictory);
+        assert!(
+            (result.agreement - 0.0).abs() < 1e-12,
+            "agreement is a head count of voters matching the consensus, not a weight share"
+        );
     }
 
     #[test]
