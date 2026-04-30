@@ -146,7 +146,11 @@ impl Lattice for HexValue {
             return Self::Contradictory;
         }
         // Otherwise take the more-true value
-        if a.rank() >= b.rank() { a } else { b }
+        if a.rank() >= b.rank() {
+            a
+        } else {
+            b
+        }
     }
 
     fn meet(a: Self, b: Self) -> Self {
@@ -155,7 +159,11 @@ impl Lattice for HexValue {
             return Self::Contradictory;
         }
         // Otherwise take the more-false value
-        if a.rank() <= b.rank() { a } else { b }
+        if a.rank() <= b.rank() {
+            a
+        } else {
+            b
+        }
     }
 
     fn not(a: Self) -> Self {
@@ -256,6 +264,36 @@ impl BeliefNetwork {
     /// Connect two propositions with a logical relation.
     pub fn add_relation(&mut self, from: NodeIndex, to: NodeIndex, relation: Relation) {
         self.graph.add_edge(from, to, relation);
+    }
+
+    /// Label-based variant of [`Self::add_relation`].
+    ///
+    /// Either or both endpoints are created with `HexValue::Unknown` if
+    /// they don't already exist — so callers can declare relations
+    /// before any belief landed on the propositions involved. This is
+    /// the entry point used by `hari-core`'s `RelationDeclaration`
+    /// research event, where IX may declare a relation involving a
+    /// proposition that has not yet received an `experiment_result` or
+    /// `belief_update`.
+    ///
+    /// Returns `(from_index, to_index)` so callers can chain further
+    /// graph operations without re-looking-up the labels.
+    pub fn declare_relation(
+        &mut self,
+        from_label: &str,
+        to_label: &str,
+        relation: Relation,
+    ) -> (NodeIndex, NodeIndex) {
+        let from_idx = match self.index.get(from_label) {
+            Some(&idx) => idx,
+            None => self.add_proposition(from_label, HexValue::Unknown),
+        };
+        let to_idx = match self.index.get(to_label) {
+            Some(&idx) => idx,
+            None => self.add_proposition(to_label, HexValue::Unknown),
+        };
+        self.graph.add_edge(from_idx, to_idx, relation);
+        (from_idx, to_idx)
     }
 
     /// Look up a proposition by label.
@@ -392,26 +430,50 @@ mod tests {
 
     #[test]
     fn test_join_takes_more_true() {
-        assert_eq!(HexValue::join(HexValue::Probable, HexValue::Doubtful), HexValue::Probable);
-        assert_eq!(HexValue::join(HexValue::False, HexValue::True), HexValue::True);
-        assert_eq!(HexValue::join(HexValue::Unknown, HexValue::Unknown), HexValue::Unknown);
+        assert_eq!(
+            HexValue::join(HexValue::Probable, HexValue::Doubtful),
+            HexValue::Probable
+        );
+        assert_eq!(
+            HexValue::join(HexValue::False, HexValue::True),
+            HexValue::True
+        );
+        assert_eq!(
+            HexValue::join(HexValue::Unknown, HexValue::Unknown),
+            HexValue::Unknown
+        );
     }
 
     #[test]
     fn test_join_contradiction_absorbs() {
-        assert_eq!(HexValue::join(HexValue::True, HexValue::Contradictory), HexValue::Contradictory);
-        assert_eq!(HexValue::join(HexValue::Contradictory, HexValue::False), HexValue::Contradictory);
+        assert_eq!(
+            HexValue::join(HexValue::True, HexValue::Contradictory),
+            HexValue::Contradictory
+        );
+        assert_eq!(
+            HexValue::join(HexValue::Contradictory, HexValue::False),
+            HexValue::Contradictory
+        );
     }
 
     #[test]
     fn test_meet_takes_more_false() {
-        assert_eq!(HexValue::meet(HexValue::Probable, HexValue::Doubtful), HexValue::Doubtful);
-        assert_eq!(HexValue::meet(HexValue::True, HexValue::False), HexValue::False);
+        assert_eq!(
+            HexValue::meet(HexValue::Probable, HexValue::Doubtful),
+            HexValue::Doubtful
+        );
+        assert_eq!(
+            HexValue::meet(HexValue::True, HexValue::False),
+            HexValue::False
+        );
     }
 
     #[test]
     fn test_meet_contradiction_absorbs() {
-        assert_eq!(HexValue::meet(HexValue::True, HexValue::Contradictory), HexValue::Contradictory);
+        assert_eq!(
+            HexValue::meet(HexValue::True, HexValue::Contradictory),
+            HexValue::Contradictory
+        );
     }
 
     #[test]
@@ -421,14 +483,27 @@ mod tests {
         assert_eq!(HexValue::not(HexValue::Probable), HexValue::Doubtful);
         assert_eq!(HexValue::not(HexValue::Doubtful), HexValue::Probable);
         assert_eq!(HexValue::not(HexValue::Unknown), HexValue::Unknown);
-        assert_eq!(HexValue::not(HexValue::Contradictory), HexValue::Contradictory);
+        assert_eq!(
+            HexValue::not(HexValue::Contradictory),
+            HexValue::Contradictory
+        );
     }
 
     #[test]
     fn test_double_negation() {
-        for v in [HexValue::True, HexValue::Probable, HexValue::Unknown,
-                   HexValue::Doubtful, HexValue::False, HexValue::Contradictory] {
-            assert_eq!(HexValue::not(HexValue::not(v)), v, "Double negation failed for {v}");
+        for v in [
+            HexValue::True,
+            HexValue::Probable,
+            HexValue::Unknown,
+            HexValue::Doubtful,
+            HexValue::False,
+            HexValue::Contradictory,
+        ] {
+            assert_eq!(
+                HexValue::not(HexValue::not(v)),
+                v,
+                "Double negation failed for {v}"
+            );
         }
     }
 
@@ -442,21 +517,39 @@ mod tests {
 
     #[test]
     fn test_combine_agreeing_evidence() {
-        assert_eq!(HexLattice::combine_evidence(HexValue::True, HexValue::Probable), HexValue::True);
-        assert_eq!(HexLattice::combine_evidence(HexValue::False, HexValue::Doubtful), HexValue::Doubtful);
+        assert_eq!(
+            HexLattice::combine_evidence(HexValue::True, HexValue::Probable),
+            HexValue::True
+        );
+        assert_eq!(
+            HexLattice::combine_evidence(HexValue::False, HexValue::Doubtful),
+            HexValue::Doubtful
+        );
     }
 
     #[test]
     fn test_combine_conflicting_evidence() {
-        assert_eq!(HexLattice::combine_evidence(HexValue::True, HexValue::False), HexValue::Contradictory);
-        assert_eq!(HexLattice::combine_evidence(HexValue::Probable, HexValue::Doubtful), HexValue::Contradictory);
+        assert_eq!(
+            HexLattice::combine_evidence(HexValue::True, HexValue::False),
+            HexValue::Contradictory
+        );
+        assert_eq!(
+            HexLattice::combine_evidence(HexValue::Probable, HexValue::Doubtful),
+            HexValue::Contradictory
+        );
     }
 
     #[test]
     fn test_combine_neutral_evidence() {
         // Unknown doesn't conflict with anything
-        assert_eq!(HexLattice::combine_evidence(HexValue::True, HexValue::Unknown), HexValue::True);
-        assert_eq!(HexLattice::combine_evidence(HexValue::Unknown, HexValue::False), HexValue::Unknown);
+        assert_eq!(
+            HexLattice::combine_evidence(HexValue::True, HexValue::Unknown),
+            HexValue::True
+        );
+        assert_eq!(
+            HexLattice::combine_evidence(HexValue::Unknown, HexValue::False),
+            HexValue::Unknown
+        );
     }
 
     // -- BeliefNetwork --
@@ -505,7 +598,10 @@ mod tests {
 
         net.propagate();
         // True support + True contradiction (NOT True = False) -> Contradictory
-        assert_eq!(net.get("hypothesis").unwrap().value, HexValue::Contradictory);
+        assert_eq!(
+            net.get("hypothesis").unwrap().value,
+            HexValue::Contradictory
+        );
     }
 
     #[test]
@@ -529,6 +625,43 @@ mod tests {
         let changed = net.propagate();
         assert_eq!(changed, 0);
         assert_eq!(net.get("conclusion").unwrap().value, HexValue::Unknown);
+    }
+
+    #[test]
+    fn declare_relation_auto_creates_endpoints_as_unknown() {
+        let mut net = BeliefNetwork::new();
+        // Both endpoints unseen → declare creates them as Unknown and
+        // wires the edge so a subsequent direct update on `from`
+        // propagates to `to`.
+        net.declare_relation("evidence", "hypothesis", Relation::Implies);
+        assert_eq!(net.len(), 2);
+        assert_eq!(net.get("evidence").unwrap().value, HexValue::Unknown);
+        assert_eq!(net.get("hypothesis").unwrap().value, HexValue::Unknown);
+
+        // Drive the antecedent True; one round of propagation must
+        // derive the consequent.
+        net.get_mut("evidence").unwrap().value = HexValue::True;
+        let changed = net.propagate();
+        assert_eq!(changed, 1);
+        assert_eq!(net.get("hypothesis").unwrap().value, HexValue::True);
+    }
+
+    #[test]
+    fn declare_relation_idempotent_on_existing_nodes() {
+        // Declaring a relation twice is a no-op on the node set — the
+        // edge gets added twice (multi-graph), but the proposition
+        // count and value stay the same.
+        let mut net = BeliefNetwork::new();
+        net.add_proposition("a", HexValue::True);
+        net.add_proposition("b", HexValue::Unknown);
+        net.declare_relation("a", "b", Relation::Supports);
+        net.declare_relation("a", "b", Relation::Supports);
+        assert_eq!(net.len(), 2);
+        // Two parallel Supports edges is still equivalent to one for
+        // propagation purposes — combine_evidence is idempotent on
+        // identical inputs.
+        net.propagate();
+        assert_eq!(net.get("b").unwrap().value, HexValue::True);
     }
 
     #[test]

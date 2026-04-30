@@ -181,7 +181,12 @@ impl StreamingSession {
         }
         self.check_cycle(&event)?;
 
-        if let Some(prop) = event.payload_proposition_owned() {
+        // Track every proposition the event touches — including both
+        // endpoints of a `RelationDeclaration`, which `_owned()`
+        // returns None for. Necessary so a session that *only*
+        // declares relations (and lets propagation derive everything)
+        // still has the derived propositions in `final_beliefs`.
+        for prop in event.touched_propositions() {
             self.touched_propositions.insert(prop, ());
         }
 

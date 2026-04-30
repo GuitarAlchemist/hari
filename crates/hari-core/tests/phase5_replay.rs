@@ -8,9 +8,7 @@
 //! between `Investigate` and `Wait` — the decision the roadmap calls out
 //! as the observable A/B point for the cognition integration.
 
-use hari_core::{
-    action_kind, compare_replay, Action, CognitiveLoop, PriorityModel, ResearchTrace,
-};
+use hari_core::{action_kind, compare_replay, Action, CognitiveLoop, PriorityModel, ResearchTrace};
 use std::fs;
 
 fn load_trace(path: &str) -> ResearchTrace {
@@ -75,7 +73,8 @@ fn cognition_divergence_contains_investigate_vs_wait() {
         .action_divergence;
 
     let has_investigate_vs_wait = divergences.iter().any(|d| {
-        let baseline_kinds: Vec<&'static str> = d.baseline_actions.iter().map(action_kind).collect();
+        let baseline_kinds: Vec<&'static str> =
+            d.baseline_actions.iter().map(action_kind).collect();
         let exp_kinds: Vec<&'static str> = d.experimental_actions.iter().map(action_kind).collect();
         let exp_is_wait_only = exp_kinds.len() == 1 && exp_kinds[0] == "Wait";
         let baseline_has_investigate = baseline_kinds.contains(&"Investigate");
@@ -91,8 +90,14 @@ fn cognition_divergence_contains_investigate_vs_wait() {
         divergences
             .iter()
             .map(|d| (
-                d.baseline_actions.iter().map(action_kind).collect::<Vec<_>>(),
-                d.experimental_actions.iter().map(action_kind).collect::<Vec<_>>()
+                d.baseline_actions
+                    .iter()
+                    .map(action_kind)
+                    .collect::<Vec<_>>(),
+                d.experimental_actions
+                    .iter()
+                    .map(action_kind)
+                    .collect::<Vec<_>>()
             ))
             .collect::<Vec<_>>()
     );
@@ -161,7 +166,9 @@ fn projection_axis_pinned_when_top_goal_changes_mid_replay() {
         .expect("seeding must record an axis after one cycle");
 
     // Add a higher-priority goal that would change `top_goal`.
-    loop_.state.add_goal("beta", "second goal, higher priority", 0.9);
+    loop_
+        .state
+        .add_goal("beta", "second goal, higher priority", 0.9);
     assert_eq!(loop_.state.top_goal().unwrap().0, "beta");
 
     // Drive another cycle. The pinned axis must not have moved.
@@ -185,7 +192,9 @@ fn contradictory_perception_moves_attention_in_lie_mode() {
     use hari_lattice::HexValue;
 
     let mut loop_ = CognitiveLoop::with_model(4, PriorityModel::Lie);
-    loop_.state.add_goal("contested", "claim with conflicting evidence", 0.9);
+    loop_
+        .state
+        .add_goal("contested", "claim with conflicting evidence", 0.9);
 
     let initial_attention = loop_.state.attention.clone();
     loop_.perceive(Perception {
@@ -204,7 +213,11 @@ fn contradictory_perception_moves_attention_in_lie_mode() {
     );
     // Sanity: the move stays bounded (boundedness contract still holds even
     // with the smear active).
-    assert!(after.norm() < 10.0, "attention norm exploded: {}", after.norm());
+    assert!(
+        after.norm() < 10.0,
+        "attention norm exploded: {}",
+        after.norm()
+    );
 }
 
 #[test]
@@ -242,7 +255,10 @@ fn long_recovery_fixture_populates_contradiction_recovery_metric() {
         "RecencyDecay must populate contradiction_recovery_cycles on long_recovery.json"
     );
     assert!(
-        comparison.experimental.contradiction_recovery_cycles.is_some(),
+        comparison
+            .experimental
+            .contradiction_recovery_cycles
+            .is_some(),
         "Lie must populate contradiction_recovery_cycles on long_recovery.json"
     );
     // Boundedness still holds on the longer fixture.
@@ -267,8 +283,7 @@ fn all_fixtures_satisfy_check_contract() {
     // It is the only fixture exempted; any new fixture authored under
     // Phase 5+ MUST diverge under the seeded defaults.
     let fixtures_dir = std::path::Path::new("../../fixtures/ix");
-    let entries = std::fs::read_dir(fixtures_dir)
-        .expect("fixtures/ix directory must exist");
+    let entries = std::fs::read_dir(fixtures_dir).expect("fixtures/ix directory must exist");
 
     let mut checked = 0usize;
     for entry in entries {
@@ -280,9 +295,9 @@ fn all_fixtures_satisfy_check_contract() {
         let path_str = path.to_string_lossy().to_string();
         let trace = load_trace(&path_str);
         let report = compare_replay(trace);
-        let comparison = report.comparison.unwrap_or_else(|| {
-            panic!("compare_replay must populate comparison for {path_str}")
-        });
+        let comparison = report
+            .comparison
+            .unwrap_or_else(|| panic!("compare_replay must populate comparison for {path_str}"));
 
         // Boundedness — every fixture, including conflicting_benchmark.
         assert!(
@@ -296,16 +311,21 @@ fn all_fixtures_satisfy_check_contract() {
             comparison.experimental.attention_norm_max
         );
 
-        // Divergence — required for every fixture except the legacy
-        // conflicting_benchmark trivial case. New Phase-5 fixtures must
-        // produce at least one divergence so the check-script contract
-        // is verifiable on the full suite.
-        let is_legacy_short = path
+        // Divergence — required for every Phase-5 fixture (whose whole
+        // point is to exercise priority-model differences). Two
+        // exclusions:
+        //  - the legacy conflicting_benchmark (pre-Phase-5 trivial case)
+        //  - Phase-8 reasoning fixtures (whose point is belief
+        //    propagation, not action divergence — they test the
+        //    `RelationDeclaration` mechanism and therefore won't
+        //    necessarily diverge between baseline and experimental
+        //    priority models)
+        let exempt_from_divergence_contract = path
             .file_name()
             .and_then(|s| s.to_str())
-            .map(|s| s == "conflicting_benchmark.json")
+            .map(|s| matches!(s, "conflicting_benchmark.json" | "derivation.json"))
             .unwrap_or(false);
-        if !is_legacy_short {
+        if !exempt_from_divergence_contract {
             assert!(
                 !comparison.action_divergence.is_empty(),
                 "{path_str}: action_divergence must be non-empty for Phase-5+ fixtures"
@@ -338,12 +358,17 @@ fn lie_and_recency_agree_on_retraction_event() {
     let lie_actions = &lie_report.outcomes[retraction_index].actions;
     let decay_actions = &decay_report.outcomes[retraction_index].actions;
 
-    let lie_has_retry = lie_actions.iter().any(|a| matches!(a, Action::Retry { .. }));
+    let lie_has_retry = lie_actions
+        .iter()
+        .any(|a| matches!(a, Action::Retry { .. }));
     let decay_has_retry = decay_actions
         .iter()
         .any(|a| matches!(a, Action::Retry { .. }));
 
-    assert!(lie_has_retry, "Lie path should preserve Retry on retraction");
+    assert!(
+        lie_has_retry,
+        "Lie path should preserve Retry on retraction"
+    );
     assert!(
         decay_has_retry,
         "RecencyDecay path should preserve Retry on retraction"

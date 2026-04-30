@@ -582,6 +582,16 @@ fn process_event(
                 key, event.source
             )));
         }
+        // SL operates on Opinion fusion, not the BeliefNetwork — there
+        // is no graph to declare relations on. Log and ignore so SL
+        // sessions can still consume traces that include
+        // RelationDeclaration events without erroring.
+        ResearchEventPayload::RelationDeclaration { from, to, relation } => {
+            actions.push(Action::Log(format!(
+                "SL ignored RelationDeclaration {:?}: '{}' -> '{}' (SL has no relation graph)",
+                relation, from, to
+            )));
+        }
     }
 
     let state_summary = {

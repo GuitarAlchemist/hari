@@ -1,0 +1,75 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-runner",
+      "payload": {
+        "type": "goal_update",
+        "key": "verify-cosmic-bounded",
+        "description": "Verify that the cosmic-flux model has bounded variance",
+        "priority": 0.9,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-domain-modeller",
+      "payload": {
+        "type": "relation_declaration",
+        "from": "cosmic-flux-bounded",
+        "to": "cosmic-flux-stable",
+        "relation": "Implies"
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-domain-modeller",
+      "payload": {
+        "type": "relation_declaration",
+        "from": "cosmic-flux-stable",
+        "to": "downstream-pipeline-stable",
+        "relation": "Supports"
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "ix-experiment-runner",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "cosmic-flux-bounded",
+        "value": "True",
+        "evidence": {
+          "benchmark": "variance-stress-v1",
+          "runs": 12,
+          "var_ratio": 0.97,
+          "note": "variance stays under threshold across 12 runs"
+        }
+      }
+    },
+    {
+      "cycle": 5,
+      "source": "ix-domain-modeller",
+      "payload": {
+        "type": "relation_declaration",
+        "from": "anomaly-detected",
+        "to": "downstream-pipeline-stable",
+        "relation": "Contradicts"
+      }
+    },
+    {
+      "cycle": 6,
+      "source": "ix-monitor",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "anomaly-detected",
+        "value": "True",
+        "evidence": {
+          "channel": "ingest-error-rate",
+          "spike": 4.2,
+          "note": "error rate spike above 4σ on ingest-error-rate"
+        }
+      }
+    }
+  ]
+}

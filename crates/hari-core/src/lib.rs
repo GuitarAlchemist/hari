@@ -232,14 +232,55 @@ pub enum ResearchEventPayload {
         priority: f64,
         status: Option<HexValue>,
     },
+    /// Declare a logical relation between two propositions in the
+    /// belief network, enabling derivation via belief propagation.
+    ///
+    /// Either or both endpoints are auto-created with `HexValue::Unknown`
+    /// if they don't already exist, so IX can declare a relation before
+    /// any direct evidence has landed for either proposition. Once
+    /// declared, every subsequent belief-changing event triggers a
+    /// `propagate_until_stable` pass — derived beliefs flow through the
+    /// graph automatically.
+    ///
+    /// Relations are append-only in this slice: no withdrawal or
+    /// reversal. To "undo" a relation, declare a new one in the
+    /// opposite direction or with a different value, or `Retraction`
+    /// the affected proposition to reset its value.
+    RelationDeclaration {
+        from: String,
+        to: String,
+        relation: hari_lattice::Relation,
+    },
 }
 
 impl ResearchEvent {
-    /// Owned copy of the proposition this event targets, if any. Used by
-    /// the streaming layer to track touched propositions without
-    /// borrowing the event past `process_research_event` consumption.
+    /// Owned copy of the *primary* proposition this event targets, if
+    /// any. Returns the single proposition for direct claim events
+    /// (BeliefUpdate / ExperimentResult / AgentVote / Retraction),
+    /// `None` for events without a single primary proposition
+    /// (`GoalUpdate`, `RelationDeclaration` — the latter touches two).
+    /// Use [`Self::touched_propositions`] when both endpoints matter.
     pub fn payload_proposition_owned(&self) -> Option<String> {
         self.payload.proposition().map(str::to_string)
+    }
+
+    /// All propositions this event touches, in declaration order. Empty
+    /// for `GoalUpdate`; one entry for direct claim events; two for
+    /// `RelationDeclaration` (`from` then `to`). Used by the streaming
+    /// layer to track which propositions appear in the session's
+    /// `final_beliefs` snapshot, including auto-created relation
+    /// endpoints.
+    pub fn touched_propositions(&self) -> Vec<String> {
+        match &self.payload {
+            ResearchEventPayload::BeliefUpdate { proposition, .. }
+            | ResearchEventPayload::ExperimentResult { proposition, .. }
+            | ResearchEventPayload::AgentVote { proposition, .. }
+            | ResearchEventPayload::Retraction { proposition, .. } => vec![proposition.clone()],
+            ResearchEventPayload::RelationDeclaration { from, to, .. } => {
+                vec![from.clone(), to.clone()]
+            }
+            ResearchEventPayload::GoalUpdate { .. } => Vec::new(),
+        }
     }
 }
 
@@ -1244,6 +1285,28 @@ impl CognitiveLoop {
                 )));
                 action_cycles.push(event.cycle);
             }
+            ResearchEventPayload::RelationDeclaration { from, to, relation } => {
+                self.state.beliefs.declare_relation(from, to, *relation);
+                actions.push(Action::Log(format!(
+                    "Declared relation {:?}: '{}' -> '{}'",
+                    relation, from, to
+                )));
+                action_cycles.push(event.cycle);
+            }
+        }
+
+        // Phase 8 reasoning: after every event, run belief propagation
+        // through the network. On networks with no declared relations
+        // this is a single no-op iteration. When propagation actually
+        // fires (≥2 iterations: at least one round did work, then a
+        // zero-change round confirmed convergence) we surface a Log so
+        // IX can see derivation happened.
+        let propagation_rounds = self.state.beliefs.propagate_until_stable(10);
+        if propagation_rounds > 1 {
+            actions.push(Action::Log(format!(
+                "Propagated beliefs in {propagation_rounds} rounds"
+            )));
+            action_cycles.push(event.cycle);
         }
 
         // Single scoring pass for the whole event so the priority model can
@@ -1325,7 +1388,10 @@ impl ResearchEventPayload {
             | Self::ExperimentResult { proposition, .. }
             | Self::AgentVote { proposition, .. }
             | Self::Retraction { proposition, .. } => Some(proposition),
-            Self::GoalUpdate { .. } => None,
+            // RelationDeclaration touches two propositions; callers
+            // that need both should use
+            // `ResearchEvent::touched_propositions` instead.
+            Self::RelationDeclaration { .. } | Self::GoalUpdate { .. } => None,
         }
     }
 }
@@ -1577,7 +1643,12 @@ fn compute_metrics(
             ResearchEventPayload::Retraction { proposition, .. } => {
                 (proposition.clone(), HexValue::Unknown)
             }
-            ResearchEventPayload::GoalUpdate { .. } => continue,
+            // GoalUpdate doesn't touch beliefs; RelationDeclaration may
+            // *cause* belief changes via propagation but doesn't itself
+            // emit a (proposition, value) tuple to attribute. Both skip
+            // the per-proposition flip-tracking metric.
+            ResearchEventPayload::GoalUpdate { .. }
+            | ResearchEventPayload::RelationDeclaration { .. } => continue,
         };
         *events_per_prop.entry(prop.clone()).or_insert(0) += 1;
         if let Some(prev) = last_value.get(&prop) {

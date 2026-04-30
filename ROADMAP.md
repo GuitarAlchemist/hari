@@ -231,6 +231,24 @@ The Phase 5 negative result against the SL baseline opens a real project-directi
 
 **Decision (post-Phase-5)**: path 2 (**demote**) executed. The default `PriorityModel` is now `RecencyDecay` — pinned by `test_priority_model_default_is_recency_decay`. `Lie` stays in the codebase as an opt-in research knob (`PriorityModel::Lie`); `Flat` stays for ablation. The `hari-cognition` crate is **not** cut — its instrumentation could still inform path 1 (reframe) on attributes the data didn't measure (interpretability, continuity, commutativity). Promoting `SubjectiveLogic` to a `PriorityModel` variant remains an open follow-up; it currently runs as a separate pipeline via `process_research_trace_subjective_logic`.
 
+## Phase 8: Belief-Graph Reasoning — **implemented**
+
+Goal: let IX declare logical relations between propositions and have Hari derive new beliefs by propagation — classical forward inference over a typed graph.
+
+Status: implemented. New `ResearchEventPayload::RelationDeclaration { from, to, relation }` variant; the existing `BeliefNetwork` graph + `propagate_until_stable` is now wired into the IX research-event boundary. Every belief-changing event (BeliefUpdate / ExperimentResult / AgentVote / Retraction / RelationDeclaration) triggers `propagate_until_stable(10)` after handling — on networks with no declared relations this is a single zero-change pass, so existing fixtures replay unchanged (regression-pinned).
+
+Delivered:
+- `BeliefNetwork::declare_relation(from_label, to_label, relation)` in `hari-lattice` — auto-creates missing endpoints as `HexValue::Unknown`.
+- `ResearchEventPayload::RelationDeclaration` variant + `ResearchEvent::touched_propositions()` (returns 0/1/2 propositions per event) used by the streaming layer for the final-beliefs snapshot.
+- Propagation pass at the end of every `process_research_event`. When propagation actually does work (≥2 rounds), a `Action::Log("Propagated beliefs in N rounds")` is appended for observability.
+- `fixtures/ix/derivation.json`: a 6-event scenario demonstrating multi-hop derivation (Implies then Supports) and contradiction emergence via a later Contradicts edge. Exempted from the `phase5_replay` action-divergence contract since reasoning fixtures are about derivation, not priority-model A/B.
+- `crates/hari-core/tests/phase8_reasoning.rs`: 5 tests covering regression-on-relation-free-fixtures, multi-hop derivation, contradiction emergence, auto-creation of endpoints, propagation-log emission, and JSON wire-format round-tripping.
+
+Out of scope for this slice (deliberate):
+- Rule-based / Datalog-style multi-premise inference (only pairwise `Supports`/`Contradicts`/`Implies` for now).
+- Withdrawal / reversal of declared relations (append-only).
+- Provenance tracking — derived beliefs don't yet carry a "derived from X via Y" record. The propagation Log is the only audit trail at the moment.
+
 ## Near-Term Milestone
 
 **Original** (pre-SL data): Hari can run a 50-cycle JSON research scenario in baseline and experimental modes, produce a metrics report, and show whether Lie-inspired state evolution changes research decisions compared with a simple priority baseline. — *Delivered.*
