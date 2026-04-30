@@ -45,6 +45,17 @@ pub use protocol::{
 pub use session::{StreamingSession, TraceRecorder};
 
 // ---------------------------------------------------------------------------
+// Subjective Logic prior-art baseline (Jøsang 2016) — see
+// `docs/research/prior-art-survey.md` §4.
+// ---------------------------------------------------------------------------
+pub mod subjective_logic;
+
+pub use subjective_logic::{
+    compare_replay_three_way, process_research_trace_subjective_logic, Opinion,
+    ReplayComparisonThreeWay, SubjectiveLogicConfig, ThreeWayDivergence, ThreeWayReplayReport,
+};
+
+// ---------------------------------------------------------------------------
 // PriorityModel — strategy enum used by score_actions
 // ---------------------------------------------------------------------------
 

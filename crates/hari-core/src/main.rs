@@ -3,8 +3,8 @@
 //! Main binary that demonstrates the cognitive loop with all subsystems.
 
 use hari_core::{
-    compare_replay, Action, CognitiveLoop, Perception, Request, Response, ResearchEvent,
-    ResearchTrace, StreamingSession,
+    compare_replay, compare_replay_three_way, Action, CognitiveLoop, Perception, Request, Response,
+    ResearchEvent, ResearchTrace, StreamingSession, SubjectiveLogicConfig,
 };
 use hari_lattice::HexValue;
 use hari_swarm::{Agent, AgentRole, Message, MessagePayload, Swarm};
@@ -20,6 +20,7 @@ fn main() {
         //   replay --compare <trace.json>    (batch trace through both models)
         //   replay --session <session.jsonl> (Phase 6 recorded session file)
         let mut compare = false;
+        let mut compare3 = false;
         let mut session_mode = false;
         let mut path: Option<&str> = None;
         let mut i = 2;
@@ -27,6 +28,7 @@ fn main() {
             let a = &args[i];
             match a.as_str() {
                 "--compare" => compare = true,
+                "--compare3" => compare3 = true,
                 "--session" => session_mode = true,
                 other if !other.starts_with("--") => path = Some(other),
                 other => {
@@ -36,14 +38,17 @@ fn main() {
             }
             i += 1;
         }
-        if compare && session_mode {
+        let exclusive_count = [compare, compare3, session_mode].iter().filter(|x| **x).count();
+        if exclusive_count > 1 {
             eprintln!(
-                "hari-core replay: --compare and --session are mutually exclusive"
+                "hari-core replay: --compare, --compare3, and --session are mutually exclusive"
             );
             process::exit(2);
         }
         let result = if session_mode {
             replay_session(path)
+        } else if compare3 {
+            replay_trace_three_way(path)
         } else {
             replay_trace(path, compare)
         };
@@ -245,6 +250,21 @@ fn replay_trace(path: Option<&str>, compare: bool) -> Result<(), Box<dyn std::er
     serde_json::to_writer_pretty(std::io::stdout(), &report)?;
     println!();
 
+    Ok(())
+}
+
+/// `replay --compare3` — runs the trace through `RecencyDecay`, `Lie`,
+/// and the Subjective Logic baseline on fresh state. Emits a wrapper
+/// JSON object so the existing `--compare` schema stays untouched (the
+/// Phase 6 replay-parity test asserts the unchanged shape).
+fn replay_trace_three_way(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let path = path.ok_or("usage: hari-core replay --compare3 <trace.json>")?;
+    let trace_json = fs::read_to_string(path)?;
+    let trace = parse_trace(&trace_json)?;
+
+    let report = compare_replay_three_way(trace, SubjectiveLogicConfig::default());
+    serde_json::to_writer_pretty(std::io::stdout(), &report)?;
+    println!();
     Ok(())
 }
 
