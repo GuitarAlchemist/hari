@@ -1,0 +1,260 @@
+{
+  "event_count": 6,
+  "outcomes": [
+    {
+      "event": {
+        "cycle": 1,
+        "source": "ix-runner-prompt-eval",
+        "payload": {
+          "type": "goal_update",
+          "key": "alpha-prompt-helps",
+          "description": "Prompt variant alpha improves pass rate",
+          "priority": 0.85,
+          "status": "Unknown"
+        }
+      },
+      "actions": [
+        "Wait"
+      ],
+      "state_summary": "Cycle 0: 0 beliefs, 1/1 goals active, attention norm=1.000"
+    },
+    {
+      "event": {
+        "cycle": 2,
+        "source": "ix-runner-tool-bench",
+        "payload": {
+          "type": "goal_update",
+          "key": "beta-tool-stable",
+          "description": "Tool bench beta is statistically stable",
+          "priority": 0.7,
+          "status": "Unknown"
+        }
+      },
+      "actions": [
+        "Wait"
+      ],
+      "state_summary": "Cycle 0: 0 beliefs, 2/2 goals active, attention norm=1.000"
+    },
+    {
+      "event": {
+        "cycle": 3,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "alpha-prompt-helps",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "humaneval-paraphrased",
+            "delta_pass_rate": 0.04,
+            "note": "alpha prompt outperforms baseline by 4 points across 5 runs",
+            "runs": 5
+          }
+        }
+      },
+      "actions": [
+        {
+          "Accept": {
+            "proposition": "alpha-prompt-helps",
+            "value": "Probable"
+          }
+        },
+        {
+          "Log": "New belief 'alpha-prompt-helps': P (from ix-agent-evaluator)"
+        },
+        {
+          "Log": "Goal 'Prompt variant alpha improves pass rate' achieved!"
+        },
+        {
+          "Log": "Recorded 4 evidence fields for 'alpha-prompt-helps'"
+        }
+      ],
+      "state_summary": "Cycle 1: 1 beliefs, 2/2 goals active, attention norm=1.123"
+    },
+    {
+      "event": {
+        "cycle": 4,
+        "source": "ix-agent-critic",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "beta-tool-stable",
+          "value": "Doubtful",
+          "evidence": {
+            "benchmark": "tool-bench-v2",
+            "note": "tool latency std-dev exceeds threshold; results unreliable",
+            "runs": 3,
+            "variance": 0.18
+          }
+        }
+      },
+      "actions": [
+        "Wait"
+      ],
+      "state_summary": "Cycle 2: 2 beliefs, 2/2 goals active, attention norm=1.311"
+    },
+    {
+      "event": {
+        "cycle": 5,
+        "source": "ix-agent-secondary",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "beta-tool-stable",
+          "value": "Unknown",
+          "evidence": {
+            "benchmark": "tool-bench-v2",
+            "note": "follow-up sweep is inconclusive — needs additional investigation",
+            "runs": 7
+          }
+        }
+      },
+      "actions": [
+        "Wait"
+      ],
+      "state_summary": "Cycle 3: 2 beliefs, 2/2 goals active, attention norm=1.311"
+    },
+    {
+      "event": {
+        "cycle": 8,
+        "source": "ix-agent-replicator",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "alpha-prompt-helps",
+          "value": "Doubtful",
+          "evidence": {
+            "benchmark": "humaneval-paraphrased",
+            "delta_pass_rate": -0.02,
+            "note": "later replication run reverses sign — possibly contaminated",
+            "runs": 8
+          }
+        }
+      },
+      "actions": [
+        {
+          "Escalate": {
+            "reason": "Goal 'Prompt variant alpha improves pass rate' has contradictory evidence",
+            "confidence": 0.5
+          }
+        },
+        {
+          "Escalate": {
+            "reason": "Research claim 'alpha-prompt-helps' has contradictory evidence",
+            "confidence": 0.5
+          }
+        },
+        {
+          "Log": "Belief 'alpha-prompt-helps' updated: P -> C (from experiment:ix-agent-replicator)"
+        },
+        {
+          "Log": "Recorded 4 experiment fields for 'alpha-prompt-helps'"
+        }
+      ],
+      "state_summary": "Cycle 4: 2 beliefs, 2/2 goals active, attention norm=1.064"
+    }
+  ],
+  "final_beliefs": {
+    "alpha-prompt-helps": "Contradictory",
+    "beta-tool-stable": "Unknown"
+  },
+  "final_goals": {
+    "alpha-prompt-helps": {
+      "description": "Prompt variant alpha improves pass rate",
+      "priority": 0.85,
+      "status": "Probable"
+    },
+    "beta-tool-stable": {
+      "description": "Tool bench beta is statistically stable",
+      "priority": 0.7,
+      "status": "Unknown"
+    }
+  },
+  "final_state_summary": "Cycle 4: 2 beliefs, 2/2 goals active, attention norm=1.064",
+  "priority_model": "Lie",
+  "metrics": {
+    "contradiction_recovery_cycles": null,
+    "false_acceptance_count": 1,
+    "goal_completion_rate": 0.5,
+    "consensus_stability": 0.5,
+    "attention_norm_max": 1.3112659415195929,
+    "action_counts_by_kind": {
+      "Accept": 1,
+      "Escalate": 2,
+      "Log": 5,
+      "Wait": 4
+    }
+  },
+  "comparison": {
+    "baseline": {
+      "contradiction_recovery_cycles": null,
+      "false_acceptance_count": 1,
+      "goal_completion_rate": 0.5,
+      "consensus_stability": 0.5,
+      "attention_norm_max": 0.0,
+      "action_counts_by_kind": {
+        "Accept": 2,
+        "Escalate": 2,
+        "Investigate": 1,
+        "Log": 11,
+        "Wait": 2
+      }
+    },
+    "experimental": {
+      "contradiction_recovery_cycles": null,
+      "false_acceptance_count": 1,
+      "goal_completion_rate": 0.5,
+      "consensus_stability": 0.5,
+      "attention_norm_max": 1.3112659415195929,
+      "action_counts_by_kind": {
+        "Accept": 1,
+        "Escalate": 2,
+        "Log": 5,
+        "Wait": 4
+      }
+    },
+    "action_divergence": [
+      {
+        "event_index": 3,
+        "baseline_actions": [
+          {
+            "Accept": {
+              "proposition": "beta-tool-stable",
+              "value": "Doubtful"
+            }
+          },
+          {
+            "Log": "New belief 'beta-tool-stable': D (from experiment:ix-agent-critic)"
+          },
+          {
+            "Log": "Goal 'Prompt variant alpha improves pass rate' achieved!"
+          },
+          {
+            "Log": "Recorded 4 experiment fields for 'beta-tool-stable'"
+          }
+        ],
+        "experimental_actions": [
+          "Wait"
+        ]
+      },
+      {
+        "event_index": 4,
+        "baseline_actions": [
+          {
+            "Investigate": {
+              "topic": "beta-tool-stable"
+            }
+          },
+          {
+            "Log": "Belief 'beta-tool-stable' updated: D -> U (from ix-agent-secondary)"
+          },
+          {
+            "Log": "Goal 'Prompt variant alpha improves pass rate' achieved!"
+          },
+          {
+            "Log": "Recorded 3 evidence fields for 'beta-tool-stable'"
+          }
+        ],
+        "experimental_actions": [
+          "Wait"
+        ]
+      }
+    ]
+  }
+}

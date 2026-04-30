@@ -1,3 +1,10 @@
 /target
 **/*.rs.bk
 *.pdb
+
+# Octopus / Claude Code session state — local-only, do not commit
+.octo/
+.claude-octopus/
+.claude/
+.octo-factory-launch.log
+.octo-review.log
