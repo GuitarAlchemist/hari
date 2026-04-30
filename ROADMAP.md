@@ -169,25 +169,22 @@ Exit criteria:
 - Agent roles change outcomes in measurable ways.
 - Reports can explain why one source was trusted more than another.
 
-## Phase 5: Cognition Integration
+## Phase 5: Cognition Integration — **complete (negative result)**
 
 Goal: make `hari-cognition` affect decisions.
 
-Tasks:
+Status: implemented and shipped (commits `3dbbbeb`, `5ecece0`, `feb151e`, `1fa9d73`). The mechanical exit criterion (`scripts/check-phase5-done.sh` exit 0) is satisfied. The substantive research outcome is a **negative result on the project's original hypothesis**: Lie-inspired state evolution does not produce measurable decision-quality improvement over either simple baselines (`Flat`, `RecencyDecay`) or the Subjective Logic prior-art baseline. SL beats Lie on `false_acceptance_count` on 3/6 fixtures, ties on 3, never loses (see `docs/research/phase5-fixture-rollup.md` §7 and `docs/research/phase5-results.md` §6).
 
-- Map active goals and claim clusters into attention/state dimensions.
-- Let perceptions perturb the cognitive state.
-- Let state evolution affect action priority.
-- Add a non-Lie priority baseline.
-- Compare Lie-inspired state updates against the baseline.
+Delivered:
+- `PriorityModel::{Flat, RecencyDecay, Lie}` action-scoring strategies.
+- `SymmetryGroup` constructor helpers (`attention_rotation`, `belief_scaling`, `goal_projection`) and the seeded D+1 generator basis.
+- `ReplayMetrics`, `ReplayComparison`, `ActionDivergence` with bug-fixed `contradiction_recovery_cycles`.
+- Six fixtures covering distinct scenarios; `replay --compare` for 2-way and `replay --compare3` for 3-way (with SL).
+- 122 tests passing across the workspace; defaults pinned by `divergence_test_pins_alpha_and_dt`.
 
-Exit criteria:
+Open: see "Cognition Substrate Choice" below — the project-direction call about whether to keep, demote, reframe, or cut `hari-cognition`.
 
-- `hari-cognition` changes at least one observable decision.
-- The difference is measured against a simpler heuristic.
-- The system can show when the Lie-inspired path helped, hurt, or made no difference.
-
-## Phase 6: IX Autoresearch Loop
+## Phase 6: IX Autoresearch Loop — **implemented**
 
 Goal: close the loop with IX.
 
@@ -202,15 +199,33 @@ Workflow:
 6. IX uses that recommendation to continue, retry, or escalate.
 ```
 
-Exit criteria:
+Status: streaming protocol implemented (commit `80eef21`). `hari-core serve` runs a synchronous stdio JSONL session; `replay --session <file>` produces byte-identical reproduction of recorded sessions. Smoke-tested end-to-end. The streaming layer reuses `process_research_event` verbatim — no parallel cognitive codepath. Design recorded in `docs/research/phase6-design.md`.
 
-- IX can run an autoresearch trace with and without Hari.
-- Hari-assisted runs are compared to baseline IX runs.
-- Results are summarized in a report suitable for roadmap decisions.
+Exit criteria status:
+- ✅ IX can run an autoresearch trace with and without Hari (via `hari-core serve` or `replay --compare3`).
+- ⏸ Hari-assisted runs vs. baseline IX runs comparison: requires a real IX-side client to drive the protocol; not done.
+- ⏸ Results report suitable for roadmap decisions: not done.
+
+What's NOT yet implemented as part of Phase 6:
+- An IX-side reference client.
+- A test suite that actually runs IX's autoresearch loop end-to-end against `hari-core serve`.
+- Authenticated / multi-tenant deployment (explicitly out of scope per the design doc).
+
+## Open: Cognition Substrate Choice
+
+The Phase 5 negative result against the SL baseline opens a real project-direction question. Three honest paths:
+
+1. **Reframe `hari-cognition`'s value claim.** If the Lie-algebra machinery has value, it's not in `false_acceptance_count`. Possible alternative axes to instrument: interpretability of the attention trajectory, smooth-state continuity preservation across cycles, structure-constant analysis of which cognitive ops commute. None of these are tested.
+2. **Demote Lie to research-mode-only.** Switch the default `PriorityModel` to `RecencyDecay` or — adopting the SL data verdict — switch the default decision engine to `SubjectiveLogic`. Lie remains in the codebase as an experimental knob.
+3. **Cut `hari-cognition`.** Reduce maintenance surface. The streaming substrate (Phase 6) plus `RecencyDecay` or SL plus the existing belief network and swarm machinery deliver the project's defensible value claim (typed contradiction-preserving claim layer for autoresearch). The Lie-algebra hypothesis becomes a documented experiment-that-didn't-pay.
+
+Until the project owner makes this call, the default `PriorityModel` stays `Flat` — neutral, backward-compatible, no implicit endorsement of any path.
 
 ## Near-Term Milestone
 
-Hari can run a 50-cycle JSON research scenario in baseline and experimental modes, produce a metrics report, and show whether Lie-inspired state evolution changes research decisions compared with a simple priority baseline.
+**Original** (pre-SL data): Hari can run a 50-cycle JSON research scenario in baseline and experimental modes, produce a metrics report, and show whether Lie-inspired state evolution changes research decisions compared with a simple priority baseline. — *Delivered.*
+
+**Updated**: Hari operates as the epistemic substrate for a real IX autoresearch session over its streaming protocol, producing reproducible recommendations whose quality is measured against a non-Hari-assisted IX baseline. Requires the Phase 6 IX-side client work above.
 
 ## Open Questions
 
