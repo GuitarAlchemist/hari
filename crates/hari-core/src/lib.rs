@@ -62,24 +62,35 @@ pub use subjective_logic::{
 
 /// Strategy for prioritising candidate actions in [`CognitiveLoop::score_actions`].
 ///
-/// `Flat` is the production-default backwards-compatible model — every
-/// candidate gets priority 1.0 and ordering is preserved. `RecencyDecay` is
-/// the comparison baseline (no algebra, just temporal decay). `Lie` is the
-/// experimental Lie-algebra-driven model that consults the cognitive
-/// `attention` vector evolved by the seeded generators.
+/// **Default**: `RecencyDecay` (post-Phase-5 substrate decision, see
+/// `ROADMAP.md` §"Cognition Substrate Choice"). Lie's negative result on
+/// `false_acceptance_count` against the SL prior-art baseline made
+/// privileging it as a default no longer defensible; `RecencyDecay` is
+/// the simplest non-Lie option that ties or beats Lie on most fixtures
+/// and stays in-tree.
+///
+/// `Flat` (priority 1.0 for every action, original order) remains
+/// available for ablation and for fixtures where production order
+/// matters. `Lie` stays in the codebase as an opt-in research knob —
+/// the experimental Lie-algebra path is no longer privileged but is
+/// preserved so its instrumented attributes (interpretability,
+/// continuity, commutativity) can still be studied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PriorityModel {
     /// All actions get priority 1.0; original order preserved.
+    /// Pre-Phase-5 default; now used for ablation only.
     Flat,
     /// `priority = exp(-lambda * (current_cycle - perception_cycle))`.
+    /// **Default** since the Phase 5 substrate decision.
     RecencyDecay,
     /// `priority = base * (1 + alpha * proj(attention, action_axis))`.
+    /// Opt-in research knob; not the default.
     Lie,
 }
 
 impl Default for PriorityModel {
     fn default() -> Self {
-        Self::Flat
+        Self::RecencyDecay
     }
 }
 
@@ -575,8 +586,11 @@ impl CognitiveLoop {
 
     /// Builder-style constructor: pick a [`PriorityModel`] up front.
     ///
-    /// Defaults to `PriorityModel::Flat` if not called, preserving the
-    /// historical behavior of [`CognitiveLoop::cycle`].
+    /// Without this builder, [`CognitiveLoop::new`] uses
+    /// `PriorityModel::default()` (currently `RecencyDecay`). Pass
+    /// `PriorityModel::Flat` here when you need pre-Phase-5 behavior
+    /// — e.g. ablation tests or replays of fixtures recorded under the
+    /// old default.
     pub fn with_model(dimension: usize, model: PriorityModel) -> Self {
         let mut loop_ = Self::new(dimension);
         loop_.priority_model = model;
@@ -1902,9 +1916,14 @@ mod tests {
     }
 
     #[test]
-    fn test_priority_model_default_is_flat() {
+    fn test_priority_model_default_is_recency_decay() {
+        // Post-Phase-5 substrate decision: the default is RecencyDecay.
+        // See ROADMAP §"Cognition Substrate Choice". This test pins the
+        // decision so it can't drift silently — switching it back to
+        // Flat or to Lie requires updating both the default impl and
+        // this assertion together.
         let cl = CognitiveLoop::new(4);
-        assert_eq!(cl.priority_model, PriorityModel::Flat);
+        assert_eq!(cl.priority_model, PriorityModel::RecencyDecay);
     }
 
     #[test]

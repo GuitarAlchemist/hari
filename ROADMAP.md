@@ -229,7 +229,7 @@ The Phase 5 negative result against the SL baseline opens a real project-directi
 2. **Demote Lie to research-mode-only.** Switch the default `PriorityModel` to `RecencyDecay` or — adopting the SL data verdict — switch the default decision engine to `SubjectiveLogic`. Lie remains in the codebase as an experimental knob.
 3. **Cut `hari-cognition`.** Reduce maintenance surface. The streaming substrate (Phase 6) plus `RecencyDecay` or SL plus the existing belief network and swarm machinery deliver the project's defensible value claim (typed contradiction-preserving claim layer for autoresearch). The Lie-algebra hypothesis becomes a documented experiment-that-didn't-pay.
 
-Until the project owner makes this call, the default `PriorityModel` stays `Flat` — neutral, backward-compatible, no implicit endorsement of any path.
+**Decision (post-Phase-5)**: path 2 (**demote**) executed. The default `PriorityModel` is now `RecencyDecay` — pinned by `test_priority_model_default_is_recency_decay`. `Lie` stays in the codebase as an opt-in research knob (`PriorityModel::Lie`); `Flat` stays for ablation. The `hari-cognition` crate is **not** cut — its instrumentation could still inform path 1 (reframe) on attributes the data didn't measure (interpretability, continuity, commutativity). Promoting `SubjectiveLogic` to a `PriorityModel` variant remains an open follow-up; it currently runs as a separate pipeline via `process_research_trace_subjective_logic`.
 
 ## Near-Term Milestone
 
