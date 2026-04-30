@@ -2,6 +2,11 @@
 **/*.rs.bk
 *.pdb
 
+# Python bytecode caches — the IX reference client under clients/
+# uses the ambient Python interpreter and writes caches alongside.
+__pycache__/
+*.pyc
+
 # Octopus / Claude Code session state — local-only, do not commit
 .octo/
 .claude-octopus/
