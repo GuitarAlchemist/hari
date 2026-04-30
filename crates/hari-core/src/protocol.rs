@@ -19,10 +19,9 @@
 //! the live `serve` mode — guaranteeing byte-identical
 //! `ResearchReplayReport`s. See `phase6-design.md` §5.
 
-use crate::{
-    Action, Goal, PriorityModel, ReplayMetrics, ResearchEvent, ResearchReplayReport,
-};
+use crate::{Action, Goal, PriorityModel, ReplayMetrics, ResearchEvent, ResearchReplayReport};
 use hari_lattice::HexValue;
+use hari_swarm::{AgentRole, TrustModel};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -81,6 +80,41 @@ pub struct SessionConfig {
     /// `goal_update` events at cycle 0. Empty by default.
     #[serde(default)]
     pub initial_goals: Vec<InitialGoal>,
+
+    /// If true, [`ResearchEventPayload::AgentVote`] events route through
+    /// `hari-swarm` and the perceived value for the cognitive loop is
+    /// the swarm's `consensus_with(proposition, trust_model)` rather
+    /// than the raw vote. Default `false` preserves pre-bridge behavior
+    /// bit-for-bit so existing fixtures replay identically.
+    ///
+    /// `BeliefUpdate` and `ExperimentResult` events are unaffected — they
+    /// remain direct perceptions, never the swarm's responsibility.
+    #[serde(default)]
+    pub use_swarm_consensus: bool,
+
+    /// `TrustModel` applied to swarm consensus when
+    /// [`Self::use_swarm_consensus`] is true. Ignored otherwise.
+    /// Defaults to `TrustModel::Equal` (one-vote-per-agent).
+    #[serde(default)]
+    pub trust_model: TrustModel,
+
+    /// Agents seeded into the swarm before the first event, with
+    /// explicit roles. Sources of `AgentVote` events that aren't in this
+    /// list are auto-created on first vote with a neutral role
+    /// (`self_trust = 0.5`, `message_trust = 0.5`).
+    #[serde(default)]
+    pub initial_agents: Vec<InitialAgent>,
+}
+
+/// An agent seeded at session open. The `id` matches the `source` field
+/// of incoming `AgentVote` events; the `role` carries the
+/// `self_trust`/`message_trust` profile that
+/// [`TrustModel::RoleWeighted`] consults during consensus and inbox
+/// filtering.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InitialAgent {
+    pub id: String,
+    pub role: AgentRole,
 }
 
 /// A goal seeded at session open. See [`SessionConfig::initial_goals`].
@@ -121,6 +155,9 @@ impl Default for SessionConfig {
             compare_with: None,
             trace_record_path: None,
             initial_goals: Vec::new(),
+            use_swarm_consensus: false,
+            trust_model: TrustModel::default(),
+            initial_agents: Vec::new(),
         }
     }
 }

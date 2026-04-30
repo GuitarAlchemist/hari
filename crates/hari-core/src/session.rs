@@ -26,12 +26,12 @@
 //! - **Trace IO failure**: surfaced as a fatal `trace_io` error from
 //!   [`StreamingSession::open`] / [`StreamingSession::record_request`].
 
+use crate::protocol::RecommendationResponse;
 use crate::{
     action_lists_equivalent, compute_metrics_for, diff_outcomes, CognitiveLoop, Goal,
-    PriorityModel, ReplayComparison, ReplayMetrics, Request, Response, ResearchEvent,
-    ResearchEventOutcome, ResearchReplayReport, SessionConfig, ShadowCompare,
+    PriorityModel, ReplayComparison, ReplayMetrics, Request, ResearchEvent, ResearchEventOutcome,
+    ResearchReplayReport, Response, SessionConfig, ShadowCompare,
 };
-use crate::protocol::RecommendationResponse;
 use hari_lattice::HexValue;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -77,10 +77,7 @@ impl TraceRecorder {
                 std::fs::create_dir_all(parent)?;
             }
         }
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
             path: path.to_path_buf(),
             writer: BufWriter::new(file),
@@ -89,9 +86,8 @@ impl TraceRecorder {
 
     /// Append a serializable record as one JSONL line, then flush.
     pub fn record<T: Serialize>(&mut self, value: &T) -> std::io::Result<()> {
-        let s = serde_json::to_string(value).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-        })?;
+        let s = serde_json::to_string(value)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         self.writer.write_all(s.as_bytes())?;
         self.writer.write_all(b"\n")?;
         self.writer.flush()
@@ -113,19 +109,13 @@ impl StreamingSession {
     /// true }`.
     pub fn open(config: SessionConfig) -> Result<Self, String> {
         let primary = build_loop(&config, config.priority_model);
-        let shadow = config
-            .compare_with
-            .map(|m| build_loop(&config, m));
+        let shadow = config.compare_with.map(|m| build_loop(&config, m));
 
         let recorder = match &config.trace_record_path {
             Some(path) => match TraceRecorder::open(path) {
                 Ok(r) => Some(r),
                 Err(e) => {
-                    return Err(format!(
-                        "trace_io: cannot open {}: {}",
-                        path.display(),
-                        e
-                    ));
+                    return Err(format!("trace_io: cannot open {}: {}", path.display(), e));
                 }
             },
             None => None,
@@ -243,7 +233,11 @@ impl StreamingSession {
     /// Cheap snapshot of running metrics, plus a copy of beliefs and goals.
     pub fn metrics_snapshot(
         &self,
-    ) -> (ReplayMetrics, BTreeMap<String, HexValue>, BTreeMap<String, Goal>) {
+    ) -> (
+        ReplayMetrics,
+        BTreeMap<String, HexValue>,
+        BTreeMap<String, Goal>,
+    ) {
         let metrics = self.compute_running_metrics();
         let beliefs = self.current_final_beliefs(&self.primary);
         let goals = self.primary.state.goals.clone();
@@ -337,13 +331,16 @@ impl StreamingSession {
         )
     }
 
-    fn current_final_beliefs(
-        &self,
-        loop_: &CognitiveLoop,
-    ) -> BTreeMap<String, HexValue> {
+    fn current_final_beliefs(&self, loop_: &CognitiveLoop) -> BTreeMap<String, HexValue> {
         self.touched_propositions
             .keys()
-            .filter_map(|prop| loop_.state.beliefs.get(prop).map(|p| (prop.clone(), p.value)))
+            .filter_map(|prop| {
+                loop_
+                    .state
+                    .beliefs
+                    .get(prop)
+                    .map(|p| (prop.clone(), p.value))
+            })
             .collect()
     }
 
@@ -411,6 +408,8 @@ fn build_loop(config: &SessionConfig, model: PriorityModel) -> CognitiveLoop {
     loop_.lie_dt = config.lie_dt;
     loop_.lie_alpha = config.lie_alpha;
     loop_.lambda_decay = config.lambda_decay;
+    loop_.use_swarm_consensus = config.use_swarm_consensus;
+    loop_.trust_model = config.trust_model;
     for goal in &config.initial_goals {
         loop_
             .state
@@ -420,6 +419,14 @@ fn build_loop(config: &SessionConfig, model: PriorityModel) -> CognitiveLoop {
                 g.status = status;
             }
         }
+    }
+    // Seed declared agents into the swarm so their roles are available
+    // to `consensus_with` from the very first vote. Sources that don't
+    // appear here are auto-created with a neutral role on first vote.
+    for seed in &config.initial_agents {
+        loop_
+            .swarm
+            .add_agent(hari_swarm::Agent::new(seed.id.clone(), seed.role.clone()));
     }
     loop_
 }
@@ -434,4 +441,3 @@ fn synth_session_id() -> String {
         .unwrap_or(0);
     format!("hari-{now}")
 }
-

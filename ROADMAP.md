@@ -159,16 +159,23 @@ Goal: make agent roles operational.
 
 Status: an opt-in `TrustModel::{Equal, RoleWeighted}` enum lives on `hari-swarm`, with `Equal` as the default to preserve current behavior bit-for-bit. Calling the new `Swarm::consensus_with(p, RoleWeighted)` weights each vote by the voter's `self_trust` and runs through the new `compute_consensus_weighted` (regression-pinned to match the unweighted version when weights are uniform). Calling the new `Swarm::process_all_with(RoleWeighted)` filters incoming belief messages whose recipient's `message_trust` is below the constant `MESSAGE_TRUST_THRESHOLD = 0.5`; filtered messages are surfaced via `InboxStats::filtered` for the minority-report metric. Six tests cover the new paths; 128 → 134 tests overall, all green.
 
-Delivered:
+Delivered (in `hari-swarm`):
 - `TrustModel::{Equal, RoleWeighted}` (default `Equal`).
 - `compute_consensus_weighted(votes, weights)` with the uniform-weights regression invariant pinned by `weighted_consensus_matches_unweighted_when_uniform`.
 - `Swarm::consensus_with` / `Swarm::process_all_with` and `Agent::process_inbox_with` returning `InboxStats { applied, filtered }`. Pre-existing `consensus()`, `process_all()`, `process_inbox()` keep their signatures and behavior — `Equal` is what they delegate to.
 - `MESSAGE_TRUST_THRESHOLD = 0.5` pinned by `message_trust_threshold_is_pinned`.
 
+Delivered (bridge into `hari-core`):
+- `SessionConfig` gains `use_swarm_consensus: bool` (default `false`), `trust_model: TrustModel` (default `Equal`), `initial_agents: Vec<InitialAgent>` (default empty). All three serde-default so existing JSON traces still parse.
+- `CognitiveLoop` gains `swarm: Swarm`, `trust_model: TrustModel`, `use_swarm_consensus: bool` with zero-behavior-change defaults.
+- `process_research_event` for `AgentVote` always records the vote into the swarm (auto-creating an agent with neutral role if the source isn't pre-declared); when `use_swarm_consensus` is on, the *perceived* value for the cognitive loop is `swarm.consensus_with(proposition, trust_model).consensus` rather than the raw vote. `BeliefUpdate` and `ExperimentResult` events are unchanged — they remain direct perceptions, not the swarm's responsibility.
+- Five new tests in `crates/hari-core/tests/phase7_swarm_bridge.rs` covering: default-mode regression on `swarm_dissent.json`, swarm population even when bridging is off, perceived-value-matches-consensus when bridging is on, `RoleWeighted` produces a different action stream than `Equal` on the same fixture with declared lopsided roles, and auto-creation of undeclared sources.
+
 Exit criteria status:
-- ✅ Agent roles change outcomes in measurable ways. The headline test `role_weighted_consensus_diverges_from_equal_when_trust_is_lopsided` shows a 1-high-trust + 3-low-trust dissent fixture moving from `Doubtful` (Equal) to `Contradictory` (RoleWeighted).
+- ✅ Agent roles change outcomes in measurable ways. The headline swarm-side test `role_weighted_consensus_diverges_from_equal_when_trust_is_lopsided` shows a 1-high-trust + 3-low-trust dissent fixture moving from `Doubtful` (Equal) to `Contradictory` (RoleWeighted). The bridge-side test `role_weighted_changes_outcomes_vs_equal_with_declared_initial_agents` shows the same effect propagating into the cognitive loop's action stream on `swarm_dissent.json`.
 - ✅ Reports can explain why one source was trusted more than another. The `InboxStats::filtered` count surfaces dropped low-trust messages; `consensus_with(RoleWeighted)` makes the weighting itself the explanation (it's a one-knob policy, not a black box).
-- ⏸ Track source reliability over repeated scenarios. Deferred — needs scenario-replay infra in `hari-core` that owns "what happened across N runs", not the swarm crate alone. Not blocked technically, just out of scope for this slice.
+- ✅ Bridge into the IX research-event boundary. `AgentVote` events now actually drive a swarm; `TrustModel` is reachable from the streaming protocol via `SessionConfig.trust_model`.
+- ⏸ Track source reliability over repeated scenarios. Still deferred — needs cross-session reliability tracking that the current single-session loop doesn't own. Not blocked technically; just out of scope for this slice.
 - ⏸ Distinguish consensus *strength* from raw agreement on the report side. The current `ConsensusResult.agreement` is intentionally a head count under both models (pinned by `agreement_ratio_remains_a_head_count_under_role_weighted`); a separate `weight_share` field is a small follow-up if it turns out to be useful.
 
 ## Phase 5: Cognition Integration — **complete (negative result)**

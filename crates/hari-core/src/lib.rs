@@ -40,7 +40,8 @@ pub mod protocol;
 pub mod session;
 
 pub use protocol::{
-    InitialGoal, RecommendationResponse, Request, Response, SessionConfig, ShadowCompare,
+    InitialAgent, InitialGoal, RecommendationResponse, Request, Response, SessionConfig,
+    ShadowCompare,
 };
 pub use session::{StreamingSession, TraceRecorder};
 
@@ -521,6 +522,19 @@ pub struct CognitiveLoop {
     /// `perception_hamiltonian` so the coefficient targets the same axis
     /// as the generator, even if `top_goal` shifts mid-replay.
     seeded_projection_axis: Option<usize>,
+    /// Phase 4-bridge: when an `AgentVote` event is processed, the vote
+    /// is always recorded into this swarm. Empty by default; agents are
+    /// auto-created on first vote with a neutral role
+    /// (`self_trust = 0.5`, `message_trust = 0.5`) unless declared
+    /// up-front via `SessionConfig::initial_agents`.
+    pub swarm: hari_swarm::Swarm,
+    /// `TrustModel` applied when computing swarm consensus (only consulted
+    /// if `use_swarm_consensus`). Defaults to `Equal`.
+    pub trust_model: hari_swarm::TrustModel,
+    /// When true, `AgentVote` events perceive the swarm consensus value
+    /// instead of the raw vote — closing the Phase 4 loop into the IX
+    /// pipeline. Default `false` preserves pre-bridge behavior.
+    pub use_swarm_consensus: bool,
 }
 
 impl CognitiveLoop {
@@ -553,6 +567,9 @@ impl CognitiveLoop {
             seeded_algebra: false,
             evolution_generator_count: 0,
             seeded_projection_axis: None,
+            swarm: hari_swarm::Swarm::new(),
+            trust_model: hari_swarm::TrustModel::Equal,
+            use_swarm_consensus: false,
         }
     }
 
@@ -635,9 +652,7 @@ impl CognitiveLoop {
         // (2) belief scaling — diagonal generator. Weights mirror the
         // canonical `HexValue` rank gradient: dim 0 (background) shrinks
         // slightly, the rest expand.
-        let scaling_weights: Vec<f64> = (0..d)
-            .map(|k| if k == 0 { -0.5 } else { 0.5 })
-            .collect();
+        let scaling_weights: Vec<f64> = (0..d).map(|k| if k == 0 { -0.5 } else { 0.5 }).collect();
         generators.push(SymmetryGroup::belief_scaling(d, &scaling_weights));
         // (3) goal projection toward the highest-priority goal's axis (or
         // axis 1 if no goals exist). Frozen at seed time and stored in
@@ -682,11 +697,7 @@ impl CognitiveLoop {
         let mut h_dim = vec![0.0_f64; d];
         let mut contradictory_total = 0.0_f64;
         for p in perceptions {
-            let dim = self
-                .state
-                .goal_axis(&p.proposition)
-                .unwrap_or(0)
-                .min(d - 1);
+            let dim = self.state.goal_axis(&p.proposition).unwrap_or(0).min(d - 1);
             match p.value {
                 HexValue::True | HexValue::Probable => h_dim[dim] += 1.0,
                 HexValue::Doubtful | HexValue::False => h_dim[dim] -= 1.0,
@@ -955,8 +966,7 @@ impl CognitiveLoop {
                                     .action_axis(&a)
                                     .unwrap_or(0)
                                     .min(attention.len().saturating_sub(1));
-                                let proj =
-                                    attention.get(axis).copied().unwrap_or(0.0);
+                                let proj = attention.get(axis).copied().unwrap_or(0.0);
                                 let base = 1.0;
                                 base * (1.0 + alpha * proj)
                             }
@@ -995,8 +1005,9 @@ impl CognitiveLoop {
     fn action_axis(&self, action: &Action) -> Option<usize> {
         let key = match action {
             Action::Investigate { topic } | Action::Retry { topic } => topic.as_str(),
-            Action::Accept { proposition, .. }
-            | Action::UpdateBelief { proposition, .. } => proposition.as_str(),
+            Action::Accept { proposition, .. } | Action::UpdateBelief { proposition, .. } => {
+                proposition.as_str()
+            }
             // Escalate, SendMessage, Wait, Log have no obvious axis — fall
             // back to dim 0 (the background axis), which matches the plan.
             _ => return Some(0),
@@ -1135,16 +1146,37 @@ impl CognitiveLoop {
                 value,
                 evidence,
             } => {
+                // Phase 4 bridge: always record the vote in the swarm.
+                // Auto-create the agent with a neutral role on first
+                // vote — explicit roles come from
+                // `SessionConfig::initial_agents`.
+                self.record_agent_vote(&event.source, proposition, *value);
+
+                // The value the cognitive loop *perceives* is the raw
+                // vote by default. When `use_swarm_consensus` is on, it
+                // is replaced by the swarm's consensus across all
+                // agents that have voted on this proposition so far,
+                // computed under `self.trust_model`.
+                let perceived_value = if self.use_swarm_consensus {
+                    self.swarm
+                        .consensus_with(proposition, self.trust_model)
+                        .consensus
+                } else {
+                    *value
+                };
+
                 self.perceive(Perception {
                     proposition: proposition.clone(),
-                    value: *value,
+                    value: perceived_value,
                     source: format!("vote:{}", event.source),
                     cycle: event.cycle,
                 });
                 let (cycle_actions, cycle_cycles) = self.cycle_raw();
                 actions.extend(cycle_actions);
                 action_cycles.extend(cycle_cycles);
-                let current_value = self.current_claim_value(proposition).unwrap_or(*value);
+                let current_value = self
+                    .current_claim_value(proposition)
+                    .unwrap_or(perceived_value);
                 for a in Self::recommend_for_claim(proposition, current_value) {
                     actions.push(a);
                     action_cycles.push(event.cycle);
@@ -1219,6 +1251,35 @@ impl CognitiveLoop {
 
     fn current_claim_value(&self, proposition: &str) -> Option<HexValue> {
         self.state.beliefs.get(proposition).map(|p| p.value)
+    }
+
+    /// Record an `AgentVote` into [`Self::swarm`]. The agent identified
+    /// by `source` is auto-created with a neutral role
+    /// (`self_trust = 0.5`, `message_trust = 0.5`) if not already
+    /// present. Subsequent votes from the same source overwrite that
+    /// agent's local belief on the proposition (the swarm's job is to
+    /// hold each voter's *latest* position, not a per-vote history).
+    ///
+    /// Public so test helpers and future tooling can drive votes
+    /// without going through `process_research_event`.
+    pub fn record_agent_vote(&mut self, source: &str, proposition: &str, value: HexValue) {
+        if self.swarm.agent(source).is_none() {
+            self.swarm.add_agent(hari_swarm::Agent::new(
+                source,
+                hari_swarm::AgentRole {
+                    name: "auto".to_string(),
+                    self_trust: 0.5,
+                    message_trust: 0.5,
+                },
+            ));
+        }
+        if let Some(agent) = self.swarm.agent_mut(source) {
+            if let Some(prop) = agent.beliefs.get_mut(proposition) {
+                prop.value = value;
+            } else {
+                agent.beliefs.add_proposition(proposition, value);
+            }
+        }
     }
 
     fn recommend_for_claim(proposition: &str, value: HexValue) -> Vec<Action> {
@@ -1375,9 +1436,7 @@ fn compute_metrics(
             if let Action::Escalate { reason, .. } = a {
                 if reason.contains("contradictory") || reason.contains("Contradictory") {
                     if let Some(ref prop) = prop_opt {
-                        first_contradictory
-                            .entry(prop.clone())
-                            .or_insert(cycle);
+                        first_contradictory.entry(prop.clone()).or_insert(cycle);
                     }
                 }
             }
@@ -1407,7 +1466,9 @@ fn compute_metrics(
             Some(p) => p.to_string(),
             None => continue,
         };
-        let Some(&start) = first_contradictory.get(&prop) else { continue };
+        let Some(&start) = first_contradictory.get(&prop) else {
+            continue;
+        };
         if cycle <= start {
             continue;
         }
@@ -1419,10 +1480,8 @@ fn compute_metrics(
         // - An event with a non-Contradictory value AND no Escalate-with-
         //   contradictory action (i.e. the belief network is no longer
         //   Contradictory after this event).
-        let cleared_by_retraction = matches!(
-            &o.event.payload,
-            ResearchEventPayload::Retraction { .. }
-        );
+        let cleared_by_retraction =
+            matches!(&o.event.payload, ResearchEventPayload::Retraction { .. });
         let still_contradictory = o.actions.iter().any(|a| {
             matches!(a, Action::Escalate { reason, .. }
                 if reason.contains("contradictory") || reason.contains("Contradictory"))
@@ -1453,13 +1512,16 @@ fn compute_metrics(
                         )
                 });
                 let final_value = final_beliefs.get(proposition).copied();
-                let became_contradictory =
-                    matches!(final_value, Some(HexValue::Contradictory));
+                let became_contradictory = matches!(final_value, Some(HexValue::Contradictory));
                 let flipped_polarity = match (*value, final_value) {
-                    (HexValue::True | HexValue::Probable,
-                     Some(HexValue::Doubtful | HexValue::False)) => true,
-                    (HexValue::Doubtful | HexValue::False,
-                     Some(HexValue::True | HexValue::Probable)) => true,
+                    (
+                        HexValue::True | HexValue::Probable,
+                        Some(HexValue::Doubtful | HexValue::False),
+                    ) => true,
+                    (
+                        HexValue::Doubtful | HexValue::False,
+                        Some(HexValue::True | HexValue::Probable),
+                    ) => true,
                     _ => false,
                 };
                 if later_retracted || became_contradictory || flipped_polarity {
@@ -1489,11 +1551,15 @@ fn compute_metrics(
     let mut last_value: BTreeMap<String, HexValue> = BTreeMap::new();
     for o in outcomes {
         let (prop, value) = match &o.event.payload {
-            ResearchEventPayload::BeliefUpdate { proposition, value, .. }
-            | ResearchEventPayload::ExperimentResult { proposition, value, .. }
-            | ResearchEventPayload::AgentVote { proposition, value, .. } => {
-                (proposition.clone(), *value)
+            ResearchEventPayload::BeliefUpdate {
+                proposition, value, ..
             }
+            | ResearchEventPayload::ExperimentResult {
+                proposition, value, ..
+            }
+            | ResearchEventPayload::AgentVote {
+                proposition, value, ..
+            } => (proposition.clone(), *value),
             ResearchEventPayload::Retraction { proposition, .. } => {
                 (proposition.clone(), HexValue::Unknown)
             }

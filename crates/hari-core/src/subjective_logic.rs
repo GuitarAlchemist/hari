@@ -184,10 +184,8 @@ impl Opinion {
         }
 
         let k = a.uncertainty + b.uncertainty - a.uncertainty * b.uncertainty;
-        let belief =
-            (a.belief * b.uncertainty + b.belief * a.uncertainty) / k;
-        let disbelief =
-            (a.disbelief * b.uncertainty + b.disbelief * a.uncertainty) / k;
+        let belief = (a.belief * b.uncertainty + b.belief * a.uncertainty) / k;
+        let disbelief = (a.disbelief * b.uncertainty + b.disbelief * a.uncertainty) / k;
         let uncertainty = (a.uncertainty * b.uncertainty) / k;
 
         let denom = a.uncertainty + b.uncertainty - 2.0 * a.uncertainty * b.uncertainty;
@@ -390,11 +388,7 @@ struct SubjectiveLogicState {
 }
 
 impl SubjectiveLogicState {
-    fn opinion_for(
-        &mut self,
-        proposition: &str,
-        cfg: &SubjectiveLogicConfig,
-    ) -> &mut Opinion {
+    fn opinion_for(&mut self, proposition: &str, cfg: &SubjectiveLogicConfig) -> &mut Opinion {
         self.opinions
             .entry(proposition.to_string())
             .or_insert_with(|| Opinion::vacuous(cfg.default_base_rate))
@@ -524,8 +518,8 @@ fn process_event(
             value,
             evidence,
         } => {
-            let fresh = Opinion::from_hex(*value, cfg.default_base_rate)
-                .discounted(cfg.agent_vote_weight);
+            let fresh =
+                Opinion::from_hex(*value, cfg.default_base_rate).discounted(cfg.agent_vote_weight);
             let running = *state.opinion_for(proposition, cfg);
             let fused = Opinion::cumulative_fuse(running, fresh);
             *state.opinion_for(proposition, cfg) = fused;
@@ -592,10 +586,7 @@ fn process_event(
 
     let state_summary = {
         let prop_opt = event.payload.proposition().map(|p| p.to_string());
-        match prop_opt
-            .as_ref()
-            .and_then(|p| state.opinions.get(p))
-        {
+        match prop_opt.as_ref().and_then(|p| state.opinions.get(p)) {
             Some(op) => format!(
                 "SL[{}]: b={:.2} d={:.2} u={:.2} a={:.2} P={:.3}",
                 prop_opt.unwrap_or_else(|| "?".into()),
