@@ -1,0 +1,86 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-runner-prompt-eval",
+      "payload": {
+        "type": "goal_update",
+        "key": "alpha-prompt-helps",
+        "description": "Prompt variant alpha improves pass rate",
+        "priority": 0.85,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-runner-tool-bench",
+      "payload": {
+        "type": "goal_update",
+        "key": "beta-tool-stable",
+        "description": "Tool bench beta is statistically stable",
+        "priority": 0.7,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "alpha-prompt-helps",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "humaneval-paraphrased",
+          "runs": 5,
+          "delta_pass_rate": 0.04,
+          "note": "alpha prompt outperforms baseline by 4 points across 5 runs"
+        }
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "beta-tool-stable",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "tool-bench-v2",
+          "runs": 3,
+          "variance": 0.18,
+          "note": "tool latency std-dev exceeds threshold; results unreliable"
+        }
+      }
+    },
+    {
+      "cycle": 5,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "beta-tool-stable",
+        "value": "Unknown",
+        "evidence": {
+          "benchmark": "tool-bench-v2",
+          "runs": 7,
+          "note": "follow-up sweep is inconclusive — needs additional investigation"
+        }
+      }
+    },
+    {
+      "cycle": 8,
+      "source": "ix-agent-replicator",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "alpha-prompt-helps",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "humaneval-paraphrased",
+          "runs": 8,
+          "delta_pass_rate": -0.02,
+          "note": "later replication run reverses sign — possibly contaminated"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "benchmark-x-is-reliable",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "benchmark-x",
+          "runs": 5,
+          "note": "stable pass-rate across initial runs"
+        }
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "benchmark-x-is-reliable",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "benchmark-x",
+          "runs": 3,
+          "note": "result changes after prompt paraphrase"
+        }
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-runner",
+      "payload": {
+        "type": "retraction",
+        "proposition": "benchmark-x-is-reliable",
+        "reason": "one evaluation run used stale artifacts"
+      }
+    }
+  ]
+}

@@ -91,6 +91,57 @@ impl SymmetryGroup {
     pub fn identity(&self) -> DMatrix<f64> {
         DMatrix::identity(self.dimension, self.dimension)
     }
+
+    /// Construct a skew-symmetric "attention rotation" generator coupling
+    /// dimensions `i` and `j`.
+    ///
+    /// The resulting matrix `G` satisfies `G^T = -G` and rotates the (i, j)
+    /// plane: `G[i,j] = -1`, `G[j,i] = +1`. Exponentiating it produces a
+    /// rotation in the i–j subspace, leaving other dimensions untouched.
+    ///
+    /// Returns the zero matrix when `i == j` so callers do not have to
+    /// special-case degenerate goal axes.
+    pub fn attention_rotation(d: usize, i: usize, j: usize) -> DMatrix<f64> {
+        assert!(i < d && j < d, "rotation indices out of range");
+        let mut m = DMatrix::zeros(d, d);
+        if i == j {
+            return m;
+        }
+        m[(i, j)] = -1.0;
+        m[(j, i)] = 1.0;
+        m
+    }
+
+    /// Construct a diagonal "belief scaling" generator weighted by a vector
+    /// of per-dimension scalars (typically derived from `HexValue` ranks).
+    ///
+    /// The result is a `d x d` diagonal matrix whose `(k, k)` entry is
+    /// `weights[k]`. When the supplied weight vector is shorter than `d`,
+    /// missing entries default to zero; longer vectors are truncated.
+    pub fn belief_scaling(d: usize, weights: &[f64]) -> DMatrix<f64> {
+        let mut m = DMatrix::zeros(d, d);
+        for k in 0..d {
+            m[(k, k)] = weights.get(k).copied().unwrap_or(0.0);
+        }
+        m
+    }
+
+    /// Construct a "goal projection" generator `e_t e_t^T - I/d`.
+    ///
+    /// This pulls cognitive state toward the `target` axis while subtracting
+    /// the trace-preserving mean so the generator is traceless. It is not
+    /// idempotent (matrix exponentials of traceless generators are
+    /// volume-preserving in spirit).
+    pub fn goal_projection(d: usize, target: usize) -> DMatrix<f64> {
+        assert!(target < d, "projection target out of range");
+        let mut m = DMatrix::zeros(d, d);
+        m[(target, target)] = 1.0;
+        let mean = 1.0 / d as f64;
+        for k in 0..d {
+            m[(k, k)] -= mean;
+        }
+        m
+    }
 }
 
 impl fmt::Display for SymmetryGroup {
@@ -529,6 +580,63 @@ mod tests {
         assert!((evo.time - 0.1).abs() < 1e-12);
         evo.step(&[1.0]);
         assert!((evo.time - 0.2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_attention_rotation_is_skew_symmetric() {
+        let g = SymmetryGroup::attention_rotation(4, 0, 2);
+        let gt = g.transpose();
+        let sum = &g + &gt;
+        for v in sum.iter() {
+            assert!(v.abs() < 1e-12, "rotation generator should satisfy G^T = -G");
+        }
+        // Off-axis pairs are zero.
+        assert_eq!(g[(1, 1)], 0.0);
+        assert_eq!(g[(0, 1)], 0.0);
+        // The active pair is anti-symmetric.
+        assert_eq!(g[(0, 2)], -1.0);
+        assert_eq!(g[(2, 0)], 1.0);
+    }
+
+    #[test]
+    fn test_attention_rotation_self_pair_is_zero() {
+        let g = SymmetryGroup::attention_rotation(3, 1, 1);
+        for v in g.iter() {
+            assert_eq!(*v, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_belief_scaling_is_diagonal() {
+        let g = SymmetryGroup::belief_scaling(3, &[0.5, -1.0, 2.0]);
+        for r in 0..3 {
+            for c in 0..3 {
+                if r != c {
+                    assert!(g[(r, c)].abs() < 1e-12, "off-diagonal must be zero");
+                }
+            }
+        }
+        assert_eq!(g[(0, 0)], 0.5);
+        assert_eq!(g[(1, 1)], -1.0);
+        assert_eq!(g[(2, 2)], 2.0);
+    }
+
+    #[test]
+    fn test_belief_scaling_short_weights_pad_with_zero() {
+        let g = SymmetryGroup::belief_scaling(4, &[1.0, 2.0]);
+        assert_eq!(g[(0, 0)], 1.0);
+        assert_eq!(g[(1, 1)], 2.0);
+        assert_eq!(g[(2, 2)], 0.0);
+        assert_eq!(g[(3, 3)], 0.0);
+    }
+
+    #[test]
+    fn test_goal_projection_is_traceless() {
+        let g = SymmetryGroup::goal_projection(4, 2);
+        let trace: f64 = (0..4).map(|k| g[(k, k)]).sum();
+        assert!(trace.abs() < 1e-12, "projection generator must be traceless");
+        // Target axis carries the bulk of the projection.
+        assert!(g[(2, 2)] > 0.0, "target diagonal entry should be positive");
     }
 
     #[test]
