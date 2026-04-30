@@ -199,16 +199,17 @@ Workflow:
 6. IX uses that recommendation to continue, retry, or escalate.
 ```
 
-Status: streaming protocol implemented (commit `80eef21`). `hari-core serve` runs a synchronous stdio JSONL session; `replay --session <file>` produces byte-identical reproduction of recorded sessions. Smoke-tested end-to-end. The streaming layer reuses `process_research_event` verbatim — no parallel cognitive codepath. Design recorded in `docs/research/phase6-design.md`.
+Status: streaming protocol implemented (commit `80eef21`). `hari-core serve` runs a synchronous stdio JSONL session; `replay --session <file>` produces byte-identical reproduction of recorded sessions. Subprocess-level integration coverage (`crates/hari-core/tests/phase6_serve_subprocess.rs`) drives the binary over real stdio across the golden path and the dispatcher error branches (`already_open`, `no_session`, `invalid_json`, EOF mid-session). A stdlib-only Python reference client (`clients/ix_reference/`) demonstrates the protocol from outside the Rust workspace and is what an IX maintainer would copy as a starting point. The streaming layer reuses `process_research_event` verbatim — no parallel cognitive codepath. Design recorded in `docs/research/phase6-design.md`.
 
 Exit criteria status:
 - ✅ IX can run an autoresearch trace with and without Hari (via `hari-core serve` or `replay --compare3`).
-- ⏸ Hari-assisted runs vs. baseline IX runs comparison: requires a real IX-side client to drive the protocol; not done.
+- ✅ Binary entry point exercised over stdio (the dispatcher in `main.rs::handle_request` is now under test, not just the in-process `StreamingSession`).
+- ✅ Reference client exists out-of-tree (Python, stdlib-only) and has been smoke-tested end-to-end on `cognition_divergence.json` for `Flat`, `Lie`, and shadow-comparison modes.
+- ⏸ Hari-assisted runs vs. baseline IX runs comparison: requires real IX-side autoresearch to actually drive the protocol against real benchmarks; not done.
 - ⏸ Results report suitable for roadmap decisions: not done.
 
 What's NOT yet implemented as part of Phase 6:
-- An IX-side reference client.
-- A test suite that actually runs IX's autoresearch loop end-to-end against `hari-core serve`.
+- A real IX-side autoresearch loop driving `hari-core serve` end-to-end against actual benchmarks (vs. fixtures). The reference client in `clients/ix_reference/` proves the wire works; producing data that informs the Cognition Substrate Choice still needs IX itself.
 - Authenticated / multi-tenant deployment (explicitly out of scope per the design doc).
 
 ## Open: Cognition Substrate Choice
