@@ -247,7 +247,17 @@ Delivered:
 Out of scope for this slice (deliberate):
 - Rule-based / Datalog-style multi-premise inference (only pairwise `Supports`/`Contradicts`/`Implies` for now).
 - Withdrawal / reversal of declared relations (append-only).
-- Provenance tracking — derived beliefs don't yet carry a "derived from X via Y" record. The propagation Log is the only audit trail at the moment.
+
+### Phase 8 follow-up: derivation provenance — **shipped**
+
+Every derived belief now carries a structured `Derivation { proposition, previous_value, new_value, contributions, round }` record on the `ResearchEventOutcome`, plus a per-derivation `Action::Log` for human-readable observability. Each `Contribution { source, source_value, relation, contributed_value }` records the edge that fed into the combined value, including the post-NOT value for `Contradicts` so consumers don't have to re-apply the lattice rule.
+
+Delivered:
+- `hari_lattice::Derivation` and `hari_lattice::Contribution` types (Serialize/Deserialize, public).
+- `BeliefNetwork::propagate_with_provenance() -> (usize, Vec<Derivation>)` and `propagate_until_stable_with_provenance(max) -> (usize, Vec<Derivation>)`, both alongside the existing trust-blind `propagate*` methods.
+- `ResearchEventOutcome::derivations: Vec<Derivation>` with `#[serde(default, skip_serializing_if = "Vec::is_empty")]` — keeps existing JSON traces byte-equal (no `derivations` field appears when the list is empty).
+- The previously redundant single-round `BeliefNetwork::propagate()` call inside `cycle_raw` was removed. All propagation now happens once-and-only-once at the end of `process_research_event` through the with-provenance API, so the audit trail is complete by construction.
+- 6 new tests in `phase8_provenance.rs` covering the multi-hop chain, per-derivation Log emission, regression on relation-free fixtures, JSON skip-empty behavior, and the `Contradicts` post-NOT contribution rule.
 
 ## Near-Term Milestone
 

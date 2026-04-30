@@ -614,6 +614,9 @@ fn process_event(
         event,
         actions,
         state_summary,
+        // SL operates on Opinion fusion, not the BeliefNetwork — no
+        // belief-graph derivations apply.
+        derivations: Vec::new(),
     }
 }
 

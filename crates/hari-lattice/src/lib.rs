@@ -219,6 +219,41 @@ pub enum Relation {
     Implies,
 }
 
+/// One edge's contribution to a single derived value, captured during
+/// provenance-bearing propagation.
+///
+/// `contributed_value` is the *value the edge fed into
+/// `combine_evidence`*, which is the source value for `Supports`,
+/// `NOT(source)` for `Contradicts`, and the source value for `Implies`
+/// — the latter only present when the antecedent was True/Probable
+/// (silent implications are not recorded).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Contribution {
+    pub source: String,
+    pub source_value: HexValue,
+    pub relation: Relation,
+    pub contributed_value: HexValue,
+}
+
+/// A single belief change produced by a propagation round, with the
+/// edge contributions that combined into the new value. The vehicle
+/// for forward-reasoning provenance: an IX consumer can read a
+/// `Vec<Derivation>` and reconstruct the audit chain that led to any
+/// derived belief.
+///
+/// `round` is 1-indexed: round 1 = changes derived directly from
+/// already-set values; round 2 = changes derived from round-1
+/// derivations; etc. Multi-hop chains read as monotonically
+/// increasing rounds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Derivation {
+    pub proposition: String,
+    pub previous_value: HexValue,
+    pub new_value: HexValue,
+    pub contributions: Vec<Contribution>,
+    pub round: usize,
+}
+
 /// A proposition node in the belief network.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Proposition {
@@ -325,6 +360,10 @@ impl BeliefNetwork {
     /// - Implies: if A is True/Probable, B is joined with A's value
     ///
     /// Returns the number of nodes whose values changed.
+    ///
+    /// This is the trust-blind / provenance-blind path; if you need a
+    /// per-derivation audit trail call [`Self::propagate_with_provenance`]
+    /// instead — same algorithm, additional structured output.
     pub fn propagate(&mut self) -> usize {
         // Collect updates first to avoid borrow issues
         let mut updates: Vec<(NodeIndex, HexValue)> = Vec::new();
@@ -373,6 +412,107 @@ impl BeliefNetwork {
             self.graph[idx].value = value;
         }
         changed
+    }
+
+    /// Provenance-bearing variant of [`Self::propagate`].
+    ///
+    /// Runs the same single-round algorithm, but for every node whose
+    /// value changes records a [`Derivation`] capturing the
+    /// `(previous_value, new_value)` pair plus a [`Contribution`] for
+    /// each incoming edge that fed into the combined value (including
+    /// edges that contributed `Unknown`, so callers can audit "was
+    /// this edge silent or did it actually fire?").
+    ///
+    /// Returns `(changed_count, derivations)` where
+    /// `derivations.len() == changed_count` — each changed node yields
+    /// exactly one derivation record.
+    pub fn propagate_with_provenance(&mut self) -> (usize, Vec<Derivation>) {
+        let mut updates: Vec<(NodeIndex, HexValue, Vec<Contribution>, HexValue)> = Vec::new();
+        let node_indices: Vec<NodeIndex> = self.graph.node_indices().collect();
+        for &target in &node_indices {
+            let mut incoming_values: Vec<HexValue> = Vec::new();
+            let mut contribs: Vec<Contribution> = Vec::new();
+            let edge_indices: Vec<_> = self.graph.edge_indices().collect();
+            for edge_idx in edge_indices {
+                let (src, tgt) = self.graph.edge_endpoints(edge_idx).unwrap();
+                if tgt != target {
+                    continue;
+                }
+                let source_value = self.graph[src].value;
+                let relation = *self.graph.edge_weight(edge_idx).unwrap();
+                let contribution = match relation {
+                    Relation::Supports => source_value,
+                    Relation::Contradicts => HexValue::not(source_value),
+                    Relation::Implies => {
+                        if matches!(source_value, HexValue::True | HexValue::Probable) {
+                            source_value
+                        } else {
+                            // Implication is silent on non-true antecedents — record nothing.
+                            continue;
+                        }
+                    }
+                };
+                incoming_values.push(contribution);
+                contribs.push(Contribution {
+                    source: self.graph[src].label.clone(),
+                    source_value,
+                    relation,
+                    contributed_value: contribution,
+                });
+            }
+            if incoming_values.is_empty() {
+                continue;
+            }
+            let current = self.graph[target].value;
+            let combined = incoming_values
+                .into_iter()
+                .fold(current, HexLattice::combine_evidence);
+            if combined != current {
+                updates.push((target, combined, contribs, current));
+            }
+        }
+        let changed = updates.len();
+        let mut derivations = Vec::with_capacity(changed);
+        for (idx, value, contributions, previous_value) in updates {
+            let proposition = self.graph[idx].label.clone();
+            self.graph[idx].value = value;
+            derivations.push(Derivation {
+                proposition,
+                previous_value,
+                new_value: value,
+                contributions,
+                round: 0, // round filled in by `propagate_until_stable_with_provenance`
+            });
+        }
+        (changed, derivations)
+    }
+
+    /// Provenance-bearing variant of [`Self::propagate_until_stable`].
+    ///
+    /// Returns `(iterations, derivations)`:
+    /// - `iterations`: same semantics as [`Self::propagate_until_stable`]
+    ///   (1 if there was nothing to do; N+1 if changes happened in
+    ///   rounds 1..N and round N+1 confirmed convergence).
+    /// - `derivations`: every per-node change across all rounds, in
+    ///   the order they were applied. Each `Derivation::round` records
+    ///   which round (1-indexed) produced it, so multi-hop chains are
+    ///   readable as a sequence.
+    pub fn propagate_until_stable_with_provenance(
+        &mut self,
+        max_iterations: usize,
+    ) -> (usize, Vec<Derivation>) {
+        let mut all_derivations: Vec<Derivation> = Vec::new();
+        for i in 0..max_iterations {
+            let (changed, mut derivs) = self.propagate_with_provenance();
+            for d in derivs.iter_mut() {
+                d.round = i + 1;
+            }
+            all_derivations.append(&mut derivs);
+            if changed == 0 {
+                return (i + 1, all_derivations);
+            }
+        }
+        (max_iterations, all_derivations)
     }
 
     /// Run propagation until convergence or max iterations.
@@ -644,6 +784,80 @@ mod tests {
         let changed = net.propagate();
         assert_eq!(changed, 1);
         assert_eq!(net.get("hypothesis").unwrap().value, HexValue::True);
+    }
+
+    #[test]
+    fn propagate_with_provenance_records_each_hop() {
+        // 2-hop chain: a -Implies-> b -Supports-> c. Drive a True,
+        // expect two derivations: one for b in round 1, one for c in
+        // round 2. Each must carry its incoming contributions.
+        let mut net = BeliefNetwork::new();
+        net.declare_relation("a", "b", Relation::Implies);
+        net.declare_relation("b", "c", Relation::Supports);
+        net.get_mut("a").unwrap().value = HexValue::True;
+
+        let (rounds, derivations) = net.propagate_until_stable_with_provenance(10);
+        // Convergence: r1 derives b, r2 derives c, r3 confirms zero-change.
+        assert_eq!(rounds, 3, "two productive rounds + one zero-change round");
+        assert_eq!(derivations.len(), 2);
+
+        let by_prop: HashMap<String, Derivation> = derivations
+            .iter()
+            .cloned()
+            .map(|d| (d.proposition.clone(), d))
+            .collect();
+
+        let b_deriv = by_prop.get("b").expect("b must be derived");
+        assert_eq!(b_deriv.previous_value, HexValue::Unknown);
+        assert_eq!(b_deriv.new_value, HexValue::True);
+        assert_eq!(b_deriv.round, 1);
+        assert_eq!(b_deriv.contributions.len(), 1);
+        assert_eq!(b_deriv.contributions[0].source, "a");
+        assert_eq!(b_deriv.contributions[0].relation, Relation::Implies);
+        assert_eq!(b_deriv.contributions[0].source_value, HexValue::True);
+        assert_eq!(b_deriv.contributions[0].contributed_value, HexValue::True);
+
+        let c_deriv = by_prop.get("c").expect("c must be derived in round 2");
+        assert_eq!(c_deriv.round, 2, "c is derived AFTER b — round 2");
+        assert_eq!(c_deriv.contributions[0].source, "b");
+        assert_eq!(c_deriv.contributions[0].relation, Relation::Supports);
+    }
+
+    #[test]
+    fn propagate_with_provenance_returns_empty_on_edge_less_graph() {
+        let mut net = BeliefNetwork::new();
+        net.add_proposition("only", HexValue::True);
+        let (rounds, derivations) = net.propagate_until_stable_with_provenance(10);
+        assert_eq!(rounds, 1, "single zero-change round");
+        assert!(derivations.is_empty());
+    }
+
+    #[test]
+    fn propagate_with_provenance_records_contradicts_contribution() {
+        // Contribution records the contributed_value AFTER NOT() is
+        // applied for Contradicts, so consumers don't have to
+        // reconstruct the rule.
+        let mut net = BeliefNetwork::new();
+        net.declare_relation("anomaly", "stable", Relation::Contradicts);
+        net.get_mut("anomaly").unwrap().value = HexValue::True;
+        // Pre-set stable so combine_evidence(True, NOT(True)=False) = Contradictory.
+        net.get_mut("stable").unwrap().value = HexValue::True;
+
+        let (_, derivations) = net.propagate_until_stable_with_provenance(10);
+        let stable_deriv = derivations
+            .iter()
+            .find(|d| d.proposition == "stable")
+            .expect("stable must derive");
+        assert_eq!(stable_deriv.new_value, HexValue::Contradictory);
+        let contrib = &stable_deriv.contributions[0];
+        assert_eq!(contrib.source, "anomaly");
+        assert_eq!(contrib.relation, Relation::Contradicts);
+        assert_eq!(contrib.source_value, HexValue::True);
+        assert_eq!(
+            contrib.contributed_value,
+            HexValue::False,
+            "Contradicts contributes NOT(source) = NOT(True) = False"
+        );
     }
 
     #[test]

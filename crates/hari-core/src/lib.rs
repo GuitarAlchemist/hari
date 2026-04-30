@@ -293,6 +293,14 @@ pub struct ResearchEventOutcome {
     pub actions: Vec<Action>,
     /// Human-readable state summary after the event.
     pub state_summary: String,
+    /// Phase-8 forward-reasoning provenance: every belief change
+    /// produced by `propagate_until_stable_with_provenance` after this
+    /// event, in chronological round order. Empty when no relations
+    /// have been declared (and skipped from JSON via
+    /// `skip_serializing_if`) so legacy fixtures and recorded sessions
+    /// stay byte-equal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub derivations: Vec<hari_lattice::Derivation>,
 }
 
 /// Replayable IX/autoresearch trace.
@@ -872,11 +880,15 @@ impl CognitiveLoop {
         }
 
         // --- THINK ---
-        // Run belief propagation
-        let propagation_changes = self.state.beliefs.propagate();
-        if propagation_changes > 0 {
-            tracing::info!("Belief propagation changed {} nodes", propagation_changes);
-        }
+        // Belief propagation moved out of cycle_raw and into the
+        // end-of-event provenance pass in `process_research_event`
+        // (Phase 8). Doing it once-and-only-once at the end means
+        // every derivation flows through `propagate_until_stable_with_provenance`
+        // and gets recorded on the outcome. Pre-Phase-8 fixtures
+        // declared no relations, so removing this no-op pre-step
+        // changes no observable behavior on them — but keeps the
+        // provenance audit trail complete for fixtures that DO
+        // declare relations.
 
         // Evolve cognitive state when the Lie path is active. This is the
         // load-bearing replacement for the dead `if let Some(ref mut evo)`
@@ -1296,17 +1308,39 @@ impl CognitiveLoop {
         }
 
         // Phase 8 reasoning: after every event, run belief propagation
-        // through the network. On networks with no declared relations
-        // this is a single no-op iteration. When propagation actually
-        // fires (≥2 iterations: at least one round did work, then a
-        // zero-change round confirmed convergence) we surface a Log so
-        // IX can see derivation happened.
-        let propagation_rounds = self.state.beliefs.propagate_until_stable(10);
+        // through the network with provenance. On networks with no
+        // declared relations this is a single no-op iteration. When
+        // propagation actually fires (≥2 iterations: at least one round
+        // did work, then a zero-change round confirmed convergence) we
+        // surface (a) a one-line Log for human-readable observability,
+        // (b) one Log per derived proposition naming its sources, and
+        // (c) a structured `derivations` list on the outcome for
+        // programmatic auditability.
+        let (propagation_rounds, derivations) = self
+            .state
+            .beliefs
+            .propagate_until_stable_with_provenance(10);
         if propagation_rounds > 1 {
             actions.push(Action::Log(format!(
                 "Propagated beliefs in {propagation_rounds} rounds"
             )));
             action_cycles.push(event.cycle);
+            for d in &derivations {
+                let sources: Vec<String> = d
+                    .contributions
+                    .iter()
+                    .map(|c| format!("{}({:?},{:?})", c.source, c.relation, c.source_value))
+                    .collect();
+                actions.push(Action::Log(format!(
+                    "Derived '{}': {:?} -> {:?} (round {}) from [{}]",
+                    d.proposition,
+                    d.previous_value,
+                    d.new_value,
+                    d.round,
+                    sources.join(", ")
+                )));
+                action_cycles.push(event.cycle);
+            }
         }
 
         // Single scoring pass for the whole event so the priority model can
@@ -1323,6 +1357,7 @@ impl CognitiveLoop {
             event,
             actions: final_actions,
             state_summary: self.state.summary(),
+            derivations,
         }
     }
 
