@@ -34,6 +34,17 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 // ---------------------------------------------------------------------------
+// Phase 6 — IX autoresearch streaming integration
+// ---------------------------------------------------------------------------
+pub mod protocol;
+pub mod session;
+
+pub use protocol::{
+    InitialGoal, RecommendationResponse, Request, Response, SessionConfig, ShadowCompare,
+};
+pub use session::{StreamingSession, TraceRecorder};
+
+// ---------------------------------------------------------------------------
 // PriorityModel — strategy enum used by score_actions
 // ---------------------------------------------------------------------------
 
@@ -198,6 +209,15 @@ pub enum ResearchEventPayload {
         priority: f64,
         status: Option<HexValue>,
     },
+}
+
+impl ResearchEvent {
+    /// Owned copy of the proposition this event targets, if any. Used by
+    /// the streaming layer to track touched propositions without
+    /// borrowing the event past `process_research_event` consumption.
+    pub fn payload_proposition_owned(&self) -> Option<String> {
+        self.payload.proposition().map(str::to_string)
+    }
 }
 
 /// Result of applying one research event to the cognitive loop.
@@ -1213,7 +1233,7 @@ impl CognitiveLoop {
 }
 
 impl ResearchEventPayload {
-    fn proposition(&self) -> Option<&str> {
+    pub(crate) fn proposition(&self) -> Option<&str> {
         match self {
             Self::BeliefUpdate { proposition, .. }
             | Self::ExperimentResult { proposition, .. }
@@ -1244,7 +1264,7 @@ pub fn action_kind(action: &Action) -> &'static str {
 /// Two action lists are "equivalent" if their sequence of kinds (ignoring
 /// inner data) matches. Used for divergence detection between two priority
 /// models so we don't flag spurious differences in `Action::Log` text.
-fn action_lists_equivalent(a: &[Action], b: &[Action]) -> bool {
+pub(crate) fn action_lists_equivalent(a: &[Action], b: &[Action]) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -1293,6 +1313,20 @@ pub fn compare_replay(trace: ResearchTrace) -> ResearchReplayReport {
         }),
         ..experimental_report
     }
+}
+
+/// Public alias of [`compute_metrics`] for crate-internal callers like
+/// `StreamingSession` that need to compute running/final metrics over an
+/// outcome list outside the [`CognitiveLoop`] codepath. This is the
+/// same function the batch path uses — there is intentionally no
+/// parallel metric implementation. See `phase6-design.md` §7.
+pub fn compute_metrics_for(
+    outcomes: &[ResearchEventOutcome],
+    final_beliefs: &BTreeMap<String, HexValue>,
+    final_goals: &BTreeMap<String, Goal>,
+    attention_norm_max: f64,
+) -> ReplayMetrics {
+    compute_metrics(outcomes, final_beliefs, final_goals, attention_norm_max)
 }
 
 /// Compute the aggregate metrics over a finished replay.
