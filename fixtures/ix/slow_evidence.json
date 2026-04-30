@@ -1,0 +1,274 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-runner-summarization",
+      "payload": {
+        "type": "goal_update",
+        "key": "alpha-baseline-cal",
+        "description": "Baseline summarizer is correctly calibrated (control goal, axis 0)",
+        "priority": 0.95,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 1,
+      "source": "ix-runner-summarization",
+      "payload": {
+        "type": "goal_update",
+        "key": "iota-summary-faithful",
+        "description": "Summarization variant iota produces faithful summaries",
+        "priority": 0.9,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "alpha-baseline-cal",
+        "value": "True",
+        "evidence": {
+          "benchmark": "factscore-baseline-cal",
+          "runs": 25,
+          "delta_factscore": 0.001,
+          "note": "baseline is correctly calibrated against gold"
+        }
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-agent-replicator-1",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "alpha-baseline-cal",
+        "value": "True",
+        "evidence": {
+          "benchmark": "factscore-baseline-cal-replication",
+          "runs": 30,
+          "note": "baseline calibration replicates"
+        }
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "iota-summary-faithful",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "factscore-news",
+          "runs": 3,
+          "delta_factscore": 0.02,
+          "note": "small initial signal — iota slightly more faithful"
+        }
+      }
+    },
+    {
+      "cycle": 6,
+      "source": "ix-agent-replicator-1",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "iota-summary-faithful",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "factscore-news",
+          "runs": 5,
+          "delta_factscore": 0.025,
+          "note": "consistent with cycle-4 signal"
+        }
+      }
+    },
+    {
+      "cycle": 8,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "iota-summary-faithful",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "factscore-wiki",
+          "runs": 4,
+          "delta_factscore": 0.018,
+          "note": "different corpus, similar magnitude"
+        }
+      }
+    },
+    {
+      "cycle": 10,
+      "source": "ix-agent-replicator-2",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "iota-summary-faithful",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "factscore-news",
+          "runs": 8,
+          "delta_factscore": 0.029,
+          "note": "larger N, signal stable"
+        }
+      }
+    },
+    {
+      "cycle": 12,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "iota-summary-faithful",
+        "value": "Probable",
+        "evidence": {
+          "voter_role": "critic",
+          "confidence": 0.62,
+          "note": "critic notes effect is small but consistent"
+        }
+      }
+    },
+    {
+      "cycle": 14,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "iota-summary-faithful",
+        "value": "True",
+        "evidence": {
+          "benchmark": "factscore-news-extended",
+          "runs": 16,
+          "delta_factscore": 0.034,
+          "note": "first True-grade evidence — extended N pushes over threshold"
+        }
+      }
+    },
+    {
+      "cycle": 16,
+      "source": "ix-agent-replicator-3",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "iota-summary-faithful",
+        "value": "True",
+        "evidence": {
+          "benchmark": "factscore-wiki-extended",
+          "runs": 20,
+          "delta_factscore": 0.031,
+          "note": "wiki corpus also confirms at extended N"
+        }
+      }
+    },
+    {
+      "cycle": 18,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "iota-summary-faithful",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "factscore-conversational",
+          "runs": 6,
+          "delta_factscore": 0.014,
+          "note": "weaker signal on dialogue corpus, still positive"
+        }
+      }
+    },
+    {
+      "cycle": 20,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "iota-summary-faithful",
+        "value": "True",
+        "evidence": {
+          "benchmark": "factscore-news-very-large",
+          "runs": 40,
+          "delta_factscore": 0.030,
+          "note": "very large N, tight CI, clear advantage"
+        }
+      }
+    },
+    {
+      "cycle": 22,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "iota-summary-faithful",
+        "value": "True",
+        "evidence": {
+          "voter_role": "critic",
+          "confidence": 0.81,
+          "note": "critic now convinced after rounds of confirming evidence"
+        }
+      }
+    },
+    {
+      "cycle": 24,
+      "source": "ix-agent-replicator-1",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "iota-summary-faithful",
+        "value": "True",
+        "evidence": {
+          "benchmark": "factscore-cross-domain",
+          "runs": 30,
+          "delta_factscore": 0.027,
+          "note": "cross-domain replication confirms"
+        }
+      }
+    },
+    {
+      "cycle": 26,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "iota-summary-faithful",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "factscore-clinical",
+          "runs": 7,
+          "delta_factscore": 0.012,
+          "note": "clinical text smaller effect"
+        }
+      }
+    },
+    {
+      "cycle": 28,
+      "source": "ix-agent-replicator-2",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "iota-summary-faithful",
+        "value": "True",
+        "evidence": {
+          "benchmark": "factscore-clinical-extended",
+          "runs": 24,
+          "delta_factscore": 0.025,
+          "note": "clinical advantage materialises at larger N"
+        }
+      }
+    },
+    {
+      "cycle": 30,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "iota-summary-faithful",
+        "value": "True",
+        "evidence": {
+          "voter_role": "integrator",
+          "confidence": 0.88,
+          "note": "integrator consolidates: iota is faithful across 5 corpora"
+        }
+      }
+    },
+    {
+      "cycle": 32,
+      "source": "ix-runner-summarization",
+      "payload": {
+        "type": "goal_update",
+        "key": "iota-summary-faithful",
+        "description": "Summarization variant iota produces faithful summaries",
+        "priority": 0.9,
+        "status": "True"
+      }
+    }
+  ]
+}

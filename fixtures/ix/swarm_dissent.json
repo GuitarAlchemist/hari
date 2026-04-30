@@ -1,0 +1,310 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-runner-consensus",
+      "payload": {
+        "type": "goal_update",
+        "key": "alpha-router-baseline",
+        "description": "Baseline router calibration goal (axis 0)",
+        "priority": 0.95,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-runner-consensus",
+      "payload": {
+        "type": "goal_update",
+        "key": "omicron-router-better",
+        "description": "Router omicron beats baseline on long-context routing",
+        "priority": 0.85,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-runner-consensus",
+      "payload": {
+        "type": "goal_update",
+        "key": "pi-router-cheaper",
+        "description": "Router pi serves at lower cost than baseline",
+        "priority": 0.7,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "alpha-router-baseline",
+        "value": "True",
+        "evidence": {
+          "benchmark": "router-baseline-cal",
+          "runs": 20,
+          "match_rate": 0.97,
+          "note": "baseline router calibration confirmed"
+        }
+      }
+    },
+    {
+      "cycle": 5,
+      "source": "ix-agent-replicator-1",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "alpha-router-baseline",
+        "value": "True",
+        "evidence": {
+          "benchmark": "router-baseline-replication",
+          "runs": 30,
+          "match_rate": 0.96,
+          "note": "baseline calibration replicates"
+        }
+      }
+    },
+    {
+      "cycle": 6,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "alpha-router-baseline",
+        "value": "True",
+        "evidence": {
+          "benchmark": "router-baseline-stress",
+          "runs": 25,
+          "match_rate": 0.95,
+          "note": "stable across stress conditions"
+        }
+      }
+    },
+    {
+      "cycle": 7,
+      "source": "ix-agent-explorer",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Probable",
+        "evidence": {
+          "voter_role": "explorer",
+          "confidence": 0.6,
+          "note": "explorer optimistic about omicron based on early signal"
+        }
+      }
+    },
+    {
+      "cycle": 8,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "critic",
+          "confidence": 0.7,
+          "note": "critic finds the eval set narrow; expects effect to shrink"
+        }
+      }
+    },
+    {
+      "cycle": 9,
+      "source": "ix-agent-integrator",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "integrator",
+          "confidence": 0.65,
+          "note": "integrator weights critic over explorer"
+        }
+      }
+    },
+    {
+      "cycle": 10,
+      "source": "ix-agent-guardian",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "guardian",
+          "confidence": 0.55,
+          "note": "guardian concerned about variance"
+        }
+      }
+    },
+    {
+      "cycle": 11,
+      "source": "ix-agent-replicator-2",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "omicron-router-better",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "long-context-routing-v2",
+          "runs": 14,
+          "delta_accuracy": 0.012,
+          "note": "wider eval shrinks effect to noise"
+        }
+      }
+    },
+    {
+      "cycle": 12,
+      "source": "ix-agent-explorer-secondary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Probable",
+        "evidence": {
+          "voter_role": "explorer",
+          "confidence": 0.7,
+          "note": "second explorer still optimistic"
+        }
+      }
+    },
+    {
+      "cycle": 13,
+      "source": "ix-agent-critic-secondary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "pi-router-cheaper",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "critic",
+          "confidence": 0.75,
+          "note": "second critic doubts pi cost claims; flags cold-start cost"
+        }
+      }
+    },
+    {
+      "cycle": 14,
+      "source": "ix-agent-evaluator-secondary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Probable",
+        "evidence": {
+          "voter_role": "evaluator",
+          "confidence": 0.68,
+          "note": "second evaluator agrees omicron looks marginally better"
+        }
+      }
+    },
+    {
+      "cycle": 15,
+      "source": "ix-agent-guardian-secondary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "pi-router-cheaper",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "guardian",
+          "confidence": 0.6,
+          "note": "guardian also doubts pi"
+        }
+      }
+    },
+    {
+      "cycle": 16,
+      "source": "ix-agent-replicator-3",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "pi-router-cheaper",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "router-cost-trace",
+          "runs": 18,
+          "cost_delta": 0.04,
+          "note": "pi marginally cheaper, not enough to clear threshold"
+        }
+      }
+    },
+    {
+      "cycle": 18,
+      "source": "ix-agent-integrator-secondary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "integrator",
+          "confidence": 0.62,
+          "note": "second integrator flips to doubtful on omicron"
+        }
+      }
+    },
+    {
+      "cycle": 19,
+      "source": "ix-agent-explorer-tertiary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Probable",
+        "evidence": {
+          "voter_role": "explorer",
+          "confidence": 0.55,
+          "note": "third explorer still hopeful — small camp"
+        }
+      }
+    },
+    {
+      "cycle": 20,
+      "source": "ix-agent-critic-tertiary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "critic",
+          "confidence": 0.78,
+          "note": "third critic confidence rising"
+        }
+      }
+    },
+    {
+      "cycle": 22,
+      "source": "ix-agent-replicator-1",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "omicron-router-better",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "long-context-routing-cross-domain",
+          "runs": 26,
+          "delta_accuracy": 0.005,
+          "note": "cross-domain replication confirms small effect"
+        }
+      }
+    },
+    {
+      "cycle": 24,
+      "source": "ix-agent-guardian-tertiary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "guardian",
+          "confidence": 0.7,
+          "note": "third guardian solidifies doubtful camp"
+        }
+      }
+    },
+    {
+      "cycle": 26,
+      "source": "ix-agent-integrator-tertiary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "omicron-router-better",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "integrator",
+          "confidence": 0.68,
+          "note": "consensus settling on Doubtful after extended dissent"
+        }
+      }
+    }
+  ]
+}

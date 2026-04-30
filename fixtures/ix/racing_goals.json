@@ -1,0 +1,287 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-runner-orchestrator",
+      "payload": {
+        "type": "goal_update",
+        "key": "kappa-tool-fast",
+        "description": "Tool kappa serves p99 under 200ms",
+        "priority": 0.95,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 1,
+      "source": "ix-runner-orchestrator",
+      "payload": {
+        "type": "goal_update",
+        "key": "lambda-tool-correct",
+        "description": "Tool lambda agrees with golden labels",
+        "priority": 0.85,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-runner-orchestrator",
+      "payload": {
+        "type": "goal_update",
+        "key": "mu-tool-cheap",
+        "description": "Tool mu cost per call under $0.001",
+        "priority": 0.65,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-runner-orchestrator",
+      "payload": {
+        "type": "goal_update",
+        "key": "nu-tool-safe",
+        "description": "Tool nu has zero unsafe outputs",
+        "priority": 0.75,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "kappa-tool-fast",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "latency-p99",
+          "runs": 8,
+          "p99_ms": 187,
+          "note": "kappa hits target on small-N"
+        }
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "kappa-tool-fast",
+        "value": "True",
+        "evidence": {
+          "benchmark": "latency-p99",
+          "runs": 12,
+          "p99_ms": 178,
+          "note": "kappa hits target consistently"
+        }
+      }
+    },
+    {
+      "cycle": 5,
+      "source": "ix-agent-replicator-1",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "kappa-tool-fast",
+        "value": "True",
+        "evidence": {
+          "benchmark": "latency-p99-replication",
+          "runs": 20,
+          "p99_ms": 184,
+          "note": "kappa fast confirmed at larger N"
+        }
+      }
+    },
+    {
+      "cycle": 6,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "kappa-tool-fast",
+        "value": "True",
+        "evidence": {
+          "benchmark": "latency-p99-cross-region",
+          "runs": 18,
+          "p99_ms": 192,
+          "note": "kappa stays under target across regions"
+        }
+      }
+    },
+    {
+      "cycle": 7,
+      "source": "ix-runner-orchestrator",
+      "payload": {
+        "type": "goal_update",
+        "key": "kappa-tool-fast",
+        "description": "Tool kappa serves p99 under 200ms",
+        "priority": 0.95,
+        "status": "True"
+      }
+    },
+    {
+      "cycle": 8,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "mu-tool-cheap",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "cost-trace",
+          "runs": 15,
+          "cost_per_call_usd": 0.0024,
+          "note": "mu over budget by 2.4x"
+        }
+      }
+    },
+    {
+      "cycle": 9,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "lambda-tool-correct",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "golden-set-match",
+          "runs": 8,
+          "match_rate": 0.79,
+          "note": "lambda below acceptance threshold"
+        }
+      }
+    },
+    {
+      "cycle": 10,
+      "source": "ix-runner-orchestrator",
+      "payload": {
+        "type": "goal_update",
+        "key": "xi-tool-private",
+        "description": "Tool xi: zero PII leakage in outputs (added late)",
+        "priority": 0.92,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 11,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "lambda-tool-correct",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "golden-set-extended",
+          "runs": 30,
+          "match_rate": 0.91,
+          "note": "lambda match rate improves on extended set"
+        }
+      }
+    },
+    {
+      "cycle": 12,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "nu-tool-safe",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "safety-redteam",
+          "runs": 10,
+          "unsafe_rate": 0.018,
+          "note": "nu fails 1.8% — over the zero target"
+        }
+      }
+    },
+    {
+      "cycle": 14,
+      "source": "ix-runner-orchestrator",
+      "payload": {
+        "type": "goal_update",
+        "key": "lambda-tool-correct",
+        "description": "Tool lambda agrees with golden labels",
+        "priority": 0.85,
+        "status": "Probable"
+      }
+    },
+    {
+      "cycle": 15,
+      "source": "ix-agent-replicator-2",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "xi-tool-private",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "pii-scan",
+          "runs": 8,
+          "leak_rate": 0.012,
+          "note": "xi leaks PII in 1.2% of outputs — fails goal"
+        }
+      }
+    },
+    {
+      "cycle": 17,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "nu-tool-safe",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "safety-redteam-adversarial",
+          "runs": 22,
+          "unsafe_rate": 0.014,
+          "note": "adversarial probes find more unsafe outputs"
+        }
+      }
+    },
+    {
+      "cycle": 19,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "mu-tool-cheap",
+        "value": "False",
+        "evidence": {
+          "benchmark": "cost-trace-extended",
+          "runs": 40,
+          "cost_per_call_usd": 0.0031,
+          "note": "mu confirmed too expensive — goal will not be met"
+        }
+      }
+    },
+    {
+      "cycle": 21,
+      "source": "ix-agent-replicator-3",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "xi-tool-private",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "pii-scan-stress",
+          "runs": 18,
+          "leak_rate": 0.009,
+          "note": "xi still leaks under stress — unresolved"
+        }
+      }
+    },
+    {
+      "cycle": 23,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "kappa-tool-fast",
+        "value": "True",
+        "evidence": {
+          "voter_role": "guardian",
+          "confidence": 0.9,
+          "note": "guardian confirms kappa goal stays satisfied"
+        }
+      }
+    },
+    {
+      "cycle": 25,
+      "source": "ix-runner-orchestrator",
+      "payload": {
+        "type": "goal_update",
+        "key": "mu-tool-cheap",
+        "description": "Tool mu cost per call under $0.001",
+        "priority": 0.4,
+        "status": "False"
+      }
+    }
+  ]
+}

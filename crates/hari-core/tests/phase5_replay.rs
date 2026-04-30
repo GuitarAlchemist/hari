@@ -254,6 +254,73 @@ fn long_recovery_fixture_populates_contradiction_recovery_metric() {
 }
 
 #[test]
+fn all_fixtures_satisfy_check_contract() {
+    // Roll-up guard: for every IX trace fixture in `fixtures/ix/*.json`,
+    // running `compare_replay` must satisfy the same contract the
+    // `check-phase5-done.sh` script enforces — non-empty action_divergence
+    // and both attention norms strictly under 10.0.
+    //
+    // The pre-existing `conflicting_benchmark.json` fixture is too short
+    // (3 events, single proposition, no goal_updates) to drive the
+    // algebra past the suppression threshold and is exempted from the
+    // divergence requirement; the boundedness contract still applies.
+    // It is the only fixture exempted; any new fixture authored under
+    // Phase 5+ MUST diverge under the seeded defaults.
+    let fixtures_dir = std::path::Path::new("../../fixtures/ix");
+    let entries = std::fs::read_dir(fixtures_dir)
+        .expect("fixtures/ix directory must exist");
+
+    let mut checked = 0usize;
+    for entry in entries {
+        let entry = entry.expect("readable directory entry");
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let path_str = path.to_string_lossy().to_string();
+        let trace = load_trace(&path_str);
+        let report = compare_replay(trace);
+        let comparison = report.comparison.unwrap_or_else(|| {
+            panic!("compare_replay must populate comparison for {path_str}")
+        });
+
+        // Boundedness — every fixture, including conflicting_benchmark.
+        assert!(
+            comparison.baseline.attention_norm_max < 10.0,
+            "{path_str}: baseline attention_norm_max must stay under 10.0 (got {})",
+            comparison.baseline.attention_norm_max
+        );
+        assert!(
+            comparison.experimental.attention_norm_max < 10.0,
+            "{path_str}: experimental attention_norm_max must stay under 10.0 (got {})",
+            comparison.experimental.attention_norm_max
+        );
+
+        // Divergence — required for every fixture except the legacy
+        // conflicting_benchmark trivial case. New Phase-5 fixtures must
+        // produce at least one divergence so the check-script contract
+        // is verifiable on the full suite.
+        let is_legacy_short = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s == "conflicting_benchmark.json")
+            .unwrap_or(false);
+        if !is_legacy_short {
+            assert!(
+                !comparison.action_divergence.is_empty(),
+                "{path_str}: action_divergence must be non-empty for Phase-5+ fixtures"
+            );
+        }
+
+        checked += 1;
+    }
+    assert!(
+        checked >= 5,
+        "expected to check at least 5 fixtures (long_recovery + 4 rollup + conflicting_benchmark + cognition_divergence); checked {checked}"
+    );
+}
+
+#[test]
 fn lie_and_recency_agree_on_retraction_event() {
     // The plan specifies that on a Retraction event both priority models
     // should produce a Retry recommendation — that's not where we expect

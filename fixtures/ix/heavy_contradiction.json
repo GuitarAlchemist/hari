@@ -1,0 +1,223 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-runner-suite",
+      "payload": {
+        "type": "goal_update",
+        "key": "delta-rag-helps",
+        "description": "RAG variant delta improves grounding",
+        "priority": 0.85,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-runner-suite",
+      "payload": {
+        "type": "goal_update",
+        "key": "epsilon-cot-helps",
+        "description": "Chain-of-thought epsilon improves accuracy",
+        "priority": 0.75,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-runner-suite",
+      "payload": {
+        "type": "goal_update",
+        "key": "zeta-self-consistency",
+        "description": "Self-consistency zeta improves reliability",
+        "priority": 0.65,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "delta-rag-helps",
+        "value": "True",
+        "evidence": {
+          "benchmark": "rag-truthfulqa",
+          "runs": 9,
+          "delta_pass_rate": 0.11,
+          "note": "delta retrieval clearly outperforms baseline"
+        }
+      }
+    },
+    {
+      "cycle": 5,
+      "source": "ix-agent-replicator-1",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "delta-rag-helps",
+        "value": "True",
+        "evidence": {
+          "benchmark": "rag-truthfulqa-replication",
+          "runs": 14,
+          "delta_pass_rate": 0.09,
+          "note": "independent rerun confirms delta gain"
+        }
+      }
+    },
+    {
+      "cycle": 6,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "epsilon-cot-helps",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "gsm8k",
+          "runs": 6,
+          "delta_pass_rate": -0.02,
+          "note": "epsilon weak on math word problems — first epsilon evidence is negative"
+        }
+      }
+    },
+    {
+      "cycle": 7,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "zeta-self-consistency",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "self-consistency-bench",
+          "runs": 4,
+          "note": "majority-vote sampling regresses on small-N"
+        }
+      }
+    },
+    {
+      "cycle": 9,
+      "source": "ix-agent-replicator-2",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "delta-rag-helps",
+        "value": "False",
+        "evidence": {
+          "benchmark": "rag-truthfulqa-adversarial",
+          "runs": 11,
+          "delta_pass_rate": -0.13,
+          "note": "adversarial passages flip delta's sign — produces Contradictory"
+        }
+      }
+    },
+    {
+      "cycle": 11,
+      "source": "ix-agent-replicator-2",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "epsilon-cot-helps",
+        "value": "True",
+        "evidence": {
+          "benchmark": "gsm8k-paraphrased",
+          "runs": 14,
+          "delta_pass_rate": 0.06,
+          "note": "epsilon recovers on paraphrased math — produces Contradictory"
+        }
+      }
+    },
+    {
+      "cycle": 13,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "zeta-self-consistency",
+        "value": "True",
+        "evidence": {
+          "benchmark": "self-consistency-bench-large",
+          "runs": 18,
+          "note": "advantage materializes at larger N — produces Contradictory with cycle-7 Doubtful"
+        }
+      }
+    },
+    {
+      "cycle": 15,
+      "source": "ix-runner",
+      "payload": {
+        "type": "retraction",
+        "proposition": "delta-rag-helps",
+        "reason": "adversarial passage corpus had label leakage — withdrawing cycle-9 result; clears delta Contradictory"
+      }
+    },
+    {
+      "cycle": 16,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "delta-rag-helps",
+        "value": "Probable",
+        "evidence": {
+          "benchmark": "rag-truthfulqa-clean",
+          "runs": 14,
+          "delta_pass_rate": 0.07,
+          "note": "rerun without contaminated passages — delta recovers"
+        }
+      }
+    },
+    {
+      "cycle": 18,
+      "source": "ix-agent-replicator-3",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "epsilon-cot-helps",
+        "value": "Doubtful",
+        "evidence": {
+          "benchmark": "gsm8k-mixed",
+          "runs": 25,
+          "delta_pass_rate": -0.01,
+          "note": "epsilon stays Contradictory — no clean retraction available"
+        }
+      }
+    },
+    {
+      "cycle": 20,
+      "source": "ix-agent-critic",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "zeta-self-consistency",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "critic",
+          "confidence": 0.7,
+          "note": "critic still skeptical — zeta remains Contradictory"
+        }
+      }
+    },
+    {
+      "cycle": 22,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "delta-rag-helps",
+        "value": "True",
+        "evidence": {
+          "benchmark": "rag-truthfulqa-extended",
+          "runs": 35,
+          "delta_pass_rate": 0.10,
+          "note": "large-N rerun confirms delta — only proposition that fully recovered"
+        }
+      }
+    },
+    {
+      "cycle": 24,
+      "source": "ix-agent-secondary",
+      "payload": {
+        "type": "agent_vote",
+        "proposition": "epsilon-cot-helps",
+        "value": "Doubtful",
+        "evidence": {
+          "voter_role": "guardian",
+          "confidence": 0.6,
+          "note": "guardian votes against epsilon — unresolved"
+        }
+      }
+    }
+  ]
+}
