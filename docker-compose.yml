@@ -1,0 +1,41 @@
+version: '3.8'
+
+# Sandboxed run of `hari-core` for research replays. The compose file
+# defines a single service because `hari-swarm` is library-only — there
+# is no `hari-swarm` binary to run separately. Trust-aware swarm
+# behavior is reachable from inside `hari-core` via
+# `SessionConfig.{trust_model, use_swarm_consensus, initial_agents}`
+# (see `crates/hari-core/src/protocol.rs`).
+#
+# Default CMD runs the 10-cycle demo from `crates/hari-core/src/main.rs`.
+# To use the streaming protocol instead, override the command:
+#
+#   docker compose run --rm hari-core ./hari-core serve
+#
+# Or to replay a recorded fixture:
+#
+#   docker compose run --rm hari-core ./hari-core replay /path/in/container.json
+
+services:
+  hari-core:
+    build: .
+    container_name: hari-core
+    mem_limit: 4g
+    cpus: 2.0
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+    environment:
+      - RUST_LOG=info
+    volumes:
+      - hari-state:/home/hari/state
+    networks:
+      - hari-net
+    restart: unless-stopped
+
+volumes:
+  hari-state:
+
+networks:
+  hari-net:
+    driver: bridge

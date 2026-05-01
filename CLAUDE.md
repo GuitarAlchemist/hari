@@ -67,4 +67,4 @@ hari-core     (depends on all three)      — CognitiveLoop, ResearchEvent bound
 
 ## Docker
 
-`docker-compose.yml` defines `hari-core` and `hari-swarm` services. **Note**: there is currently no `hari-swarm` binary — the swarm crate is library-only and the compose service references a missing binary. This is a known issue tracked in Phase 0 of the roadmap. Don't be surprised; either fix it as part of your task or leave it alone, but don't paper over it by adding a stub binary unless that's the intent.
+`docker-compose.yml` defines a single `hari-core` service (sandboxed: 4G mem cap, 2 CPUs, read-only fs, tmpfs `/tmp`). The default CMD runs the 10-cycle demo; override with `docker compose run --rm hari-core ./hari-core serve` to expose the streaming protocol or `... ./hari-core replay <path>` for fixture replays. `hari-swarm` is **library-only by design** — its capabilities are reachable from `hari-core` via `SessionConfig.{trust_model, use_swarm_consensus, initial_agents}`, so there's no separate binary or compose service for it.

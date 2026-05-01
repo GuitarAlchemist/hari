@@ -59,23 +59,17 @@ GA can provide domain context and scenario material:
 - Expected outcomes for benchmark scenarios.
 - Qualitative review of research usefulness.
 
-## Phase 0: Stabilize The Repo
+## Phase 0: Stabilize The Repo — **complete**
 
 Goal: make the project buildable and honest.
 
-Tasks:
+Status: all exit criteria met.
 
-- Fix the current `hari-swarm` build failure by initializing `Agent::cognitive_state`.
-- Decide whether `hari-swarm` is library-only or needs a binary.
-- Align Docker Compose with actual binaries.
-- Ensure `cargo test --all` passes.
-- Keep README status synchronized with actual behavior.
-
-Exit criteria:
-
-- `cargo test --all` passes.
-- The default run path works.
-- Docker configuration does not reference missing binaries.
+- ✅ `Agent::cognitive_state` initialization fixed; `hari-swarm` builds clean.
+- ✅ Decision: `hari-swarm` is **library-only**. Its capabilities are reachable from `hari-core` via `SessionConfig.{trust_model, use_swarm_consensus, initial_agents}` since the Phase 4 bridge — there's no separate binary or compose service for it.
+- ✅ `docker-compose.yml` aligned with actual binaries: single `hari-core` service, no missing-binary references.
+- ✅ `cargo test --all` passes (159 tests across 11 suites at the time of writing).
+- ✅ The default run path (`cargo run --release -p hari-core`) executes the 10-cycle demo cleanly.
 
 ## Phase 1: Scenario Runner
 
