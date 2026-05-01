@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs when a new commit lands on the same ref —
+# avoids piling up redundant builds while a feature branch is iterating.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Enforced today: workspace builds + cargo test --all.
+# NOT enforced today (deliberate, to be tightened in a follow-up):
+#   - cargo fmt --check    pre-existing drift in some legacy files
+#                          would fail; needs a one-time cleanup pass.
+#   - cargo clippy -D warnings
+#                          pre-existing advisory warnings exist
+#                          (manual Option::map, matches! style,
+#                          loop indexing in hari-cognition; dead
+#                          from_rank in hari-lattice). Same story.
+
+jobs:
+  test:
+    name: cargo test --all (ubuntu-latest, stable)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + build
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo build --workspace --all-targets
+        run: cargo build --workspace --all-targets
+
+      - name: cargo test --all
+        run: cargo test --all
