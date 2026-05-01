@@ -381,14 +381,25 @@ fn hex_value_for_opinion(op: &Opinion, cfg: &SubjectiveLogicConfig) -> HexValue 
 /// Internal SL state: per-proposition running opinions plus the goal map
 /// (mirrored from the trace so the rollup's `goal_completion_rate`
 /// metric has something to read).
+///
+/// `pub(crate)` so `CognitiveLoop` can hold an instance and route
+/// `process_research_event` to [`process_event`] when
+/// `priority_model == PriorityModel::SubjectiveLogic`. External
+/// consumers should still go through
+/// [`process_research_trace_subjective_logic`] or pick the
+/// `SubjectiveLogic` variant on `SessionConfig.priority_model`.
 #[derive(Debug, Default)]
-struct SubjectiveLogicState {
-    opinions: BTreeMap<String, Opinion>,
-    goals: BTreeMap<String, Goal>,
+pub(crate) struct SubjectiveLogicState {
+    pub(crate) opinions: BTreeMap<String, Opinion>,
+    pub(crate) goals: BTreeMap<String, Goal>,
 }
 
 impl SubjectiveLogicState {
-    fn opinion_for(&mut self, proposition: &str, cfg: &SubjectiveLogicConfig) -> &mut Opinion {
+    pub(crate) fn opinion_for(
+        &mut self,
+        proposition: &str,
+        cfg: &SubjectiveLogicConfig,
+    ) -> &mut Opinion {
         self.opinions
             .entry(proposition.to_string())
             .or_insert_with(|| Opinion::vacuous(cfg.default_base_rate))
@@ -472,7 +483,10 @@ pub fn process_research_trace_subjective_logic(
     }
 }
 
-fn process_event(
+/// Process a single research event through the SL pipeline. Used by
+/// both the standalone trace runner and `CognitiveLoop`'s
+/// `PriorityModel::SubjectiveLogic` short-circuit branch.
+pub(crate) fn process_event(
     state: &mut SubjectiveLogicState,
     event: ResearchEvent,
     cfg: &SubjectiveLogicConfig,

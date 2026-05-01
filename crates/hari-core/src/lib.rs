@@ -74,7 +74,10 @@ pub use subjective_logic::{
 /// matters. `Lie` stays in the codebase as an opt-in research knob —
 /// the experimental Lie-algebra path is no longer privileged but is
 /// preserved so its instrumented attributes (interpretability,
-/// continuity, commutativity) can still be studied.
+/// continuity, commutativity) can still be studied. `SubjectiveLogic`
+/// routes around the action-scoring abstraction entirely (it has its
+/// own Opinion-fusion decision pipeline) — it's reached via a
+/// short-circuit branch at the top of `process_research_event`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PriorityModel {
     /// All actions get priority 1.0; original order preserved.
@@ -86,6 +89,15 @@ pub enum PriorityModel {
     /// `priority = base * (1 + alpha * proj(attention, action_axis))`.
     /// Opt-in research knob; not the default.
     Lie,
+    /// Subjective Logic prior-art baseline (Jøsang 2016). Cumulative
+    /// fusion of per-proposition Opinions; recommendations driven by
+    /// projected probability and uncertainty thresholds rather than
+    /// the hexavalent action-scoring ladder. `process_research_event`
+    /// short-circuits to the SL pipeline at the top when this is set,
+    /// bypassing perception integration, swarm bridging, belief
+    /// propagation, and the `score_actions_with_cycles` step — none
+    /// of which the SL pipeline uses or needs.
+    SubjectiveLogic,
 }
 
 impl Default for PriorityModel {
@@ -595,6 +607,13 @@ pub struct CognitiveLoop {
     /// instead of the raw vote — closing the Phase 4 loop into the IX
     /// pipeline. Default `false` preserves pre-bridge behavior.
     pub use_swarm_consensus: bool,
+    /// SL config used when `priority_model == SubjectiveLogic`. Ignored
+    /// otherwise. Defaults to `SubjectiveLogicConfig::default()`.
+    pub sl_config: subjective_logic::SubjectiveLogicConfig,
+    /// SL state, lazily allocated on the first event under
+    /// `PriorityModel::SubjectiveLogic`. Stays `None` for non-SL
+    /// runs so the per-loop memory footprint is unchanged.
+    sl_state: Option<subjective_logic::SubjectiveLogicState>,
 }
 
 impl CognitiveLoop {
@@ -630,6 +649,8 @@ impl CognitiveLoop {
             swarm: hari_swarm::Swarm::new(),
             trust_model: hari_swarm::TrustModel::Equal,
             use_swarm_consensus: false,
+            sl_config: subjective_logic::SubjectiveLogicConfig::default(),
+            sl_state: None,
         }
     }
 
@@ -1042,6 +1063,12 @@ impl CognitiveLoop {
                     })
                     .collect()
             }
+            // SubjectiveLogic short-circuits at the top of
+            // `process_research_event`; if we got here something is
+            // structurally wrong with the dispatch.
+            PriorityModel::SubjectiveLogic => {
+                unreachable!("SubjectiveLogic must short-circuit before action scoring")
+            }
         };
 
         // Stable sort by score descending — preserves original order for
@@ -1148,6 +1175,18 @@ impl CognitiveLoop {
     /// the divergence between `Lie` and `RecencyDecay` since the
     /// `Investigate`-vs-`Wait` decision lands here.
     pub fn process_research_event(&mut self, event: ResearchEvent) -> ResearchEventOutcome {
+        // Subjective Logic short-circuit. SL is structurally unlike the
+        // hexavalent action-scoring path: it fuses Opinions and emits
+        // recommendations from projected probability + uncertainty
+        // thresholds, with no perception buffer, no swarm bridging, no
+        // BeliefNetwork propagation, and no `score_actions_with_cycles`
+        // step. So we dispatch to its own pipeline and return its
+        // outcome directly, leaving the hexavalent state untouched.
+        if matches!(self.priority_model, PriorityModel::SubjectiveLogic) {
+            let state = self.sl_state.get_or_insert_with(Default::default);
+            return subjective_logic::process_event(state, event, &self.sl_config);
+        }
+
         let mut actions: Vec<Action> = Vec::new();
         let mut action_cycles: Vec<u64> = Vec::new();
 
