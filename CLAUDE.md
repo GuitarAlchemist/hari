@@ -14,7 +14,7 @@ Cargo workspace at the repo root. Toolchain: Rust 1.85+ (the Dockerfile pins `ru
 
 ```bash
 cargo build --release                         # Build all crates
-cargo run --release -p hari-core              # Run the scripted 10-cycle demo
+cargo run --release -p hari-core              # Substrate-decision demo (Phase 4 + 8 capabilities)
 cargo run --release -p hari-core -- replay fixtures/ix/conflicting_benchmark.json
                                               # Replay an IX research trace, emit JSON report to stdout
 cargo test --all                              # Run all tests across the workspace
@@ -25,7 +25,7 @@ cargo fmt --all
 docker-compose up hari-core                   # Sandboxed run (read-only fs, mem/cpu limits)
 ```
 
-The `hari-core` binary has two modes selected by the first positional argument: no args runs the scripted simulation; `replay <path>` deserializes a `ResearchTrace` (object form) or a bare `Vec<ResearchEvent>` (array form) and emits a `ResearchReplayReport` as pretty JSON. When adding new event types, update both `parse_trace` paths.
+The `hari-core` binary has three modes selected by the first positional argument: no args runs the **substrate-decision demo** (`run_substrate_decision_demo` in `main.rs` — a self-referential scripted scenario showing Hari tracking claims about its own Phase 5 substrate decision via `RelationDeclaration` + `AgentVote` events under `TrustModel::RoleWeighted`); `replay <path>` deserializes a `ResearchTrace` (object form) or a bare `Vec<ResearchEvent>` (array form) and emits a `ResearchReplayReport` as pretty JSON; `serve` runs the Phase 6 stdio JSONL streaming protocol. When adding new event types, update both `parse_trace` paths.
 
 ## Architecture
 
@@ -67,4 +67,4 @@ hari-core     (depends on all three)      — CognitiveLoop, ResearchEvent bound
 
 ## Docker
 
-`docker-compose.yml` defines a single `hari-core` service (sandboxed: 4G mem cap, 2 CPUs, read-only fs, tmpfs `/tmp`). The default CMD runs the 10-cycle demo; override with `docker compose run --rm hari-core ./hari-core serve` to expose the streaming protocol or `... ./hari-core replay <path>` for fixture replays. `hari-swarm` is **library-only by design** — its capabilities are reachable from `hari-core` via `SessionConfig.{trust_model, use_swarm_consensus, initial_agents}`, so there's no separate binary or compose service for it.
+`docker-compose.yml` defines a single `hari-core` service (sandboxed: 4G mem cap, 2 CPUs, read-only fs, tmpfs `/tmp`). The default CMD runs the substrate-decision demo; override with `docker compose run --rm hari-core ./hari-core serve` to expose the streaming protocol or `... ./hari-core replay <path>` for fixture replays. `hari-swarm` is **library-only by design** — its capabilities are reachable from `hari-core` via `SessionConfig.{trust_model, use_swarm_consensus, initial_agents}`, so there's no separate binary or compose service for it.

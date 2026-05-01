@@ -3,11 +3,12 @@
 //! Main binary that demonstrates the cognitive loop with all subsystems.
 
 use hari_core::{
-    compare_replay, compare_replay_three_way, Action, CognitiveLoop, Perception, Request, Response,
-    ResearchEvent, ResearchTrace, StreamingSession, SubjectiveLogicConfig,
+    compare_replay, compare_replay_three_way, Action, CognitiveLoop, PriorityModel, Request,
+    ResearchEvent, ResearchEventPayload, ResearchTrace, Response, StreamingSession,
+    SubjectiveLogicConfig,
 };
-use hari_lattice::HexValue;
-use hari_swarm::{Agent, AgentRole, Message, MessagePayload, Swarm};
+use hari_lattice::{HexValue, Relation};
+use hari_swarm::{Agent, AgentRole, TrustModel};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::{env, fs, process};
 use tracing::{info, warn};
@@ -38,7 +39,10 @@ fn main() {
             }
             i += 1;
         }
-        let exclusive_count = [compare, compare3, session_mode].iter().filter(|x| **x).count();
+        let exclusive_count = [compare, compare3, session_mode]
+            .iter()
+            .filter(|x| **x)
+            .count();
         if exclusive_count > 1 {
             eprintln!(
                 "hari-core replay: --compare, --compare3, and --session are mutually exclusive"
@@ -80,160 +84,253 @@ fn main() {
         .with_target(false)
         .init();
 
-    info!("=== Project Hari — Cognitive-State Research Sandbox ===");
-    info!("Initializing cognitive systems...");
+    run_substrate_decision_demo();
+}
 
-    // --- Initialize the cognitive loop ---
-    let mut cognitive_loop = CognitiveLoop::new(4);
+/// Self-referential demo: Hari tracks the Phase 5 substrate decision
+/// as a set of claims, with the four canonical agents voting and
+/// declared relations driving derivation.
+///
+/// This is *not* Hari researching itself — Hari is the substrate;
+/// the experiment author (the human + Claude in real life, this
+/// hard-coded `events` Vec in the demo) is external. What it shows
+/// is that the post-Phase-8 substrate can hold and reason about
+/// claims of any kind, including claims about its own configuration.
+///
+/// Uses `PriorityModel::Flat` so every action shows up in the demo
+/// output. The post-Phase-5 default is `RecencyDecay`, under which
+/// log-only events (e.g., relation declarations on their own) get
+/// suppressed to `Wait`. Switch via `with_model(...)` for production
+/// use.
+fn run_substrate_decision_demo() {
+    info!("=== Project Hari — substrate-decision demo ===");
+    info!("Hari tracks claims about its own Phase 5 substrate decision:");
+    info!("  - the original Lie hypothesis");
+    info!("  - the SL prior-art finding that disconfirmed it");
+    info!("  - the demote-Lie / RecencyDecay-default conclusion");
+    info!("Provenance + trust-aware consensus drive the derivation.");
 
-    // Set up goals
-    cognitive_loop.state.add_goal(
-        "understand-environment",
-        "Build model of the environment",
-        0.8,
-    );
-    cognitive_loop
-        .state
-        .add_goal("maintain-coherence", "Keep beliefs consistent", 0.9);
+    let mut loop_ = CognitiveLoop::with_model(4, PriorityModel::Flat);
+    loop_.use_swarm_consensus = true;
+    loop_.trust_model = TrustModel::RoleWeighted;
 
+    // Seed the four canonical agent roles into the swarm with explicit
+    // trust profiles. The bridge will route their AgentVote events
+    // into this swarm and recompute consensus under RoleWeighted.
+    for (id, name, self_trust, message_trust) in [
+        ("guardian", "guardian", 0.95, 0.4),
+        ("critic", "critic", 0.9, 0.3),
+        ("explorer", "explorer", 0.4, 0.85),
+        ("integrator", "integrator", 0.7, 0.7),
+    ] {
+        loop_.swarm.add_agent(Agent::new(
+            id,
+            AgentRole {
+                name: name.to_string(),
+                self_trust,
+                message_trust,
+            },
+        ));
+    }
     info!(
-        "Cognitive loop initialized: {}",
-        cognitive_loop.state.summary()
+        "Loop initialized: model={:?}, trust={:?}, swarm={} agents",
+        loop_.priority_model,
+        loop_.trust_model,
+        loop_.swarm.len()
     );
 
-    // --- Initialize the swarm ---
-    let mut swarm = Swarm::new();
-
-    swarm.add_agent(Agent::new(
-        "explorer",
-        AgentRole {
-            name: "explorer".to_string(),
-            self_trust: 0.7,
-            message_trust: 0.6,
+    // The script: a sequence of research events that walks Hari
+    // through the Phase 5 substrate decision as claims.
+    let events: Vec<ResearchEvent> = vec![
+        // Goal: settle the substrate question
+        ResearchEvent {
+            cycle: 1,
+            source: "owner".to_string(),
+            payload: ResearchEventPayload::GoalUpdate {
+                key: "decide-cognition-substrate".to_string(),
+                description: "Settle whether Lie or a simpler baseline should be default"
+                    .to_string(),
+                priority: 0.95,
+                status: Some(HexValue::Unknown),
+            },
         },
-    ));
-    swarm.add_agent(Agent::new(
-        "critic",
-        AgentRole {
-            name: "critic".to_string(),
-            self_trust: 0.9,
-            message_trust: 0.3,
+        // Logical structure of the decision: SL beating Lie should
+        // contradict the original Lie-superiority hypothesis, and
+        // imply the demotion + RecencyDecay-default conclusions.
+        ResearchEvent {
+            cycle: 2,
+            source: "ix-modeller".to_string(),
+            payload: ResearchEventPayload::RelationDeclaration {
+                from: "sl-beats-lie-on-false-acceptance".to_string(),
+                to: "lie-beats-simpler-baselines".to_string(),
+                relation: Relation::Contradicts,
+            },
         },
-    ));
-    swarm.add_agent(Agent::new(
-        "integrator",
-        AgentRole {
-            name: "integrator".to_string(),
-            self_trust: 0.5,
-            message_trust: 0.8,
+        ResearchEvent {
+            cycle: 3,
+            source: "ix-modeller".to_string(),
+            payload: ResearchEventPayload::RelationDeclaration {
+                from: "sl-beats-lie-on-false-acceptance".to_string(),
+                to: "should-demote-lie".to_string(),
+                relation: Relation::Implies,
+            },
         },
-    ));
-    swarm.add_agent(Agent::new(
-        "guardian",
-        AgentRole {
-            name: "guardian".to_string(),
-            self_trust: 0.95,
-            message_trust: 0.4,
+        ResearchEvent {
+            cycle: 4,
+            source: "ix-modeller".to_string(),
+            payload: ResearchEventPayload::RelationDeclaration {
+                from: "should-demote-lie".to_string(),
+                to: "recency-decay-safe-default".to_string(),
+                relation: Relation::Implies,
+            },
         },
-    ));
-
-    info!("Swarm initialized with {} agents", swarm.len());
-
-    // --- Simulate 10 cognitive cycles ---
-
-    // Perception schedule: simulate a rich environment with evolving signals
-    let perceptions: Vec<(u64, &str, HexValue, &str)> = vec![
-        (1, "environment-safe", HexValue::Probable, "initial-scan"),
-        (2, "environment-safe", HexValue::Doubtful, "deep-scan"),
-        (3, "resources-available", HexValue::True, "resource-scan"),
-        (
-            4,
-            "agents-cooperative",
-            HexValue::Probable,
-            "swarm-observation",
-        ),
-        (5, "threat-detected", HexValue::Doubtful, "perimeter-scan"),
-        (6, "threat-detected", HexValue::Probable, "secondary-scan"),
-        (7, "resources-available", HexValue::True, "confirmed-scan"),
-        (8, "agents-cooperative", HexValue::True, "consensus-check"),
-        (9, "environment-safe", HexValue::Probable, "re-evaluation"),
-        (10, "system-stable", HexValue::Probable, "self-diagnostic"),
+        // The original hypothesis lands as Probable.
+        ResearchEvent {
+            cycle: 5,
+            source: "ix-original-hypothesis".to_string(),
+            payload: ResearchEventPayload::BeliefUpdate {
+                proposition: "lie-beats-simpler-baselines".to_string(),
+                value: HexValue::Probable,
+                evidence: Default::default(),
+            },
+        },
+        // The Phase 5 data arrives — SL beats Lie. This triggers
+        // propagation: Contradicts flips lie-beats-simpler-baselines to
+        // Contradictory; Implies derives should-demote-lie = True;
+        // chained Implies derives recency-decay-safe-default = True.
+        ResearchEvent {
+            cycle: 6,
+            source: "ix-experiment-runner".to_string(),
+            payload: ResearchEventPayload::ExperimentResult {
+                proposition: "sl-beats-lie-on-false-acceptance".to_string(),
+                value: HexValue::True,
+                evidence: {
+                    let mut e = std::collections::BTreeMap::new();
+                    e.insert("fixtures_won".to_string(), serde_json::Value::from(3));
+                    e.insert("fixtures_tied".to_string(), serde_json::Value::from(3));
+                    e.insert("fixtures_lost".to_string(), serde_json::Value::from(0));
+                    e
+                },
+            },
+        },
+        // The four agents vote. Under RoleWeighted, guardian + critic
+        // (high self_trust) carry more weight than explorer (low).
+        ResearchEvent {
+            cycle: 7,
+            source: "guardian".to_string(),
+            payload: ResearchEventPayload::AgentVote {
+                proposition: "should-demote-lie".to_string(),
+                value: HexValue::Probable,
+                evidence: Default::default(),
+            },
+        },
+        ResearchEvent {
+            cycle: 8,
+            source: "critic".to_string(),
+            payload: ResearchEventPayload::AgentVote {
+                proposition: "should-demote-lie".to_string(),
+                value: HexValue::Probable,
+                evidence: Default::default(),
+            },
+        },
+        ResearchEvent {
+            cycle: 9,
+            source: "explorer".to_string(),
+            payload: ResearchEventPayload::AgentVote {
+                proposition: "should-demote-lie".to_string(),
+                value: HexValue::Doubtful,
+                evidence: Default::default(),
+            },
+        },
+        ResearchEvent {
+            cycle: 10,
+            source: "integrator".to_string(),
+            payload: ResearchEventPayload::AgentVote {
+                proposition: "should-demote-lie".to_string(),
+                value: HexValue::Probable,
+                evidence: Default::default(),
+            },
+        },
     ];
 
-    for cycle_num in 1..=10 {
-        info!("\n--- Cycle {} ---", cycle_num);
-
-        // Inject any perceptions scheduled for this cycle
-        for (sched, prop, value, source) in &perceptions {
-            if *sched == cycle_num {
-                cognitive_loop.perceive(Perception {
-                    proposition: prop.to_string(),
-                    value: *value,
-                    source: source.to_string(),
-                    cycle: cycle_num,
-                });
-
-                // Broadcast to swarm
-                swarm.send(Message {
-                    from: "core".to_string(),
-                    to: "*".to_string(),
-                    payload: MessagePayload::BeliefUpdate {
-                        proposition: prop.to_string(),
-                        value: *value,
-                    },
-                });
-            }
-        }
-
-        // Process swarm messages
-        let swarm_updates = swarm.process_all();
-        if swarm_updates > 0 {
-            info!("  Swarm processed {} belief updates", swarm_updates);
-        }
-
-        // Run cognitive cycle
-        let actions = cognitive_loop.cycle();
-        for action in &actions {
+    for event in events {
+        info!("");
+        info!("--- cycle {} ({}) ---", event.cycle, event.source);
+        let outcome = loop_.process_research_event(event);
+        for action in &outcome.actions {
             match action {
                 Action::Escalate { reason, confidence } => {
-                    warn!("  ESCALATION: {} (confidence: {:.2})", reason, confidence);
+                    warn!("  ESCALATE: {} (confidence: {:.2})", reason, confidence);
                 }
-                _ => info!("  Action: {}", action),
+                _ => info!("  -> {}", action),
             }
         }
-
-        info!("  State: {}", cognitive_loop.state.summary());
-    }
-
-    // --- Final Summary ---
-    info!("\n=== Final State ===");
-    info!("{}", cognitive_loop.state.summary());
-
-    for prop_name in &[
-        "environment-safe",
-        "resources-available",
-        "agents-cooperative",
-        "threat-detected",
-        "system-stable",
-    ] {
-        if let Some(belief) = cognitive_loop.state.beliefs.get(prop_name) {
-            info!("  {}: {}", prop_name, belief.value);
+        if !outcome.derivations.is_empty() {
+            info!("  derivations:");
+            for d in &outcome.derivations {
+                let chain: Vec<String> = d
+                    .contributions
+                    .iter()
+                    .map(|c| format!("{}({:?},{:?})", c.source, c.relation, c.source_value))
+                    .collect();
+                info!(
+                    "    {}: {:?} -> {:?} (round {}) from [{}]",
+                    d.proposition,
+                    d.previous_value,
+                    d.new_value,
+                    d.round,
+                    chain.join(", ")
+                );
+            }
         }
     }
 
-    // Swarm consensus on key propositions
-    info!("\n=== Swarm Consensus ===");
-    for prop_name in &["environment-safe", "resources-available", "threat-detected"] {
-        let result = swarm.consensus(prop_name);
-        info!(
-            "  {}: {} (agreement: {:.0}%)",
-            prop_name,
-            result.consensus,
-            result.agreement * 100.0
-        );
+    // --- Final substrate-decision conclusion ---
+    info!("");
+    info!("=== Final substrate-decision belief state ===");
+    for prop in [
+        "lie-beats-simpler-baselines",
+        "sl-beats-lie-on-false-acceptance",
+        "should-demote-lie",
+        "recency-decay-safe-default",
+    ] {
+        let value = loop_
+            .state
+            .beliefs
+            .get(prop)
+            .map(|b| format!("{}", b.value))
+            .unwrap_or_else(|| "<not in network>".to_string());
+        info!("  {}: {}", prop, value);
     }
 
-    info!("\n=== Project Hari — 10 cycles complete ===");
+    // Swarm consensus tally for the decision claim, both modes side by
+    // side — shows how trust-weighting changes the head count.
+    info!("");
+    info!("=== Swarm consensus on 'should-demote-lie' ===");
+    let equal = loop_
+        .swarm
+        .consensus_with("should-demote-lie", TrustModel::Equal);
+    let weighted = loop_
+        .swarm
+        .consensus_with("should-demote-lie", TrustModel::RoleWeighted);
+    info!(
+        "  Equal (1-vote-per-agent):     {} (agreement: {:.0}%)",
+        equal.consensus,
+        equal.agreement * 100.0
+    );
+    info!(
+        "  RoleWeighted (by self_trust): {} (agreement: {:.0}%)",
+        weighted.consensus,
+        weighted.agreement * 100.0
+    );
+
+    info!("");
+    info!("=== demo complete ===");
+    info!("Hari held the substrate decision as a tracked claim, derived");
+    info!("its conclusion from the relation graph + experimental evidence,");
+    info!("and reflected the four-agent vote under trust-weighted consensus.");
+    info!("The researcher (you, plus Claude in this conversation) is");
+    info!("external — Hari is the substrate, not the autoresearch system.");
 }
 
 fn replay_trace(path: Option<&str>, compare: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -520,10 +617,7 @@ fn handle_request(session: &mut Option<StreamingSession>, req: Request) -> Respo
 /// (so `replay --session` knows to stop applying events at that
 /// boundary), then emit a final `closed` response with `unclean: true`
 /// to stdout.
-fn write_unclean_close<W: Write>(
-    writer: &mut W,
-    mut session: StreamingSession,
-) -> io::Result<()> {
+fn write_unclean_close<W: Write>(writer: &mut W, mut session: StreamingSession) -> io::Result<()> {
     // Append an explicit close-marker line to the trace file (best
     // effort; record_request handles None recorder transparently).
     let _ = session.record_request(&Request::Close);
@@ -537,7 +631,8 @@ fn write_unclean_close<W: Write>(
 }
 
 fn write_response<W: Write>(writer: &mut W, resp: &Response) -> io::Result<()> {
-    let s = serde_json::to_string(resp).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let s =
+        serde_json::to_string(resp).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     writer.write_all(s.as_bytes())?;
     writer.write_all(b"\n")?;
     writer.flush()
@@ -603,8 +698,7 @@ mod tests {
         .unwrap();
         let report = cognitive_loop.process_research_trace(trace);
         let s = serde_json::to_string(&report).unwrap();
-        let round_tripped: hari_core::ResearchReplayReport =
-            serde_json::from_str(&s).unwrap();
+        let round_tripped: hari_core::ResearchReplayReport = serde_json::from_str(&s).unwrap();
         assert!(round_tripped.comparison.is_none());
         // Old fixtures without the new fields must still load — try a JSON
         // shape lacking them entirely.

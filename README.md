@@ -62,7 +62,7 @@ cargo build --release
 cargo run --release -p hari-core
 ```
 
-10-cycle scripted simulation showing perception, swarm consensus on key propositions, and action recommendations under the default `PriorityModel::RecencyDecay`.
+Self-referential substrate-decision demo: Hari tracks claims about its own Phase 5 substrate decision (Lie's negative result vs the SL prior-art baseline) as research events. Walks through `RelationDeclaration` events declaring the logical structure of the decision, an `ExperimentResult` event submitting the Phase 5 finding, and four `AgentVote` events from the canonical roles under `TrustModel::RoleWeighted`. Prints the action stream and the full derivation chain (Implies + Contradicts propagation), then shows the final substrate-decision belief state and the Equal-vs-RoleWeighted swarm consensus side-by-side. Exercises Phase 4 (trust-aware swarm + AgentVote bridge) and Phase 8 (forward reasoning + provenance) in one run.
 
 ### Replay an IX research trace
 
