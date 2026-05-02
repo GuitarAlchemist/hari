@@ -22,6 +22,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
+pub mod merge;
+pub use merge::{
+    belnap_weight, merge_all, merge_with_default_staleness, HexDistribution, HexObservation,
+    MergedState, DEFAULT_STALENESS_K, ESCALATION_THRESHOLD, MERGE_SOURCE, META_CONFLICT_ASPECT,
+};
+
 // ---------------------------------------------------------------------------
 // HexValue — the 6-valued logic type
 // ---------------------------------------------------------------------------

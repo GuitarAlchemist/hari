@@ -255,6 +255,24 @@ Delivered:
 - The previously redundant single-round `BeliefNetwork::propagate()` call inside `cycle_raw` was removed. All propagation now happens once-and-only-once at the end of `process_research_event` through the with-provenance API, so the audit trail is complete by construction.
 - 6 new tests in `phase8_provenance.rs` covering the multi-hop chain, per-derivation Log emission, regression on relation-free fixtures, JSON skip-empty behavior, and the `Contradicts` post-NOT contribution rule.
 
+## Phase 9: Demerzel Hex-Merge Conformance — **implemented (in-Hari)**
+
+Goal: implement Demerzel's `logic/hex-merge.md` G-Set CRDT merge inside Hari with semantics matching `ix-fuzzy::observations` so the two implementations stay aligned. Closes the conformance gap called out in the IX-side PRD (`ix/governance/demerzel/docs/prd/07-hari.md` v2.0).
+
+Status: shipped as `hari_lattice::merge`. Faithful port of the ix-fuzzy structure: `HexObservation`, `HexDistribution`, `MergedState`, `belnap_weight`, `merge` / `merge_all` / `merge_with_default_staleness`. Same Belnap-extended weight table, same content-derived synthesis ids (the associativity fix), same staleness budget K=5, same uniform fallback for empty input.
+
+Delivered:
+- `crates/hari-lattice/src/merge.rs` — pub module re-exported from `hari-lattice` lib root.
+- 6 proof-obligation tests mirroring ix-fuzzy: commutativity, associativity, idempotence, monotonicity, dedup-by-key, Belnap symmetry.
+- 10 functional tests covering the Belnap table, agreement/disagreement scenarios, meta-conflict cross-aspect detection, staleness filtering, and `action_and_aspect` parsing (including the rfind-based deep module path case from `harness-cargo.md`).
+- `HexDistribution::escalation_triggered()` matching `ix-fuzzy::hexavalent::ESCALATION_THRESHOLD = 0.3`.
+- 175 tests across the workspace at HEAD (159 prior + 16 merge).
+
+Out of scope for this slice (deliberate):
+- Cross-repo byte-equal fixture suite. Right now both implementations are spec-faithful; a shared `fixtures/hex-merge/` directory with serialized inputs and expected outputs that both `hari` and `ix-fuzzy` run against would prove byte-equality. That's a follow-up that needs the fixtures to live somewhere both repos can reach (likely `Demerzel/examples/` or similar).
+- `TrustedHexObservation` extension. The PRD lists this as a graduation candidate from Hari → ix-fuzzy; not implemented here because the layering question (does trust live in the merge layer or above it?) is a cross-repo design conversation, not a refactor.
+- Wiring `merge` into `hari-core::CognitiveLoop`. Hari's existing `ResearchEventPayload::AgentVote` → swarm-consensus path is a different shape from G-Set merge over `claim_key`. Bridging the two is a future design call.
+
 ## Near-Term Milestone
 
 **Original** (pre-SL data): Hari can run a 50-cycle JSON research scenario in baseline and experimental modes, produce a metrics report, and show whether Lie-inspired state evolution changes research decisions compared with a simple priority baseline. — *Delivered.*
