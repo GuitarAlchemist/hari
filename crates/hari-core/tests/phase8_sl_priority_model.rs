@@ -58,11 +58,11 @@ fn cognitive_loop_subjective_logic_matches_standalone_sl_pipeline() {
         let cfg = SubjectiveLogicConfig::default();
 
         // Standalone pipeline.
-        let standalone = process_research_trace_subjective_logic(trace.clone(), cfg.clone());
+        let standalone = process_research_trace_subjective_logic(trace.clone(), cfg);
 
         // CognitiveLoop path.
         let mut loop_ = CognitiveLoop::with_model(trace.dimension, PriorityModel::SubjectiveLogic);
-        loop_.sl_config = cfg.clone();
+        loop_.sl_config = cfg;
         let via_loop = loop_.process_research_trace(trace);
 
         assert_eq!(

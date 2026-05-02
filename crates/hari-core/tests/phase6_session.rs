@@ -19,7 +19,7 @@
 //! the recorder and replay both use the same path.
 
 use hari_core::{
-    compare_replay, action_kind, CognitiveLoop, Request, Response, ResearchEvent, ResearchTrace,
+    action_kind, compare_replay, CognitiveLoop, Request, ResearchEvent, ResearchTrace, Response,
     SessionConfig, StreamingSession,
 };
 use std::fs;
@@ -138,9 +138,7 @@ fn single_event_session_matches_batch_on_synthetic_trace() {
     let mut session =
         StreamingSession::open(SessionConfig::default()).expect("open should succeed");
     for ev in events {
-        session
-            .apply_event(ev)
-            .expect("apply_event should succeed");
+        session.apply_event(ev).expect("apply_event should succeed");
     }
     let stream_report = session.close();
 
@@ -161,8 +159,7 @@ fn long_recovery_streaming_matches_batch_lie_path() {
     let trace = load_trace("../../fixtures/ix/long_recovery.json");
 
     // Batch — Lie path on a fresh loop.
-    let mut batch_loop =
-        CognitiveLoop::with_model(trace.dimension, hari_core::PriorityModel::Lie);
+    let mut batch_loop = CognitiveLoop::with_model(trace.dimension, hari_core::PriorityModel::Lie);
     let batch_report = batch_loop.process_research_trace(trace.clone());
 
     // Streaming — same model, no recorder.
@@ -188,7 +185,10 @@ fn long_recovery_streaming_matches_batch_lie_path() {
     // Sanity: Phase 5's long-fixture finding (false_acceptance metric
     // populated) — preserved through streaming.
     assert!(
-        stream_report.metrics.contradiction_recovery_cycles.is_some(),
+        stream_report
+            .metrics
+            .contradiction_recovery_cycles
+            .is_some(),
         "Lie streaming must populate contradiction_recovery_cycles"
     );
 
@@ -202,8 +202,7 @@ fn long_recovery_streaming_matches_batch_lie_path() {
         "streaming Lie's false_acceptance must match batch Lie's"
     );
     assert_ne!(
-        comparison.baseline.false_acceptance_count,
-        comparison.experimental.false_acceptance_count,
+        comparison.baseline.false_acceptance_count, comparison.experimental.false_acceptance_count,
         "Phase 5 finding: Lie wins false_acceptance on long_recovery.json"
     );
 }
@@ -270,9 +269,7 @@ fn replay_session_parity_with_batch_on_cognition_divergence() {
         let req: Request = serde_json::from_str(line).expect("request parses");
         match req {
             Request::Event { event } => {
-                replay_session_obj
-                    .apply_event(event)
-                    .expect("replay apply");
+                replay_session_obj.apply_event(event).expect("replay apply");
             }
             Request::Metrics | Request::Close => { /* observation-only */ }
             Request::Open { .. } => panic!("second open in trace"),
@@ -326,12 +323,7 @@ fn double_open_returns_already_open_error_via_dispatcher_simulation() {
     // StreamingSession::make_error produces the right shape — and
     // verify two real opens with the same trace_record_path do not
     // panic.
-    let resp = StreamingSession::make_error(
-        "open",
-        "already_open",
-        "session already open",
-        false,
-    );
+    let resp = StreamingSession::make_error("open", "already_open", "session already open", false);
     match resp {
         Response::Error { code, fatal, .. } => {
             assert_eq!(code, "already_open");
@@ -420,11 +412,10 @@ fn out_of_order_cycle_rejected_non_fatally() {
     // Direct test: send cycle 5 then cycle 2 — the second must be
     // rejected with an out_of_order_cycle error, the session must
     // remain usable.
-    use hari_core::{ResearchEventPayload};
+    use hari_core::ResearchEventPayload;
     use hari_lattice::HexValue;
 
-    let mut session =
-        StreamingSession::open(SessionConfig::default()).expect("open");
+    let mut session = StreamingSession::open(SessionConfig::default()).expect("open");
     let ev1 = ResearchEvent {
         cycle: 5,
         source: "s".into(),
@@ -444,7 +435,9 @@ fn out_of_order_cycle_rejected_non_fatally() {
             evidence: Default::default(),
         },
     };
-    let err = session.apply_event(ev2).expect_err("must reject out-of-order");
+    let err = session
+        .apply_event(ev2)
+        .expect_err("must reject out-of-order");
     assert!(err.starts_with("out_of_order_cycle"), "got: {err}");
 
     // Session is still usable: cycle 5 again is allowed (equal).
@@ -472,8 +465,7 @@ fn streaming_lie_actions_match_batch_lie_action_kinds() {
     // Defensive guard: if streaming ever forks a parallel cognitive
     // path, this test starts failing.
     let trace = load_trace("../../fixtures/ix/cognition_divergence.json");
-    let mut batch_loop =
-        CognitiveLoop::with_model(trace.dimension, hari_core::PriorityModel::Lie);
+    let mut batch_loop = CognitiveLoop::with_model(trace.dimension, hari_core::PriorityModel::Lie);
     let batch_report = batch_loop.process_research_trace(trace.clone());
 
     let cfg = SessionConfig {

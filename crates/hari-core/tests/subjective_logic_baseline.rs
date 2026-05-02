@@ -150,7 +150,9 @@ fn three_way_comparison_on_long_recovery_populates_metrics() {
     // when iterating on the rollup doc.
     eprintln!(
         "[long_recovery 3-way] decay: false_accept={} recovery={:?} goal_comp={:.3}",
-        decay.false_acceptance_count, decay.contradiction_recovery_cycles, decay.goal_completion_rate
+        decay.false_acceptance_count,
+        decay.contradiction_recovery_cycles,
+        decay.goal_completion_rate
     );
     eprintln!(
         "[long_recovery 3-way] lie:   false_accept={} recovery={:?} goal_comp={:.3}",

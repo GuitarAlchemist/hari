@@ -195,6 +195,9 @@ impl CognitiveAlgebra {
     /// They completely characterize the algebra's structure.
     ///
     /// Returns a 3D tensor flattened as Vec<Vec<Vec<f64>>> indexed [i][j][k].
+    // i/j/k are tensor indices passed to `generator(i)` and `constants[i][j][k]`,
+    // not iterator-replaceable single-axis traversals.
+    #[allow(clippy::needless_range_loop)]
     pub fn structure_constants(&self) -> Vec<Vec<Vec<f64>>> {
         let n = self.group.algebra_dimension();
         let mut constants = vec![vec![vec![0.0f64; n]; n]; n];
@@ -502,6 +505,8 @@ mod tests {
     }
 
     #[test]
+    // Tests c^k_{ij} = -c^k_{ji}: i and j swap roles, so iterator-style is wrong.
+    #[allow(clippy::needless_range_loop)]
     fn test_structure_constants_antisymmetric() {
         let g = SymmetryGroup::new(
             "test",
@@ -588,7 +593,10 @@ mod tests {
         let gt = g.transpose();
         let sum = &g + &gt;
         for v in sum.iter() {
-            assert!(v.abs() < 1e-12, "rotation generator should satisfy G^T = -G");
+            assert!(
+                v.abs() < 1e-12,
+                "rotation generator should satisfy G^T = -G"
+            );
         }
         // Off-axis pairs are zero.
         assert_eq!(g[(1, 1)], 0.0);
@@ -634,7 +642,10 @@ mod tests {
     fn test_goal_projection_is_traceless() {
         let g = SymmetryGroup::goal_projection(4, 2);
         let trace: f64 = (0..4).map(|k| g[(k, k)]).sum();
-        assert!(trace.abs() < 1e-12, "projection generator must be traceless");
+        assert!(
+            trace.abs() < 1e-12,
+            "projection generator must be traceless"
+        );
         // Target axis carries the bulk of the projection.
         assert!(g[(2, 2)] > 0.0, "target diagonal entry should be positive");
     }
@@ -647,7 +658,10 @@ mod tests {
 
         evo.evolve(&[0.0], 50);
         for (a, b) in evo.state.iter().zip(initial.iter()) {
-            assert!((a - b).abs() < 1e-10, "Zero Hamiltonian should not change state");
+            assert!(
+                (a - b).abs() < 1e-10,
+                "Zero Hamiltonian should not change state"
+            );
         }
     }
 }

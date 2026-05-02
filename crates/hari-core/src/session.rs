@@ -197,11 +197,10 @@ impl StreamingSession {
         // outcome is captured for batch-equivalent comparison at close
         // time, and the per-event divergence flag is exposed in the
         // recommendation response.
-        let shadow_outcome = if let Some(shadow_loop) = self.shadow.as_mut() {
-            Some(shadow_loop.process_research_event(event))
-        } else {
-            None
-        };
+        let shadow_outcome = self
+            .shadow
+            .as_mut()
+            .map(|shadow_loop| shadow_loop.process_research_event(event));
 
         let event_index = self.outcomes.len();
         let actions = outcome.actions.clone();

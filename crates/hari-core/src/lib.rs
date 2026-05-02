@@ -78,13 +78,14 @@ pub use subjective_logic::{
 /// routes around the action-scoring abstraction entirely (it has its
 /// own Opinion-fusion decision pipeline) — it's reached via a
 /// short-circuit branch at the top of `process_research_event`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PriorityModel {
     /// All actions get priority 1.0; original order preserved.
     /// Pre-Phase-5 default; now used for ablation only.
     Flat,
     /// `priority = exp(-lambda * (current_cycle - perception_cycle))`.
     /// **Default** since the Phase 5 substrate decision.
+    #[default]
     RecencyDecay,
     /// `priority = base * (1 + alpha * proj(attention, action_axis))`.
     /// Opt-in research knob; not the default.
@@ -98,12 +99,6 @@ pub enum PriorityModel {
     /// propagation, and the `score_actions_with_cycles` step — none
     /// of which the SL pipeline uses or needs.
     SubjectiveLogic,
-}
-
-impl Default for PriorityModel {
-    fn default() -> Self {
-        Self::RecencyDecay
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -805,15 +800,13 @@ impl CognitiveLoop {
             0.0
         };
         let mut h_eff = h_dim.clone();
-        for k in 1..d {
-            h_eff[k] += smear_per_axis;
+        for h in &mut h_eff[1..d] {
+            *h += smear_per_axis;
         }
 
         let mut coefficients: Vec<f64> = Vec::with_capacity(d + 1);
         // Rotations rot(0, k) for k = 1..d
-        for k in 1..d {
-            coefficients.push(alpha * h_eff[k]);
-        }
+        coefficients.extend(h_eff[1..d].iter().map(|h| alpha * h));
         // Scaling — mean over h_eff so contradictory smear is included.
         let mean = h_eff.iter().sum::<f64>() / d as f64;
         coefficients.push(alpha * mean);
@@ -1667,17 +1660,16 @@ fn compute_metrics(
                 });
                 let final_value = final_beliefs.get(proposition).copied();
                 let became_contradictory = matches!(final_value, Some(HexValue::Contradictory));
-                let flipped_polarity = match (*value, final_value) {
+                let flipped_polarity = matches!(
+                    (*value, final_value),
                     (
                         HexValue::True | HexValue::Probable,
                         Some(HexValue::Doubtful | HexValue::False),
-                    ) => true,
-                    (
+                    ) | (
                         HexValue::Doubtful | HexValue::False,
                         Some(HexValue::True | HexValue::Probable),
-                    ) => true,
-                    _ => false,
-                };
+                    )
+                );
                 if later_retracted || became_contradictory || flipped_polarity {
                     false_accepts += 1;
                 }

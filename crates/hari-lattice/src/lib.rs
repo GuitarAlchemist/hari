@@ -61,18 +61,6 @@ impl HexValue {
         }
     }
 
-    /// Convert a rank back to a HexValue.
-    fn from_rank(r: u8) -> Self {
-        match r {
-            0 => Self::False,
-            1 => Self::Doubtful,
-            2 => Self::Unknown,
-            3 => Self::Probable,
-            4 => Self::True,
-            _ => Self::Contradictory,
-        }
-    }
-
     /// Returns true if this value is on the "truth chain" (not Contradictory).
     pub fn is_definite(self) -> bool {
         self != Self::Contradictory
