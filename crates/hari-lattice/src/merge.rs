@@ -65,7 +65,10 @@ pub const ESCALATION_THRESHOLD: f64 = 0.3;
 
 /// A single hexavalent observation contributed by one source about
 /// one claim. Wire-compatible with Demerzel's
-/// `schemas/session-event.schema.json` and `ix-fuzzy::HexObservation`.
+/// `schemas/session-event.schema.json` and `ix-fuzzy::HexObservation`:
+/// `variant` serializes as the single-letter symbol (`"T"`, `"P"`,
+/// `"U"`, `"D"`, `"F"`, `"C"`) regardless of how `HexValue` is
+/// serialized elsewhere in the workspace.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HexObservation {
     /// Emitting agent identifier (e.g. `"tars"`, `"ix"`,
@@ -81,13 +84,53 @@ pub struct HexObservation {
     /// The claim this observation takes a position on. Format is
     /// `action_key::aspect`.
     pub claim_key: String,
-    /// Hexavalent value the source is asserting.
+    /// Hexavalent value the source is asserting. Serialized as the
+    /// canonical single-letter symbol via [`hex_letter`].
+    #[serde(with = "hex_letter")]
     pub variant: HexValue,
     /// Confidence weight in `(0.0, 1.0]`.
     pub weight: f64,
     /// Optional audit-trail evidence string. Not used by the merge.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub evidence: Option<String>,
+}
+
+/// Single-letter wire format (`"T"`/`"P"`/`"U"`/`"D"`/`"F"`/`"C"`)
+/// for [`HexValue`]. Matches `ix-types::Hexavalent`'s serde mapping
+/// and Demerzel's `hexavalent-state.schema.json`. Used inside the
+/// merge module via `#[serde(with = "hex_letter")]` so existing
+/// `HexValue` consumers (and pre-existing JSON fixtures) keep their
+/// long-form wire format unchanged.
+mod hex_letter {
+    use super::HexValue;
+    use serde::{de::Error, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &HexValue, s: S) -> Result<S::Ok, S::Error> {
+        let sym = match v {
+            HexValue::True => "T",
+            HexValue::Probable => "P",
+            HexValue::Unknown => "U",
+            HexValue::Doubtful => "D",
+            HexValue::False => "F",
+            HexValue::Contradictory => "C",
+        };
+        s.serialize_str(sym)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<HexValue, D::Error> {
+        let s = <&str as Deserialize>::deserialize(d)?;
+        match s {
+            "T" => Ok(HexValue::True),
+            "P" => Ok(HexValue::Probable),
+            "U" => Ok(HexValue::Unknown),
+            "D" => Ok(HexValue::Doubtful),
+            "F" => Ok(HexValue::False),
+            "C" => Ok(HexValue::Contradictory),
+            other => Err(D::Error::custom(format!(
+                "expected one of T/P/U/D/F/C, got {other:?}"
+            ))),
+        }
+    }
 }
 
 impl HexObservation {
