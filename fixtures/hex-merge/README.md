@@ -1,4 +1,11 @@
-# Hex-merge conformance fixtures
+# Hex-merge conformance fixtures (Hari snapshot)
+
+> **Canonical home: `Demerzel/fixtures/hex-merge/`.** This directory
+> is a snapshot for hari's conformance test. IX reads from the
+> canonical via its `governance/demerzel` submodule; hari does not
+> currently have a Demerzel submodule, so the snapshot is synced by
+> hand. When adding or modifying a fixture, land it in Demerzel
+> first, then mirror here.
 
 A shared corpus for verifying that two implementations of Demerzel's
 `logic/hex-merge.md` G-Set CRDT merge produce equivalent output:
