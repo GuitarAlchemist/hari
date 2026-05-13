@@ -65,6 +65,14 @@ hari-core     (depends on all three)      — CognitiveLoop, ResearchEvent bound
 
 `fixtures/ix/*.json` are replayable IX-style traces consumed by `hari-core replay`. The conflicting_benchmark fixture demonstrates a `belief_update → contradicting belief_update → retraction` sequence. New fixtures should target a specific scenario shape (conflicting evidence, noisy benchmarks, agent disagreement) and be deterministically replayable for 50+ cycles where appropriate.
 
+## Cherny-loop harness (`hari-harness`)
+
+`crates/hari-extractor/src/bin/hari_harness.rs` is the single command that runs one iteration of any Boris-Cherny-style loop (`/loop` scheduled automation, CLAUDE.md self-improvement, execution verification) over Hari's persistent belief state. The pattern is documented in **`docs/loops/hari-cherny-harness.md`**; the slash-command spec is **`docs/loops/hari-harness.command.md`** (copy it to `.claude/commands/` locally — that directory is gitignored).
+
+**At the start of any session in this repo:** if `state/harness/belief-snapshot.json` exists, read it before you read prose summaries — it is the structured view of "what Hari currently believes" produced by the last harness run, derived from the append-only `state/harness/events.jsonl`. Treat it as authoritative for facts; treat `state/harness/belief-diff.json` as the to-do queue (any `changed` propositions are review candidates for promotion to a CLAUDE.md rule).
+
+The harness exits **2** when any `Action::Escalate` fires — this is the "needs human review" signal. Do **not** auto-promote escalations to CLAUDE.md rules; surface the diff to the human and let them call it.
+
 ## Docker
 
 `docker-compose.yml` defines a single `hari-core` service (sandboxed: 4G mem cap, 2 CPUs, read-only fs, tmpfs `/tmp`). The default CMD runs the substrate-decision demo; override with `docker compose run --rm hari-core ./hari-core serve` to expose the streaming protocol or `... ./hari-core replay <path>` for fixture replays. `hari-swarm` is **library-only by design** — its capabilities are reachable from `hari-core` via `SessionConfig.{trust_model, use_swarm_consensus, initial_agents}`, so there's no separate binary or compose service for it.

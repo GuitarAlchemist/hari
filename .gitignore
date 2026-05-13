@@ -13,3 +13,8 @@ __pycache__/
 .claude/
 .octo-factory-launch.log
 .octo-review.log
+
+# hari-harness event log — append-only source of truth, can grow large.
+# The derived `belief-snapshot.json` / `belief-diff.json` ARE worth committing.
+state/harness/events.jsonl
+state/harness/belief-state.json
