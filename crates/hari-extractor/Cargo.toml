@@ -9,6 +9,7 @@ description = "NL → ResearchEvent extraction for Hari, with an Inception Labs 
 [dependencies]
 hari-core = { path = "../hari-core" }
 hari-lattice = { workspace = true }
+hari-swarm = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

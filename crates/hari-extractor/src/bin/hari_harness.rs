@@ -33,6 +33,7 @@
 //!              [--autoresearch PATH]   (ix-autoresearch JSONL log)
 //!              [--target TARGET]       (required when --autoresearch is set)
 //!              [--events PATH]         (raw ResearchEvent JSONL — no extraction)
+//!              [--cargo-test PATH]     (cargo test --message-format=json output)
 //!              [--dimension N]         (default 4)
 //!              [--no-escalate-fails]   (do not exit non-zero on Escalate)
 //! ```
@@ -74,6 +75,7 @@ struct Args {
     autoresearch_path: Option<PathBuf>,
     autoresearch_target: Option<String>,
     events_path: Option<PathBuf>,
+    cargo_test_path: Option<PathBuf>,
     dimension: usize,
     escalate_fails: bool,
 }
@@ -85,6 +87,7 @@ fn parse_args() -> Result<Args, String> {
     let mut autoresearch_path: Option<PathBuf> = None;
     let mut autoresearch_target: Option<String> = None;
     let mut events_path: Option<PathBuf> = None;
+    let mut cargo_test_path: Option<PathBuf> = None;
     let mut dimension: usize = 4;
     let mut escalate_fails = true;
 
@@ -101,6 +104,7 @@ fn parse_args() -> Result<Args, String> {
             "--autoresearch" => autoresearch_path = iter.next().map(PathBuf::from),
             "--target" => autoresearch_target = iter.next(),
             "--events" => events_path = iter.next().map(PathBuf::from),
+            "--cargo-test" => cargo_test_path = iter.next().map(PathBuf::from),
             "--dimension" => {
                 dimension = iter
                     .next()
@@ -127,6 +131,7 @@ fn parse_args() -> Result<Args, String> {
         autoresearch_path,
         autoresearch_target,
         events_path,
+        cargo_test_path,
         dimension,
         escalate_fails,
     })
@@ -136,15 +141,55 @@ fn print_usage() {
     eprintln!(
         "Usage: hari-harness [--state-dir DIR] [--source S]\n\
          \x20             [--notes PATH] [--autoresearch PATH --target T]\n\
-         \x20             [--events PATH] [--dimension N] [--no-escalate-fails]\n\
+         \x20             [--events PATH] [--cargo-test PATH]\n\
+         \x20             [--dimension N] [--no-escalate-fails]\n\
          \n\
          Runs one Cherny-loop iteration: ingests new events, replays the full\n\
          event log through Hari's CognitiveLoop, writes belief snapshot + diff.\n\
+         \n\
+         --cargo-test consumes output of `cargo test --message-format=json` and\n\
+         maps each {{type:'test', event:'ok'|'failed'}} line to an ExperimentResult.\n\
          \n\
          Exit 0 = no escalations, 1 = error, 2 = at least one Escalate fired.\n\
          \n\
          Mercury (--notes) requires INCEPTION_API_KEY in env."
     );
+}
+
+/// Parse one line of `cargo test --message-format=json` into a
+/// ResearchEvent. Each test outcome becomes one ExperimentResult; the
+/// proposition encodes the test path so reruns consolidate.
+///
+/// Only `{ "type": "test", "event": "ok"|"failed", "name": "..." }` is
+/// mapped. Other JSON line types (compiler diagnostics, suite events)
+/// are silently ignored — they're not single-test verdicts.
+fn cargo_test_line_to_event(v: &Value, source: &str, cycle: u64) -> Option<ResearchEvent> {
+    if v.get("type").and_then(Value::as_str) != Some("test") {
+        return None;
+    }
+    let event_kind = v.get("event").and_then(Value::as_str)?;
+    let name = v.get("name").and_then(Value::as_str)?;
+    let value = match event_kind {
+        "ok" => HexValue::True,
+        "failed" => HexValue::False,
+        // started / ignored / timeout etc. are not verdicts
+        _ => return None,
+    };
+    let mut evidence: BTreeMap<String, Value> = BTreeMap::new();
+    evidence.insert("test_name".into(), serde_json::json!(name));
+    evidence.insert("event".into(), serde_json::json!(event_kind));
+    if let Some(stdout) = v.get("stdout").and_then(Value::as_str) {
+        evidence.insert("stdout".into(), serde_json::json!(stdout));
+    }
+    Some(ResearchEvent {
+        cycle,
+        source: format!("cargo-test:{source}"),
+        payload: hari_core::ResearchEventPayload::ExperimentResult {
+            proposition: format!("test/{name}-passes"),
+            value,
+            evidence,
+        },
+    })
 }
 
 #[derive(Serialize)]
@@ -331,7 +376,26 @@ async fn collect_new_events(args: &Args, start_cycle: u64) -> Result<Vec<Researc
         }
     }
 
-    // 3. Prose notes via Mercury (last, since it's the slow path).
+    // 3. cargo test JSON lines — each test outcome → one ExperimentResult.
+    if let Some(p) = &args.cargo_test_path {
+        let f = std::fs::File::open(p).map_err(|e| format!("cargo-test: {e}"))?;
+        for (i, line) in BufReader::new(f).lines().enumerate() {
+            let line = line.map_err(|e| format!("cargo-test line {}: {e}", i + 1))?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let v: Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue, // many cargo lines aren't JSON; skip silently
+            };
+            if let Some(ev) = cargo_test_line_to_event(&v, &args.source, cycle) {
+                cycle += 1;
+                new_events.push(ev);
+            }
+        }
+    }
+
+    // 4. Prose notes via Mercury (last, since it's the slow path).
     if let Some(p) = &args.notes_path {
         let notes = read_notes_lines(p).map_err(|e| format!("notes: {e}"))?;
         if !notes.is_empty() {
@@ -382,8 +446,12 @@ async fn main() -> ExitCode {
         }
     };
 
-    if args.notes_path.is_none() && args.autoresearch_path.is_none() && args.events_path.is_none() {
-        eprintln!("error: at least one of --notes, --autoresearch, --events is required");
+    if args.notes_path.is_none()
+        && args.autoresearch_path.is_none()
+        && args.events_path.is_none()
+        && args.cargo_test_path.is_none()
+    {
+        eprintln!("error: at least one of --notes, --autoresearch, --events, --cargo-test is required");
         return ExitCode::from(1);
     }
 

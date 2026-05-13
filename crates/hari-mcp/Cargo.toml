@@ -1,0 +1,18 @@
+[package]
+name = "hari-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "MCP server exposing Hari's belief state, harness, and swarm consensus over stdio JSON-RPC"
+
+[[bin]]
+name = "hari-mcp"
+path = "src/main.rs"
+
+[dependencies]
+hari-core = { path = "../hari-core" }
+hari-lattice = { workspace = true }
+hari-swarm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

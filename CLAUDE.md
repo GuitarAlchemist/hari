@@ -65,9 +65,34 @@ hari-core     (depends on all three)      — CognitiveLoop, ResearchEvent bound
 
 `fixtures/ix/*.json` are replayable IX-style traces consumed by `hari-core replay`. The conflicting_benchmark fixture demonstrates a `belief_update → contradicting belief_update → retraction` sequence. New fixtures should target a specific scenario shape (conflicting evidence, noisy benchmarks, agent disagreement) and be deterministically replayable for 50+ cycles where appropriate.
 
+## MCP server (`hari-mcp`)
+
+`crates/hari-mcp/src/main.rs` is a stdio JSON-RPC 2.0 MCP server exposing five tools (`hari_query_belief`, `hari_snapshot`, `hari_diff`, `hari_record_observation`, `hari_consensus`). The first four read/write the same `state/harness/` directory the harness uses; `hari_consensus` is pure and runs `hari-swarm::Swarm::consensus_with` over inline `AgentVote`s.
+
+Register Hari with the federation by adding to your `.mcp.json`:
+
+```json
+"hari": {
+  "command": "C:/.../hari/target/release/hari-mcp.exe",
+  "args": [],
+  "env": { "HARI_STATE_DIR": "C:/.../hari/state/harness" }
+}
+```
+
+Pattern doc: `docs/loops/hari-federation.md`. The hand-rolled dispatcher mirrors `ix-agent`'s pattern (no `rmcp` dependency).
+
 ## Cherny-loop harness (`hari-harness`)
 
 `crates/hari-extractor/src/bin/hari_harness.rs` is the single command that runs one iteration of any Boris-Cherny-style loop (`/loop` scheduled automation, CLAUDE.md self-improvement, execution verification) over Hari's persistent belief state. The pattern is documented in **`docs/loops/hari-cherny-harness.md`**; the slash-command spec is **`docs/loops/hari-harness.command.md`** (copy it to `.claude/commands/` locally — that directory is gitignored).
+
+Sidecar binaries also live in `hari-extractor`:
+
+- **`hari_session_notes`** — NL session notes → belief snapshot for cross-session memory.
+- **`hari_from_ix_autoresearch`** — ix-autoresearch JSONL log → ResearchTrace.
+- **`hari_review_aggregator`** — per-reviewer `AgentVote` JSONL → `TribunalReport` via `Swarm::consensus_with`. Exit 2 on `Contradictory`. Use for the parallel-LLM-reviewer pattern.
+- **`hari_code_relations`** — JSON call/dep graph (`{ edges: [{from,to,relation}] }`) → `RelationDeclaration` events. Lets the BeliefNetwork propagate verdicts along source-code structure.
+
+The harness's `--cargo-test PATH` flag now also consumes libtest JSON (`cargo test -- -Z unstable-options --format json`) so each test outcome becomes one `ExperimentResult`. Flaky tests show up as `Contradictory` after enough runs.
 
 **At the start of any session in this repo:** if `state/harness/belief-snapshot.json` exists, read it before you read prose summaries — it is the structured view of "what Hari currently believes" produced by the last harness run, derived from the append-only `state/harness/events.jsonl`. Treat it as authoritative for facts; treat `state/harness/belief-diff.json` as the to-do queue (any `changed` propositions are review candidates for promotion to a CLAUDE.md rule).
 

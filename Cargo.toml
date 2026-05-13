@@ -6,6 +6,7 @@ members = [
     "crates/hari-swarm",
     "crates/hari-cognition",
     "crates/hari-extractor",
+    "crates/hari-mcp",
 ]
 
 [workspace.package]
