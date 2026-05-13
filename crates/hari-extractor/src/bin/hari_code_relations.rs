@@ -137,8 +137,8 @@ fn main() -> ExitCode {
     };
 
     let mut stdout = std::io::stdout().lock();
-    let mut cycle = start_cycle;
-    for edge in graph.edges {
+    for (i, edge) in graph.edges.into_iter().enumerate() {
+        let cycle = start_cycle + i as u64;
         let event = ResearchEvent {
             cycle,
             source: source.clone(),
@@ -159,7 +159,6 @@ fn main() -> ExitCode {
             eprintln!("error writing stdout: {e}");
             return ExitCode::from(1);
         }
-        cycle += 1;
     }
 
     ExitCode::SUCCESS
