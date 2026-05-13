@@ -95,11 +95,16 @@ fn parse_args() -> Result<Args, String> {
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--state-dir" => {
-                state_dir = iter.next().map(PathBuf::from).ok_or_else(|| {
-                    "--state-dir expects a path".to_string()
-                })?;
+                state_dir = iter
+                    .next()
+                    .map(PathBuf::from)
+                    .ok_or_else(|| "--state-dir expects a path".to_string())?;
             }
-            "--source" => source = iter.next().ok_or_else(|| "--source expects a value".to_string())?,
+            "--source" => {
+                source = iter
+                    .next()
+                    .ok_or_else(|| "--source expects a value".to_string())?
+            }
             "--notes" => notes_path = iter.next().map(PathBuf::from),
             "--autoresearch" => autoresearch_path = iter.next().map(PathBuf::from),
             "--target" => autoresearch_target = iter.next(),
@@ -281,17 +286,17 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
 }
 
 fn next_cycle(log: &[ResearchEvent]) -> u64 {
-    log.iter().map(|e| e.cycle).max().unwrap_or(0).saturating_add(1)
+    log.iter()
+        .map(|e| e.cycle)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1)
 }
 
 /// Convert one `iteration` line of an ix-autoresearch JSONL log into a
 /// `ResearchEvent::ExperimentResult`. Returns `None` for non-iteration
 /// lines (`run_start`, `run_complete`, malformed JSON).
-fn iteration_to_event(
-    v: &Value,
-    target: &str,
-    cycle: u64,
-) -> Option<ResearchEvent> {
+fn iteration_to_event(v: &Value, target: &str, cycle: u64) -> Option<ResearchEvent> {
     if v.get("event").and_then(Value::as_str) != Some("iteration") {
         return None;
     }
@@ -451,7 +456,9 @@ async fn main() -> ExitCode {
         && args.events_path.is_none()
         && args.cargo_test_path.is_none()
     {
-        eprintln!("error: at least one of --notes, --autoresearch, --events, --cargo-test is required");
+        eprintln!(
+            "error: at least one of --notes, --autoresearch, --events, --cargo-test is required"
+        );
         return ExitCode::from(1);
     }
 

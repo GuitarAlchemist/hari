@@ -79,7 +79,11 @@ fn parse_args() -> Result<(PathBuf, String, u64), String> {
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--graph" => graph = iter.next().map(PathBuf::from),
-            "--source" => source = iter.next().ok_or_else(|| "--source expects a value".to_string())?,
+            "--source" => {
+                source = iter
+                    .next()
+                    .ok_or_else(|| "--source expects a value".to_string())?
+            }
             "--start-cycle" => {
                 start_cycle = iter
                     .next()

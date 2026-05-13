@@ -91,7 +91,9 @@ fn parse_args() -> Result<(PathBuf, String, Option<String>), String> {
         match arg.as_str() {
             "--votes" => votes_path = iter.next().map(PathBuf::from),
             "--trust-model" => {
-                trust_model = iter.next().ok_or_else(|| "--trust-model expects a value".to_string())?;
+                trust_model = iter
+                    .next()
+                    .ok_or_else(|| "--trust-model expects a value".to_string())?;
             }
             "--proposition" => proposition_override = iter.next(),
             "-h" | "--help" => {
@@ -104,7 +106,9 @@ fn parse_args() -> Result<(PathBuf, String, Option<String>), String> {
 
     let votes_path = votes_path.ok_or_else(|| "--votes <path> is required".to_string())?;
     if !matches!(trust_model.as_str(), "Equal" | "RoleWeighted") {
-        return Err(format!("--trust-model must be Equal or RoleWeighted, got {trust_model}"));
+        return Err(format!(
+            "--trust-model must be Equal or RoleWeighted, got {trust_model}"
+        ));
     }
     Ok((votes_path, trust_model, proposition_override))
 }
@@ -171,7 +175,10 @@ fn main() -> ExitCode {
         let prop = match &vote.proposition {
             Some(p) => p.clone(),
             None => {
-                eprintln!("warn: line {} skipped (no proposition + no --proposition)", i + 1);
+                eprintln!(
+                    "warn: line {} skipped (no proposition + no --proposition)",
+                    i + 1
+                );
                 continue;
             }
         };

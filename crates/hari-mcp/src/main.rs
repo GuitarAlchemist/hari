@@ -60,7 +60,10 @@ type SessionMap = HashMap<String, StreamingSession>;
 
 fn main() {
     let state_dir = state_dir_from_env();
-    eprintln!("[hari-mcp] MCP server starting; state-dir={}", state_dir.display());
+    eprintln!(
+        "[hari-mcp] MCP server starting; state-dir={}",
+        state_dir.display()
+    );
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -81,7 +84,12 @@ fn main() {
         let value: Value = match serde_json::from_str(trimmed) {
             Ok(v) => v,
             Err(e) => {
-                write_error(&mut stdout, Value::Null, JSONRPC_PARSE_ERROR, format!("parse error: {e}"));
+                write_error(
+                    &mut stdout,
+                    Value::Null,
+                    JSONRPC_PARSE_ERROR,
+                    format!("parse error: {e}"),
+                );
                 continue;
             }
         };
@@ -98,7 +106,12 @@ fn main() {
                 Ok(v) => write_response(&mut stdout, id, v),
                 Err((code, msg)) => write_error(&mut stdout, id, code, msg),
             },
-            "" => write_error(&mut stdout, id, JSONRPC_INVALID_REQUEST, "missing method".into()),
+            "" => write_error(
+                &mut stdout,
+                id,
+                JSONRPC_INVALID_REQUEST,
+                "missing method".into(),
+            ),
             other => write_error(
                 &mut stdout,
                 id,
@@ -253,10 +266,7 @@ fn handle_tools_call(
         "hari_session_event" => tool_session_event(&args, sessions)?,
         "hari_session_close" => tool_session_close(&args, sessions)?,
         other => {
-            return Err((
-                JSONRPC_METHOD_NOT_FOUND,
-                format!("unknown tool: {other}"),
-            ));
+            return Err((JSONRPC_METHOD_NOT_FOUND, format!("unknown tool: {other}")));
         }
     };
 
@@ -278,8 +288,7 @@ fn read_snapshot(state_dir: &Path) -> Result<BTreeMap<String, HexValue>, (i64, S
     }
     let s = std::fs::read_to_string(&path)
         .map_err(|e| (JSONRPC_INTERNAL_ERROR, format!("read snapshot: {e}")))?;
-    serde_json::from_str(&s)
-        .map_err(|e| (JSONRPC_INTERNAL_ERROR, format!("parse snapshot: {e}")))
+    serde_json::from_str(&s).map_err(|e| (JSONRPC_INTERNAL_ERROR, format!("parse snapshot: {e}")))
 }
 
 fn tool_query_belief(args: &Value, state_dir: &Path) -> Result<Value, (i64, String)> {
@@ -300,7 +309,9 @@ fn tool_snapshot(state_dir: &Path) -> Result<Value, (i64, String)> {
 fn tool_diff(state_dir: &Path) -> Result<Value, (i64, String)> {
     let path = state_dir.join("belief-diff.json");
     if !path.exists() {
-        return Ok(json!({ "added": {}, "changed": {}, "unchanged": 0, "previous_count": 0, "current_count": 0 }));
+        return Ok(
+            json!({ "added": {}, "changed": {}, "unchanged": 0, "previous_count": 0, "current_count": 0 }),
+        );
     }
     let s = std::fs::read_to_string(&path)
         .map_err(|e| (JSONRPC_INTERNAL_ERROR, format!("read diff: {e}")))?;
@@ -334,7 +345,12 @@ fn tool_record_observation(args: &Value, state_dir: &Path) -> Result<Value, (i64
         Vec::new()
     };
 
-    let cycle = existing.iter().map(|e| e.cycle).max().unwrap_or(0).saturating_add(1);
+    let cycle = existing
+        .iter()
+        .map(|e| e.cycle)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
     let evidence: Evidence = obs.evidence.into_iter().collect();
     let payload = match obs.kind.as_str() {
         "belief_update" => ResearchEventPayload::BeliefUpdate {
@@ -375,7 +391,12 @@ fn tool_record_observation(args: &Value, state_dir: &Path) -> Result<Value, (i64
             .create(true)
             .append(true)
             .open(&events_log)
-            .map_err(|e| (JSONRPC_INTERNAL_ERROR, format!("open events log for append: {e}")))?;
+            .map_err(|e| {
+                (
+                    JSONRPC_INTERNAL_ERROR,
+                    format!("open events log for append: {e}"),
+                )
+            })?;
         let line = serde_json::to_string(&new_event).unwrap_or_default();
         writeln!(f, "{line}").map_err(|e| (JSONRPC_INTERNAL_ERROR, format!("write event: {e}")))?;
     }
@@ -487,8 +508,12 @@ fn tool_consensus(args: &Value) -> Result<Value, (i64, String)> {
 
 fn tool_session_open(args: &Value, sessions: &mut SessionMap) -> Result<Value, (i64, String)> {
     let config_value = args.get("config").cloned().unwrap_or(json!({}));
-    let config: SessionConfig = serde_json::from_value(config_value)
-        .map_err(|e| (JSONRPC_INVALID_PARAMS, format!("invalid SessionConfig: {e}")))?;
+    let config: SessionConfig = serde_json::from_value(config_value).map_err(|e| {
+        (
+            JSONRPC_INVALID_PARAMS,
+            format!("invalid SessionConfig: {e}"),
+        )
+    })?;
     let session = StreamingSession::open(config)
         .map_err(|e| (JSONRPC_INTERNAL_ERROR, format!("open: {e}")))?;
     let id = session.session_id().to_string();
@@ -516,9 +541,10 @@ fn tool_session_event(args: &Value, sessions: &mut SessionMap) -> Result<Value, 
     let event: ResearchEvent = serde_json::from_value(event_value)
         .map_err(|e| (JSONRPC_INVALID_PARAMS, format!("invalid event: {e}")))?;
 
-    let session = sessions
-        .get_mut(session_id)
-        .ok_or((JSONRPC_INVALID_PARAMS, format!("unknown session_id: {session_id}")))?;
+    let session = sessions.get_mut(session_id).ok_or((
+        JSONRPC_INVALID_PARAMS,
+        format!("unknown session_id: {session_id}"),
+    ))?;
 
     let rec = session
         .apply_event(event)
@@ -532,9 +558,10 @@ fn tool_session_close(args: &Value, sessions: &mut SessionMap) -> Result<Value, 
         .get("session_id")
         .and_then(Value::as_str)
         .ok_or((JSONRPC_INVALID_PARAMS, "missing session_id".into()))?;
-    let session = sessions
-        .remove(session_id)
-        .ok_or((JSONRPC_INVALID_PARAMS, format!("unknown session_id: {session_id}")))?;
+    let session = sessions.remove(session_id).ok_or((
+        JSONRPC_INVALID_PARAMS,
+        format!("unknown session_id: {session_id}"),
+    ))?;
     let report = session.close();
     Ok(serde_json::to_value(report).unwrap_or(json!({})))
 }

@@ -38,8 +38,16 @@ async fn extract_belief_update_from_research_note() {
     assert_eq!(event.source, "ix-agent-evaluator");
 
     match event.payload {
-        ResearchEventPayload::BeliefUpdate { proposition, value, evidence }
-        | ResearchEventPayload::ExperimentResult { proposition, value, evidence } => {
+        ResearchEventPayload::BeliefUpdate {
+            proposition,
+            value,
+            evidence,
+        }
+        | ResearchEventPayload::ExperimentResult {
+            proposition,
+            value,
+            evidence,
+        } => {
             // The proposition must mention benchmark-x — exact wording is
             // model-dependent, but the canonical claim is non-negotiable.
             assert!(
@@ -59,7 +67,10 @@ async fn extract_belief_update_from_research_note() {
                 .and_then(|v| v.as_u64())
                 .map(|n| n >= 1)
                 .unwrap_or(false);
-            assert!(has_runs, "evidence should include a runs count >= 1, got: {evidence:?}");
+            assert!(
+                has_runs,
+                "evidence should include a runs count >= 1, got: {evidence:?}"
+            );
         }
         other => panic!("expected BeliefUpdate or ExperimentResult, got: {other:?}"),
     }
@@ -83,7 +94,10 @@ async fn extract_retraction_carries_reason() {
         .expect("Mercury extracts cleanly");
 
     match event.payload {
-        ResearchEventPayload::Retraction { proposition, reason } => {
+        ResearchEventPayload::Retraction {
+            proposition,
+            reason,
+        } => {
             assert!(proposition.to_lowercase().contains("benchmark-x"));
             assert!(!reason.is_empty(), "reason should be non-empty");
         }
@@ -91,7 +105,10 @@ async fn extract_retraction_carries_reason() {
         // or Doubtful — that's a reasonable interpretation too. Accept both.
         ResearchEventPayload::BeliefUpdate { value, .. } => {
             assert!(
-                matches!(value, HexValue::False | HexValue::Doubtful | HexValue::Contradictory),
+                matches!(
+                    value,
+                    HexValue::False | HexValue::Doubtful | HexValue::Contradictory
+                ),
                 "if not a Retraction, value should be False/Doubtful/Contradictory, got: {value:?}"
             );
         }

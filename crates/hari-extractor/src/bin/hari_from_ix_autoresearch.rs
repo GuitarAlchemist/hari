@@ -71,7 +71,10 @@ fn main() -> ExitCode {
     };
 
     if events.is_empty() {
-        eprintln!("error: no `iteration` events found in {}", log_path.display());
+        eprintln!(
+            "error: no `iteration` events found in {}",
+            log_path.display()
+        );
         return ExitCode::from(1);
     }
 
@@ -174,7 +177,10 @@ fn iteration_to_research_event(v: &Value, target: &str) -> Option<ResearchEvent>
     // BeliefNetwork can consolidate repeated observations of the same
     // config under one node. config_hash is a stable digest emitted by
     // ix-autoresearch — no need to rehash here.
-    let proposition = format!("{target}/config-{}-is-an-improvement", &config_hash[..config_hash.len().min(12)]);
+    let proposition = format!(
+        "{target}/config-{}-is-an-improvement",
+        &config_hash[..config_hash.len().min(12)]
+    );
 
     let mut evidence: Evidence = std::collections::BTreeMap::new();
     if let Some(r) = reward {

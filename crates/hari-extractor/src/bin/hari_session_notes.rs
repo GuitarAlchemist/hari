@@ -91,7 +91,12 @@ fn parse_args() -> Result<Args, String> {
         return Err("--source must be non-empty".to_string());
     }
 
-    Ok(Args { source, notes_path, emit_trace, dimension })
+    Ok(Args {
+        source,
+        notes_path,
+        emit_trace,
+        dimension,
+    })
 }
 
 fn print_usage() {

@@ -83,8 +83,7 @@ impl MercuryConfig {
     /// Build a config from the `INCEPTION_API_KEY` env var. Returns
     /// [`ExtractError::MissingApiKey`] if the env var is unset or empty.
     pub fn from_env() -> Result<Self, ExtractError> {
-        let api_key = std::env::var(API_KEY_ENV_VAR)
-            .map_err(|_| ExtractError::MissingApiKey)?;
+        let api_key = std::env::var(API_KEY_ENV_VAR).map_err(|_| ExtractError::MissingApiKey)?;
         if api_key.trim().is_empty() {
             return Err(ExtractError::MissingApiKey);
         }
@@ -150,8 +149,8 @@ impl MercuryExtractor {
         }
 
         let raw = self.complete(note).await?;
-        let parsed: RawExtraction = serde_json::from_str(&raw)
-            .map_err(|e| ExtractError::JsonShape {
+        let parsed: RawExtraction =
+            serde_json::from_str(&raw).map_err(|e| ExtractError::JsonShape {
                 got: raw.clone(),
                 source: e,
             })?;
@@ -167,7 +166,10 @@ impl MercuryExtractor {
     /// Lower-level chat-completion call. Public for benchmarks/tests that
     /// want to drive Mercury directly without the parse step.
     pub async fn complete(&self, note: &str) -> Result<String, ExtractError> {
-        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
         let body = serde_json::json!({
             "model": self.config.model,
             "messages": [
@@ -307,26 +309,36 @@ impl RawExtraction {
 
         match self.kind {
             RawType::BeliefUpdate => Ok(ResearchEventPayload::BeliefUpdate {
-                proposition: self.proposition.ok_or(ExtractError::MissingField("proposition"))?,
+                proposition: self
+                    .proposition
+                    .ok_or(ExtractError::MissingField("proposition"))?,
                 value: parse_hex_value_required(self.value.as_deref())?,
                 evidence,
             }),
             RawType::ExperimentResult => Ok(ResearchEventPayload::ExperimentResult {
-                proposition: self.proposition.ok_or(ExtractError::MissingField("proposition"))?,
+                proposition: self
+                    .proposition
+                    .ok_or(ExtractError::MissingField("proposition"))?,
                 value: parse_hex_value_required(self.value.as_deref())?,
                 evidence,
             }),
             RawType::AgentVote => Ok(ResearchEventPayload::AgentVote {
-                proposition: self.proposition.ok_or(ExtractError::MissingField("proposition"))?,
+                proposition: self
+                    .proposition
+                    .ok_or(ExtractError::MissingField("proposition"))?,
                 value: parse_hex_value_required(self.value.as_deref())?,
                 evidence,
             }),
             RawType::Retraction => Ok(ResearchEventPayload::Retraction {
-                proposition: self.proposition.ok_or(ExtractError::MissingField("proposition"))?,
+                proposition: self
+                    .proposition
+                    .ok_or(ExtractError::MissingField("proposition"))?,
                 reason: self.reason.ok_or(ExtractError::MissingField("reason"))?,
             }),
             RawType::GoalUpdate => Ok(ResearchEventPayload::GoalUpdate {
-                key: self.goal_key.ok_or(ExtractError::MissingField("goal_key"))?,
+                key: self
+                    .goal_key
+                    .ok_or(ExtractError::MissingField("goal_key"))?,
                 description: self
                     .goal_description
                     .ok_or(ExtractError::MissingField("goal_description"))?,
@@ -386,7 +398,10 @@ fn build_evidence(note: Option<&str>, runs: Option<u32>) -> hari_core::Evidence 
         evidence.insert("note".into(), serde_json::Value::String(n.to_string()));
     }
     if let Some(r) = runs.filter(|r| *r > 0) {
-        evidence.insert("runs".into(), serde_json::Value::Number(serde_json::Number::from(r)));
+        evidence.insert(
+            "runs".into(),
+            serde_json::Value::Number(serde_json::Number::from(r)),
+        );
     }
     evidence
 }
@@ -408,15 +423,27 @@ mod tests {
         // module use one config-related env var and serialize via #[test] —
         // a parallel test runner that touches the same var would race, but
         // no other test here does. Wrapped in unsafe per Rust 2024 edition.
-        unsafe { std::env::remove_var(API_KEY_ENV_VAR); }
-        assert!(matches!(MercuryConfig::from_env(), Err(ExtractError::MissingApiKey)));
+        unsafe {
+            std::env::remove_var(API_KEY_ENV_VAR);
+        }
+        assert!(matches!(
+            MercuryConfig::from_env(),
+            Err(ExtractError::MissingApiKey)
+        ));
         assert!(!MercuryConfig::is_configured());
 
-        unsafe { std::env::set_var(API_KEY_ENV_VAR, ""); }
-        assert!(matches!(MercuryConfig::from_env(), Err(ExtractError::MissingApiKey)));
+        unsafe {
+            std::env::set_var(API_KEY_ENV_VAR, "");
+        }
+        assert!(matches!(
+            MercuryConfig::from_env(),
+            Err(ExtractError::MissingApiKey)
+        ));
         assert!(!MercuryConfig::is_configured());
 
-        unsafe { std::env::set_var(API_KEY_ENV_VAR, "sk_fake-for-test"); }
+        unsafe {
+            std::env::set_var(API_KEY_ENV_VAR, "sk_fake-for-test");
+        }
         let cfg = MercuryConfig::from_env().expect("non-empty key should succeed");
         assert_eq!(cfg.model, DEFAULT_MODEL);
         assert!(MercuryConfig::is_configured());
@@ -435,7 +462,10 @@ mod tests {
             model: DEFAULT_MODEL.to_string(),
             timeout: Duration::from_secs(5),
         };
-        assert!(matches!(MercuryExtractor::new(cfg), Err(ExtractError::MissingApiKey)));
+        assert!(matches!(
+            MercuryExtractor::new(cfg),
+            Err(ExtractError::MissingApiKey)
+        ));
     }
 
     #[test]
@@ -450,8 +480,14 @@ mod tests {
         ] {
             assert_eq!(parse_hex_value(raw).unwrap(), expected, "raw={raw}");
         }
-        assert!(matches!(parse_hex_value("maybe"), Err(ExtractError::InvalidHexValue(_))));
-        assert!(matches!(parse_hex_value_required(None), Err(ExtractError::MissingField(_))));
+        assert!(matches!(
+            parse_hex_value("maybe"),
+            Err(ExtractError::InvalidHexValue(_))
+        ));
+        assert!(matches!(
+            parse_hex_value_required(None),
+            Err(ExtractError::MissingField(_))
+        ));
     }
 
     #[test]
@@ -468,7 +504,9 @@ mod tests {
         let raw: RawExtraction = serde_json::from_str(json).expect("schema parses");
         let payload = raw.into_payload().expect("payload builds");
         match payload {
-            ResearchEventPayload::BeliefUpdate { proposition, value, .. } => {
+            ResearchEventPayload::BeliefUpdate {
+                proposition, value, ..
+            } => {
                 assert_eq!(proposition, "benchmark-x-is-reliable");
                 assert_eq!(value, HexValue::Probable);
             }
@@ -483,7 +521,10 @@ mod tests {
             "proposition": "benchmark-x-is-reliable"
         }"#;
         let raw: RawExtraction = serde_json::from_str(json).unwrap();
-        assert!(matches!(raw.into_payload(), Err(ExtractError::MissingField("reason"))));
+        assert!(matches!(
+            raw.into_payload(),
+            Err(ExtractError::MissingField("reason"))
+        ));
     }
 
     #[tokio::test]
