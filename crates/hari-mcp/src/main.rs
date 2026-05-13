@@ -1,7 +1,7 @@
 //! `hari-mcp` — MCP server exposing Hari's belief state to the federation.
 //!
 //! Implements the Model Context Protocol over stdio JSON-RPC 2.0, mirroring
-//! ix-agent's hand-rolled dispatcher pattern. Five tools are exposed:
+//! ix-agent's hand-rolled dispatcher pattern. Eight tools are exposed:
 //!
 //! | tool                       | purpose                                                       |
 //! |----------------------------|---------------------------------------------------------------|
@@ -10,6 +10,9 @@
 //! | `hari_diff`                | Return the last `belief-diff.json` (added/changed/unchanged)   |
 //! | `hari_record_observation`  | Append a ResearchEvent to the log and replay                  |
 //! | `hari_consensus`           | Run hari-swarm consensus over a set of inline AgentVotes      |
+//! | `hari_session_open`        | Open a live `StreamingSession` (Phase 6) and return its id     |
+//! | `hari_session_event`       | Apply one ResearchEvent to a named session, return recommendation |
+//! | `hari_session_close`       | Close the session and return its final `ResearchReplayReport`  |
 //!
 //! All state lives under a configurable `state-dir` (default
 //! `state/harness`) — the same directory `hari-harness` reads/writes.
@@ -23,12 +26,13 @@
 //! async stack we don't otherwise need. The wire surface is small enough
 //! that ~300 lines of explicit JSON-RPC is the right tradeoff.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use hari_core::{
     Action, CognitiveLoop, Evidence, ResearchEvent, ResearchEventPayload, ResearchTrace,
+    SessionConfig, StreamingSession,
 };
 use hari_lattice::HexValue;
 use hari_swarm::{Agent, AgentRole, Swarm, TrustModel};
@@ -49,12 +53,18 @@ fn state_dir_from_env() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("state/harness"))
 }
 
+/// In-process registry of live streaming sessions, keyed by `session_id`.
+/// Lives in `main` and threaded through `handle_tools_call`. The MCP
+/// reader is single-threaded, so a plain `HashMap` is enough — no Mutex.
+type SessionMap = HashMap<String, StreamingSession>;
+
 fn main() {
     let state_dir = state_dir_from_env();
     eprintln!("[hari-mcp] MCP server starting; state-dir={}", state_dir.display());
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
+    let mut sessions: SessionMap = HashMap::new();
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -84,7 +94,7 @@ fn main() {
             "initialize" => write_response(&mut stdout, id, handle_initialize()),
             "notifications/initialized" => { /* notification — no response */ }
             "tools/list" => write_response(&mut stdout, id, handle_tools_list()),
-            "tools/call" => match handle_tools_call(params, &state_dir) {
+            "tools/call" => match handle_tools_call(params, &state_dir, &mut sessions) {
                 Ok(v) => write_response(&mut stdout, id, v),
                 Err((code, msg)) => write_error(&mut stdout, id, code, msg),
             },
@@ -185,12 +195,47 @@ fn handle_tools_list() -> Value {
                     },
                     "required": ["proposition", "votes"]
                 }
+            },
+            {
+                "name": "hari_session_open",
+                "description": "Open a live Phase-6 StreamingSession. Returns the session_id which must be passed to hari_session_event and hari_session_close. The `config` argument is a partial SessionConfig — all fields optional; missing fields use defaults (dimension=4, RecencyDecay, etc.).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "config": { "type": "object", "description": "Partial SessionConfig JSON" }
+                    }
+                }
+            },
+            {
+                "name": "hari_session_event",
+                "description": "Apply one ResearchEvent to a live session. Returns the RecommendationResponse: action list, state summary, and any propagation derivations. Out-of-order cycles or closed sessions return MCP errors.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "string" },
+                        "event": { "type": "object", "description": "ResearchEvent { cycle, source, payload }" }
+                    },
+                    "required": ["session_id", "event"]
+                }
+            },
+            {
+                "name": "hari_session_close",
+                "description": "Close a live session and return its final ResearchReplayReport (same shape `hari-core replay` emits). The session is removed from the in-memory map after closing.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": { "session_id": { "type": "string" } },
+                    "required": ["session_id"]
+                }
             }
         ]
     })
 }
 
-fn handle_tools_call(params: Option<Value>, state_dir: &Path) -> Result<Value, (i64, String)> {
+fn handle_tools_call(
+    params: Option<Value>,
+    state_dir: &Path,
+    sessions: &mut SessionMap,
+) -> Result<Value, (i64, String)> {
     let params = params.ok_or((JSONRPC_INVALID_PARAMS, "tools/call missing params".into()))?;
     let name = params
         .get("name")
@@ -204,6 +249,9 @@ fn handle_tools_call(params: Option<Value>, state_dir: &Path) -> Result<Value, (
         "hari_diff" => tool_diff(state_dir)?,
         "hari_record_observation" => tool_record_observation(&args, state_dir)?,
         "hari_consensus" => tool_consensus(&args)?,
+        "hari_session_open" => tool_session_open(&args, sessions)?,
+        "hari_session_event" => tool_session_event(&args, sessions)?,
+        "hari_session_close" => tool_session_close(&args, sessions)?,
         other => {
             return Err((
                 JSONRPC_METHOD_NOT_FOUND,
@@ -431,4 +479,62 @@ fn tool_consensus(args: &Value) -> Result<Value, (i64, String)> {
         "agreement": result.agreement,
         "votes": result.votes
     }))
+}
+
+// ---------------------------------------------------------------------------
+// Streaming session tools — Phase 6 multiplexer
+// ---------------------------------------------------------------------------
+
+fn tool_session_open(args: &Value, sessions: &mut SessionMap) -> Result<Value, (i64, String)> {
+    let config_value = args.get("config").cloned().unwrap_or(json!({}));
+    let config: SessionConfig = serde_json::from_value(config_value)
+        .map_err(|e| (JSONRPC_INVALID_PARAMS, format!("invalid SessionConfig: {e}")))?;
+    let session = StreamingSession::open(config)
+        .map_err(|e| (JSONRPC_INTERNAL_ERROR, format!("open: {e}")))?;
+    let id = session.session_id().to_string();
+    let trace_path = session.trace_path().map(|p| p.display().to_string());
+    let config_echo = serde_json::to_value(session.config()).unwrap_or(json!({}));
+    sessions.insert(id.clone(), session);
+    Ok(json!({
+        "session_id": id,
+        "trace_path": trace_path,
+        "hari_version": env!("CARGO_PKG_VERSION"),
+        "config_echo": config_echo,
+        "open_sessions": sessions.len()
+    }))
+}
+
+fn tool_session_event(args: &Value, sessions: &mut SessionMap) -> Result<Value, (i64, String)> {
+    let session_id = args
+        .get("session_id")
+        .and_then(Value::as_str)
+        .ok_or((JSONRPC_INVALID_PARAMS, "missing session_id".into()))?;
+    let event_value = args
+        .get("event")
+        .cloned()
+        .ok_or((JSONRPC_INVALID_PARAMS, "missing event".into()))?;
+    let event: ResearchEvent = serde_json::from_value(event_value)
+        .map_err(|e| (JSONRPC_INVALID_PARAMS, format!("invalid event: {e}")))?;
+
+    let session = sessions
+        .get_mut(session_id)
+        .ok_or((JSONRPC_INVALID_PARAMS, format!("unknown session_id: {session_id}")))?;
+
+    let rec = session
+        .apply_event(event)
+        .map_err(|e| (JSONRPC_INTERNAL_ERROR, format!("apply_event: {e}")))?;
+
+    Ok(serde_json::to_value(rec).unwrap_or(json!({})))
+}
+
+fn tool_session_close(args: &Value, sessions: &mut SessionMap) -> Result<Value, (i64, String)> {
+    let session_id = args
+        .get("session_id")
+        .and_then(Value::as_str)
+        .ok_or((JSONRPC_INVALID_PARAMS, "missing session_id".into()))?;
+    let session = sessions
+        .remove(session_id)
+        .ok_or((JSONRPC_INVALID_PARAMS, format!("unknown session_id: {session_id}")))?;
+    let report = session.close();
+    Ok(serde_json::to_value(report).unwrap_or(json!({})))
 }

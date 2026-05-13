@@ -83,8 +83,21 @@ hari_harness --state-dir state/harness --cargo-test state/cargo-test.jsonl --sou
 
 Each `{ "type":"test", "event":"ok"|"failed", "name": ... }` becomes one `ExperimentResult`. Multiple `True`s on the same test → consolidation. A `False` after a string of `True`s on `test/foo-passes` is a flaky-test signal.
 
+## Live streaming sessions (Phase 6 multiplexer)
+
+`hari-mcp` now multiplexes Phase-6 `StreamingSession`s in-process. Three additional tools:
+
+| tool | purpose |
+|---|---|
+| `hari_session_open` | Open a new `StreamingSession`, returns `session_id` |
+| `hari_session_event` | Apply one event to a named session, returns `RecommendationResponse` + derivations |
+| `hari_session_close` | Close the session, returns the full `ResearchReplayReport` |
+
+This is the in-process equivalent of `hari-core serve` — same protocol semantics, but accessible from any MCP federation peer without spawning a subprocess. Multiple sessions can be open concurrently; each carries its own `CognitiveLoop`, optional shadow loop, and trace recorder.
+
+The session multiplexer is the natural home for **live operations** (PR-review streaming, autoresearch run-tracking, live QA tribunal aggregation). The CLI-style `hari_record_observation` + `hari-harness` remain available for batch.
+
 ## What's still design-only
 
-- **`hari-core serve` integration with the harness.** The Phase-6 streaming protocol exists; wiring the harness to push events into a long-running session (instead of one-shot CLI invocations) is the natural follow-up but a different shape. Tracked as M2 of `docs/design/2026-05-13-hari-qa-tribunal-substrate-plan.md`.
-- **Demerzel governance hook.** Cross-repo coordination required. Tracked as M3 of the tribunal plan.
+- **Demerzel governance hook.** Cross-repo coordination required. Tracked as M3 of `docs/design/2026-05-13-hari-qa-tribunal-substrate-plan.md`.
 - **Real `ix-code-analyze` → `hari_code_relations` integration.** Today the graph JSON has to be hand-shaped to match the `{ edges: [...] }` schema; an `ix-code-analyze --emit-hari-graph` flag is the obvious next move on the ix side.
