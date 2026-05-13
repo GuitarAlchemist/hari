@@ -1,0 +1,66 @@
+name: Inception Mercury Smoke (Hari)
+
+# Validates hari-extractor's NL → ResearchEvent path against real Mercury 2.
+# The live_smoke tests skip themselves when INCEPTION_API_KEY is missing, so
+# fork PRs and developers without a key see a clean pass; the real assertion
+# runs only when the secret is wired into the env.
+#
+# Triggered on:
+#   - PR to main that touches hari-extractor or this workflow
+#   - manual workflow_dispatch (after rotating the API key)
+#   - weekly Monday 6 AM UTC schedule (vendor-side API drift canary)
+#
+# Cost ceiling: 2 calls per run × $0.000307/call ≈ $0.0006. Trivial.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'crates/hari-extractor/**'
+      - '.github/workflows/inception-smoke.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  smoke:
+    name: hari-extractor live smoke
+    runs-on: ubuntu-latest
+
+    # Forks won't have the secret; skip the schedule trigger for them.
+    if: github.event_name != 'schedule' || github.repository_owner == 'GuitarAlchemist'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-hari-extractor
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build
+        run: cargo build -p hari-extractor --release
+
+      - name: Unit tests
+        run: cargo test -p hari-extractor --lib --release
+
+      - name: Live smoke against Mercury
+        env:
+          INCEPTION_API_KEY: ${{ secrets.INCEPTION_API_KEY }}
+        run: |
+          if [ -z "$INCEPTION_API_KEY" ]; then
+            echo "::error::INCEPTION_API_KEY secret not set on this repo. Set it via:"
+            echo "  gh secret set INCEPTION_API_KEY --repo $GITHUB_REPOSITORY"
+            exit 1
+          fi
+          cargo test -p hari-extractor --test live_smoke --release -- --nocapture
