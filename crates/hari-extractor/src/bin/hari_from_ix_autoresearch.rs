@@ -12,6 +12,14 @@
 //!
 //! ## Wire contract
 //!
+//! Pinned upstream in `ix/crates/ix-autoresearch/SCHEMA.md` (boundary
+//! contract) and `ix/crates/ix-autoresearch/jsonl-event.schema.json`
+//! (machine-readable JSON Schema). This bin is the canonical reference
+//! consumer of that contract; the Hari-side integration test
+//! `crates/hari-extractor/tests/ix_jsonl_contract_replay.rs` exercises
+//! the Phase 2 acceptance criteria (deterministic replay, contradictory
+//! evidence preserved as `HexValue::Contradictory`).
+//!
 //! ix-autoresearch's `crates/ix-autoresearch/src/log.rs` emits JSONL where
 //! every line is a `LogEvent<C, S>` tagged via `#[serde(tag = "event")]`.
 //! We only care about the `iteration` variant; `run_start` and
