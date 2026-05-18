@@ -1,0 +1,285 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 0,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:291099691178d545243789edd23732e47504fced1a133e6f3f7b5be6c496bb77",
+          "elapsed_ms": 0,
+          "reward": 0.21904213350612417
+        }
+      }
+    },
+    {
+      "cycle": 1,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:f5d08f0f72aa8da596c3c851c16801d1621ea23950d8e59941c5c39da367a152",
+          "elapsed_ms": 0,
+          "reward": 0.25714530653027673
+        }
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Doubtful",
+        "evidence": {
+          "config_hash": "autoresearch:325993e6dea817a17b8af5ddb6bc7d28595838887cf810d68ff8e865fd2ad648",
+          "elapsed_ms": 0,
+          "reward": 0.2213109641326254
+        }
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:c14fb60af14a125fb10e37753fa7ea5f01e623ebf7be51a83a3a44fb035667a3",
+          "elapsed_ms": 0,
+          "reward": 0.2318145070134311
+        }
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:a0299453d7605288c433a087f869656a91e393a7fbbae9a9f58a78f60a8b842b",
+          "elapsed_ms": 0,
+          "reward": 0.1854547079009787
+        }
+      }
+    },
+    {
+      "cycle": 5,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:6d090a644e86301dfddd97e75d1ce10444c07c62c39eb85dfa992c4322e3cce2",
+          "elapsed_ms": 0,
+          "reward": 0.21287399346895405
+        }
+      }
+    },
+    {
+      "cycle": 6,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:8bb314832666b2dd4a2c09f3bfcb64a127a6b59390a3e381f12eb5420734b3c0",
+          "elapsed_ms": 0,
+          "reward": 0.21469720300455164
+        }
+      }
+    },
+    {
+      "cycle": 7,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:8c242e1a1479df56dac30e9c6374c6b17867fc92d57ca0286450e9930915ce27",
+          "elapsed_ms": 0,
+          "reward": 0.2170857731479312
+        }
+      }
+    },
+    {
+      "cycle": 8,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:2f4a4157378f5e2722b9728bddedac325c75e36913bfd81161ce045d26fd7602",
+          "elapsed_ms": 0,
+          "reward": 0.21665522097267104
+        }
+      }
+    },
+    {
+      "cycle": 9,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:c7d31177a007f742d6a5f380a5194f36c538cc2948d29ed4b3bbd761fa0b8f72",
+          "elapsed_ms": 0,
+          "reward": 0.19065558269785884
+        }
+      }
+    },
+    {
+      "cycle": 10,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:a96d37895936cd0ee8fbc7a26435c97ec392916c8e4bae310eb6bb330225570a",
+          "elapsed_ms": 0,
+          "reward": 0.1925283305543584
+        }
+      }
+    },
+    {
+      "cycle": 11,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:d35bb14dafc641b4aa0848f6ee70cc7d3d78a4d17be5e3a6b8160ff749652771",
+          "elapsed_ms": 0,
+          "reward": 0.21448199055397457
+        }
+      }
+    },
+    {
+      "cycle": 12,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:7fc9a1d1893972a996a75b27d746a610b6bce42390467f4ec06066f0d3079f79",
+          "elapsed_ms": 0,
+          "reward": 0.2208696954421369
+        }
+      }
+    },
+    {
+      "cycle": 13,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:7fbb1ecf96e101459b261827bc0a5aaff4cf7ea8005c2cbde613b7a5d8b99190",
+          "elapsed_ms": 0,
+          "reward": 0.2175052966701883
+        }
+      }
+    },
+    {
+      "cycle": 14,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:ddf0d29332ec841fc25a59c988f3ba858529b4098bd5253e9bcc95895404297f",
+          "elapsed_ms": 0,
+          "reward": 0.21823580589585456
+        }
+      }
+    },
+    {
+      "cycle": 15,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:8ea0ba08b968c1377f1397e73aeac92769883d6ff894f9f7dcfcecbeaf924b4b",
+          "elapsed_ms": 0,
+          "reward": 0.2260898434819273
+        }
+      }
+    },
+    {
+      "cycle": 16,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Probable",
+        "evidence": {
+          "config_hash": "autoresearch:1c8099bebe633aa9758811b5717efa98a4d277bad5155d38a3c0cc04c59b5f5a",
+          "elapsed_ms": 0,
+          "reward": 0.2575127433004318
+        }
+      }
+    },
+    {
+      "cycle": 17,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Doubtful",
+        "evidence": {
+          "config_hash": "autoresearch:ad93b187381477823b7556ad6cd47439a8ec374c8ac9dd55b7da9426e88bedc7",
+          "elapsed_ms": 0,
+          "reward": 0.22139059245566337
+        }
+      }
+    },
+    {
+      "cycle": 18,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Doubtful",
+        "evidence": {
+          "config_hash": "autoresearch:1cd4a2b1a843077a0d9abcda3468154022f52608d7960d226be52eca1145ff74",
+          "elapsed_ms": 0,
+          "reward": 0.2198036203878952
+        }
+      }
+    },
+    {
+      "cycle": 19,
+      "source": "ix-autoresearch:target_grammar",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "target_grammar/config-autoresearch-is-an-improvement",
+        "value": "Doubtful",
+        "evidence": {
+          "config_hash": "autoresearch:75adf43780456c4c3499ac3dd924b9862928ae231696a52b523dbbedda44bcb4",
+          "elapsed_ms": 0,
+          "reward": 0.2189367994936879
+        }
+      }
+    }
+  ]
+}
