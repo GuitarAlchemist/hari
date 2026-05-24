@@ -10,6 +10,19 @@ __pycache__/
 # Octopus / Claude Code session state — local-only, do not commit
 .octo/
 .claude-octopus/
-.claude/
 .octo-factory-launch.log
 .octo-review.log
+
+# Claude Code: track hooks/settings/skills (shared infra), ignore per-session scratch
+.claude/*
+!.claude/hooks/
+!.claude/settings.json
+!.claude/skills/
+!.claude/commands/
+.claude/settings.local.json
+.claude/worktrees/
+.claude/local/
+
+# Session digests — per-session cursor state, README.md tracked
+state/digests/*
+!state/digests/README.md
