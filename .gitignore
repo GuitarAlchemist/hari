@@ -26,3 +26,6 @@ __pycache__/
 # Session digests — per-session cursor state, README.md tracked
 state/digests/*
 !state/digests/README.md
+
+# /teach generated courses (personal, regenerable)
+learning/
