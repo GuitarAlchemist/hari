@@ -101,3 +101,20 @@ The harness exits **2** when any `Action::Escalate` fires — this is the "needs
 ## Docker
 
 `docker-compose.yml` defines a single `hari-core` service (sandboxed: 4G mem cap, 2 CPUs, read-only fs, tmpfs `/tmp`). The default CMD runs the substrate-decision demo; override with `docker compose run --rm hari-core ./hari-core serve` to expose the streaming protocol or `... ./hari-core replay <path>` for fixture replays. `hari-swarm` is **library-only by design** — its capabilities are reachable from `hari-core` via `SessionConfig.{trust_model, use_swarm_consensus, initial_agents}`, so there's no separate binary or compose service for it.
+
+
+## Agent skills
+
+Per-repo config for the mattpocock engineering skills (`to-issues`, `to-prd`, `triage`, `qa`, `tdd`, `improve-codebase-architecture`, etc.).
+
+### Issue tracker
+
+Issues tracked via GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical defaults (`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context (`CONTEXT.md` + `docs/adr/`). See `docs/agents/domain.md`.
