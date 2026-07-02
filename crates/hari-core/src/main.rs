@@ -131,6 +131,13 @@ fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 predicate: flag(args, "--predicate").ok_or(usage)?.to_string(),
             };
             let horizon = flag(args, "--horizon").ok_or(usage)?;
+            if !forecast::is_canonical_utc(horizon) {
+                return Err(format!(
+                    "--horizon must be canonical YYYY-MM-DDTHH:MM:SSZ UTC \
+                     (no offsets, no fractional seconds): {horizon:?}"
+                )
+                .into());
+            }
             let record = forecast::emit(
                 belief,
                 observable,
@@ -153,6 +160,13 @@ fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let now = flag(args, "--now")
                 .map(String::from)
                 .unwrap_or_else(forecast::rfc3339_now);
+            if !forecast::is_canonical_utc(&now) {
+                return Err(format!(
+                    "--now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC \
+                     (no offsets, no fractional seconds): {now:?}"
+                )
+                .into());
+            }
             // Unreadable artifact at horizon → void, per contract.
             let artifact: Option<serde_json::Value> = fs::read_to_string(artifact_path)
                 .ok()

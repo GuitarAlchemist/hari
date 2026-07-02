@@ -228,11 +228,18 @@ pub fn ledger_dir() -> PathBuf {
 /// Resolved copies land in the same file as their pending original, so
 /// last-record-per-id semantics hold within one file scan.
 pub fn append(dir: &Path, record: &ForecastRecord) -> io::Result<PathBuf> {
-    if record.emitted_at.len() < 10 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("emitted_at is not a date-time: {:?}", record.emitted_at),
-        ));
+    // Ordering-critical fields must be canonical before they hit the ledger —
+    // see `is_canonical_utc` for the fractional-seconds hazard.
+    for (name, value) in [
+        ("emitted_at", &record.emitted_at),
+        ("horizon", &record.horizon),
+    ] {
+        if !is_canonical_utc(value) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{name} is not canonical YYYY-MM-DDTHH:MM:SSZ UTC: {value:?}"),
+            ));
+        }
     }
     fs::create_dir_all(dir)?;
     let path = dir.join(format!("{}.jsonl", &record.emitted_at[..10]));
@@ -321,6 +328,37 @@ pub fn calibration(records: &[ForecastRecord]) -> BTreeMap<String, BeliefCalibra
 // ---------------------------------------------------------------------------
 // Clock + id helpers — no new dependencies; std only.
 // ---------------------------------------------------------------------------
+
+/// v0.1 accepts exactly the canonical form this module emits:
+/// `YYYY-MM-DDTHH:MM:SSZ` — 20 chars, seconds precision, UTC `Z`. Offsets and
+/// fractional seconds are rejected at the write boundary: a fractional-second
+/// horizon like `…T18:00:00.500Z` would sort *before* `…T18:00:00Z` under the
+/// lexicographic comparison in [`ForecastRecord::is_past_horizon`] (`.` < `Z`)
+/// and could resolve a forecast before its actual horizon.
+pub fn is_canonical_utc(ts: &str) -> bool {
+    let b = ts.as_bytes();
+    if b.len() != 20 {
+        return false;
+    }
+    for (i, &c) in b.iter().enumerate() {
+        let ok = match i {
+            4 | 7 => c == b'-',
+            10 => c == b'T',
+            13 | 16 => c == b':',
+            19 => c == b'Z',
+            _ => c.is_ascii_digit(),
+        };
+        if !ok {
+            return false;
+        }
+    }
+    let n = |r: std::ops::Range<usize>| ts[r].parse::<u32>().unwrap_or(99);
+    (1..=12).contains(&n(5..7))
+        && (1..=31).contains(&n(8..10))
+        && n(11..13) < 24
+        && n(14..16) < 60
+        && n(17..19) < 60
+}
 
 /// Current UTC time as `YYYY-MM-DDTHH:MM:SSZ`.
 pub fn rfc3339_now() -> String {
@@ -503,6 +541,30 @@ mod tests {
         assert_eq!(id.as_bytes()[14], b'7');
         assert!(matches!(id.as_bytes()[19], b'8' | b'9' | b'a' | b'b'));
         assert_ne!(uuidv7(), id);
+    }
+
+    #[test]
+    fn canonical_utc_rejects_fractional_seconds_and_offsets() {
+        assert!(is_canonical_utc("2026-07-03T18:00:00Z"));
+        assert!(is_canonical_utc(&rfc3339_now()));
+        // The Codex-flagged hazard: '.' < 'Z' would make this sort as due
+        // before the real horizon under lexicographic comparison.
+        assert!(!is_canonical_utc("2026-07-03T18:00:00.500Z"));
+        assert!(!is_canonical_utc("2026-07-03T18:00:00+00:00"));
+        assert!(!is_canonical_utc("2026-07-03 18:00:00Z"));
+        assert!(!is_canonical_utc("2026-13-03T18:00:00Z"));
+        assert!(!is_canonical_utc("2026-07-03T24:00:00Z"));
+        assert!(!is_canonical_utc(""));
+    }
+
+    #[test]
+    fn append_rejects_non_canonical_horizon() {
+        let dir = std::env::temp_dir().join(format!("hari-forecast-test-{}", uuidv7()));
+        let mut rec = sample_record(0.9);
+        rec.horizon = "2026-07-03T18:00:00.500Z".into();
+        let err = append(&dir, &rec).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(!dir.exists());
     }
 
     #[test]
