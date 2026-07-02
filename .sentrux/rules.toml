@@ -1,0 +1,75 @@
+# Hari Sentrux architectural constraints — initial baseline
+#
+# Purpose: unblock the Sentrux dashboard's "Rule violations" surface for the
+# hari belief-state substrate. hari is a young, small Rust workspace (4
+# crates, 67 files, 16k LOC) so the rules can already be relatively strict.
+#
+# Tightening strategy: hari has 0 cycles and a clean dependency hierarchy
+# (lattice/cognition → swarm → core). Lock that in now; tighten function
+# limits incrementally as the crate count grows.
+#
+# Baseline snapshot (sentrux scan on feat/sentrux-rules):
+#   files = 67, import_edges = 20, cross_module_edges = 15,
+#   detected cycles = 0, quality_signal = 6752/10000.
+
+[constraints]
+# Acyclicity is already perfect — lock it in.
+max_cycles = 0
+
+# Cyclomatic complexity ceiling. 60 is generous for a young codebase but
+# conservative for Rust. TODO: drop to 40 after the first decomposition pass.
+max_cc = 60
+
+# Function length ceiling. 250 covers any reasonable Rust function while
+# catching the obvious monsters. TODO: drop to 150.
+max_fn_lines = 250
+
+# God-file detector: stay off until we have a clearer crate-level
+# decomposition; hari-core may legitimately fan out as the orchestrator.
+no_god_files = false
+
+# ─── Layers ────────────────────────────────────────────────────────
+# Order derived from Cargo.toml dependency declarations:
+#   - hari-lattice + hari-cognition: no internal deps (foundation)
+#   - hari-swarm: depends on lattice + cognition
+#   - hari-core: depends on swarm + lattice + cognition
+
+[[layers]]
+name = "foundation"
+paths = [
+  "crates/hari-lattice/*",
+  "crates/hari-cognition/*",
+]
+order = 0
+
+[[layers]]
+name = "swarm"
+paths = ["crates/hari-swarm/*"]
+order = 1
+
+[[layers]]
+name = "orchestrator"
+paths = ["crates/hari-core/*"]
+order = 2
+
+[[layers]]
+name = "clients-and-tooling"
+paths = ["clients/*", "scripts/*"]
+order = 3
+
+# ─── Boundaries ────────────────────────────────────────────────────
+
+[[boundaries]]
+from = "crates/hari-lattice/*"
+to = "crates/hari-core/*"
+reason = "Lattice is foundational — must not reverse-depend on the orchestrator."
+
+[[boundaries]]
+from = "crates/hari-cognition/*"
+to = "crates/hari-swarm/*"
+reason = "Cognition is foundational — swarm consumes cognition, not the other way around."
+
+[[boundaries]]
+from = "crates/hari-lattice/*"
+to = "crates/hari-swarm/*"
+reason = "Lattice must remain reusable outside the swarm context."
