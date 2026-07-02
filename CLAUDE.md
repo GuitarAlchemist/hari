@@ -25,7 +25,7 @@ cargo fmt --all
 docker-compose up hari-core                   # Sandboxed run (read-only fs, mem/cpu limits)
 ```
 
-The `hari-core` binary has three modes selected by the first positional argument: no args runs the **substrate-decision demo** (`run_substrate_decision_demo` in `main.rs` — a self-referential scripted scenario showing Hari tracking claims about its own Phase 5 substrate decision via `RelationDeclaration` + `AgentVote` events under `TrustModel::RoleWeighted`); `replay <path>` deserializes a `ResearchTrace` (object form) or a bare `Vec<ResearchEvent>` (array form) and emits a `ResearchReplayReport` as pretty JSON; `serve` runs the Phase 6 stdio JSONL streaming protocol. When adding new event types, update both `parse_trace` paths.
+The `hari-core` binary has four modes selected by the first positional argument: no args runs the **substrate-decision demo** (`run_substrate_decision_demo` in `main.rs` — a self-referential scripted scenario showing Hari tracking claims about its own Phase 5 substrate decision via `RelationDeclaration` + `AgentVote` events under `TrustModel::RoleWeighted`); `replay <path>` deserializes a `ResearchTrace` (object form) or a bare `Vec<ResearchEvent>` (array form) and emits a `ResearchReplayReport` as pretty JSON; `serve` runs the Phase 6 stdio JSONL streaming protocol; `forecast <emit|resolve|calibration>` operates the Jarvis Track J2 forecast ledger (`crates/hari-core/src/forecast.rs`, contract: `ga:docs/contracts/2026-07-02-hari-forecast-record.contract.md` v0.1 DRAFT, hari-side review: `docs/research/2026-07-02-forecast-record-hari-review.md`). When adding new event types, update both `parse_trace` paths.
 
 ## Architecture
 

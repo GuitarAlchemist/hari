@@ -3,8 +3,8 @@
 //! Main binary that demonstrates the cognitive loop with all subsystems.
 
 use hari_core::{
-    compare_replay, compare_replay_three_way, Action, CognitiveLoop, PriorityModel, Request,
-    ResearchEvent, ResearchEventPayload, ResearchTrace, Response, StreamingSession,
+    compare_replay, compare_replay_three_way, forecast, Action, CognitiveLoop, PriorityModel,
+    Request, ResearchEvent, ResearchEventPayload, ResearchTrace, Response, StreamingSession,
     SubjectiveLogicConfig,
 };
 use hari_lattice::{HexValue, Relation};
@@ -63,6 +63,16 @@ fn main() {
         return;
     }
 
+    if args.get(1).map(String::as_str) == Some("forecast") {
+        // Jarvis Track J2 tracer bullet. Emit / resolve / calibration over
+        // the append-only JSONL ledger (HARI_STATE_DIR/forecasts/).
+        if let Err(err) = run_forecast_cli(&args[2..]) {
+            eprintln!("hari-core forecast failed: {err}");
+            process::exit(1);
+        }
+        return;
+    }
+
     if args.get(1).map(String::as_str) == Some("serve") {
         // Phase 6 stdio JSONL service. Synchronous request/response.
         // Logs to stderr; protocol on stdin/stdout.
@@ -85,6 +95,118 @@ fn main() {
         .init();
 
     run_substrate_decision_demo();
+}
+
+/// Jarvis Track J2 CLI: `hari-core forecast <emit|resolve|calibration> …`.
+///
+/// - `emit --belief <slug> --probability <p> --source <s> --field <f>
+///   --predicate <pred> --horizon <rfc3339Z> [--rationale <text>]
+///   [--supersedes <forecast_id>]` — append a pending record, print it.
+/// - `resolve --source <s> --artifact <local-path> [--now <rfc3339Z>]` —
+///   score every pending record past horizon whose observable.source
+///   matches; unreadable artifact resolves as `void`, never dropped.
+/// - `calibration` — per-belief Brier mean + count over the whole ledger.
+fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .map(String::as_str)
+    }
+
+    let dir = forecast::ledger_dir();
+    match args.first().map(String::as_str) {
+        Some("emit") => {
+            let usage = "usage: hari-core forecast emit --belief <slug> --probability <p> \
+                         --source <s> --field <f> --predicate <pred> --horizon <rfc3339Z> \
+                         [--rationale <text>] [--supersedes <forecast_id>]";
+            let belief = flag(args, "--belief").ok_or(usage)?;
+            let probability: f64 = flag(args, "--probability").ok_or(usage)?.parse()?;
+            if !(0.0..=1.0).contains(&probability) {
+                return Err("probability must be in [0, 1]".into());
+            }
+            let observable = forecast::Observable {
+                source: flag(args, "--source").ok_or(usage)?.to_string(),
+                field: flag(args, "--field").ok_or(usage)?.to_string(),
+                predicate: flag(args, "--predicate").ok_or(usage)?.to_string(),
+            };
+            let horizon = flag(args, "--horizon").ok_or(usage)?;
+            if !forecast::is_canonical_utc(horizon) {
+                return Err(format!(
+                    "--horizon must be canonical YYYY-MM-DDTHH:MM:SSZ UTC \
+                     (no offsets, no fractional seconds): {horizon:?}"
+                )
+                .into());
+            }
+            let record = forecast::emit(
+                belief,
+                observable,
+                probability,
+                flag(args, "--rationale").map(String::from),
+                horizon,
+                flag(args, "--supersedes").map(String::from),
+                &forecast::rfc3339_now(),
+            );
+            let path = forecast::append(&dir, &record)?;
+            println!("{}", serde_json::to_string_pretty(&record)?);
+            info!("forecast appended to {}", path.display());
+            Ok(())
+        }
+        Some("resolve") => {
+            let usage = "usage: hari-core forecast resolve --source <s> \
+                         --artifact <local-path> [--now <rfc3339Z>]";
+            let source = flag(args, "--source").ok_or(usage)?;
+            let artifact_path = flag(args, "--artifact").ok_or(usage)?;
+            let now = flag(args, "--now")
+                .map(String::from)
+                .unwrap_or_else(forecast::rfc3339_now);
+            if !forecast::is_canonical_utc(&now) {
+                return Err(format!(
+                    "--now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC \
+                     (no offsets, no fractional seconds): {now:?}"
+                )
+                .into());
+            }
+            // Unreadable artifact at horizon → void, per contract.
+            let artifact: Option<serde_json::Value> = fs::read_to_string(artifact_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok());
+            if artifact.is_none() {
+                warn!("artifact unreadable at {artifact_path}; due forecasts resolve as void");
+            }
+            let (records, skipped) = forecast::load(&dir)?;
+            if skipped > 0 {
+                warn!("ledger: skipped {skipped} malformed line(s)");
+            }
+            let mut resolved = Vec::new();
+            for mut record in records {
+                if !record.is_pending()
+                    || record.observable.source != source
+                    || !record.is_past_horizon(&now)
+                {
+                    continue;
+                }
+                record.resolution = Some(forecast::resolve(&record, artifact.as_ref(), &now));
+                forecast::append(&dir, &record)?;
+                resolved.push(record);
+            }
+            println!("{}", serde_json::to_string_pretty(&resolved)?);
+            info!("resolved {} forecast(s)", resolved.len());
+            Ok(())
+        }
+        Some("calibration") => {
+            let (records, skipped) = forecast::load(&dir)?;
+            if skipped > 0 {
+                warn!("ledger: skipped {skipped} malformed line(s)");
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&forecast::calibration(&records))?
+            );
+            Ok(())
+        }
+        _ => Err("usage: hari-core forecast <emit|resolve|calibration> …".into()),
+    }
 }
 
 /// Self-referential demo: Hari tracks the Phase 5 substrate decision

@@ -46,6 +46,14 @@ pub use protocol::{
 pub use session::{StreamingSession, TraceRecorder};
 
 // ---------------------------------------------------------------------------
+// Jarvis Track J2 — forecast records (the prediction half of the world
+// model). Contract: ga:docs/contracts/2026-07-02-hari-forecast-record.contract.md
+// ---------------------------------------------------------------------------
+pub mod forecast;
+
+pub use forecast::{ForecastRecord, Observable as ForecastObservable, Outcome as ForecastOutcome};
+
+// ---------------------------------------------------------------------------
 // Subjective Logic prior-art baseline (Jøsang 2016) — see
 // `docs/research/prior-art-survey.md` §4.
 // ---------------------------------------------------------------------------
