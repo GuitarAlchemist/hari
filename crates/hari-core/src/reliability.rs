@@ -118,11 +118,15 @@ pub fn load_grades(dir: &Path) -> io::Result<(Vec<GradeCard>, usize)> {
 }
 
 /// Aggregate over one bucket of outcome scores.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+///
+/// `Deserialize` exists for wire consumers of the Phase 6 `reliability`
+/// response (`crate::protocol::Response` derives it) — hari itself never
+/// reads reports back.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ReliabilityEntry {
     pub n: usize,
     /// Raw mean of outcome scores; absent when `n == 0`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mean: Option<f64>,
     /// `(sum + PRIOR_WEIGHT · PRIOR_MEAN) / (n + PRIOR_WEIGHT)` — pulls
     /// small samples toward the neutral prior; equals [`PRIOR_MEAN`] at
@@ -143,13 +147,13 @@ impl ReliabilityEntry {
 }
 
 /// Per-agent view: overall entry + per-task-class split.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AgentReliability {
     pub overall: ReliabilityEntry,
     pub by_class: BTreeMap<String, ReliabilityEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReliabilityReport {
     pub schema: String,
     pub generated_at: String,

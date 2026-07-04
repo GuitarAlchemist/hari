@@ -581,7 +581,7 @@ fn replay_session(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> 
                     eprintln!("replay --session: event rejected: {e}");
                 }
             }
-            Request::Metrics | Request::Close => {
+            Request::Metrics | Request::Close | Request::Reliability { .. } => {
                 // Observation-only / lifecycle markers — no-ops on replay.
             }
             Request::Open { .. } => {
@@ -773,6 +773,34 @@ fn handle_request(session: &mut Option<StreamingSession>, req: Request) -> Respo
             Response::Closed {
                 final_report,
                 unclean: false,
+            }
+        }
+        Request::Reliability { grades_dir, now } => {
+            // Stateless read-only (Giskard Track G2): no session
+            // required, and nothing is recorded to any session trace —
+            // the report never influences replay parity.
+            let now = match now {
+                Some(n) if !forecast::is_canonical_utc(&n) => {
+                    return StreamingSession::make_error(
+                        "reliability",
+                        "invalid_timestamp",
+                        format!("now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC, got {n:?}"),
+                        false,
+                    );
+                }
+                Some(n) => n,
+                None => forecast::rfc3339_now(),
+            };
+            match reliability::load_grades(&grades_dir) {
+                Ok((cards, skipped)) => Response::ReliabilityReport {
+                    report: reliability::report(&cards, skipped, &now),
+                },
+                Err(e) => StreamingSession::make_error(
+                    "reliability",
+                    "grades_io",
+                    format!("cannot read grades dir {}: {e}", grades_dir.display()),
+                    false,
+                ),
             }
         }
     }

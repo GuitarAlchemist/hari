@@ -182,6 +182,21 @@ pub enum Request {
     Metrics,
     /// Close the session and return the final `ResearchReplayReport`.
     Close,
+    /// Stateless read-only reliability report over GA's `pr-grade-v1`
+    /// cards (Giskard Track G2) — the wire twin of `hari-core
+    /// reliability <dir>`. Does not require an open session and never
+    /// touches session state; replay treats it as observation-only.
+    Reliability {
+        /// Directory containing the grade cards (GA's
+        /// `state/quality/pr-grades/`). A missing directory is an empty
+        /// ledger, not an error.
+        grades_dir: PathBuf,
+        /// Injected report timestamp for deterministic runs. Must be
+        /// canonical `YYYY-MM-DDTHH:MM:SSZ` UTC when present; defaults
+        /// to the current time.
+        #[serde(default)]
+        now: Option<String>,
+    },
 }
 
 /// Outbound response (Hari → IX). Tagged on `op`.
@@ -213,6 +228,10 @@ pub enum Response {
         /// fully-flushed line, then synthesizes a `close` marker.
         #[serde(default)]
         unclean: bool,
+    },
+    /// Reply to `reliability`.
+    ReliabilityReport {
+        report: crate::reliability::ReliabilityReport,
     },
     /// Typed protocol error (non-fatal unless `fatal == true`). See
     /// `phase6-design.md` §6 ("Failure modes").
