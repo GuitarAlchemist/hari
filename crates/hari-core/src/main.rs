@@ -3,9 +3,9 @@
 //! Main binary that demonstrates the cognitive loop with all subsystems.
 
 use hari_core::{
-    compare_replay, compare_replay_three_way, forecast, Action, CognitiveLoop, PriorityModel,
-    Request, ResearchEvent, ResearchEventPayload, ResearchTrace, Response, StreamingSession,
-    SubjectiveLogicConfig,
+    compare_replay, compare_replay_three_way, forecast, reliability, Action, CognitiveLoop,
+    PriorityModel, Request, ResearchEvent, ResearchEventPayload, ResearchTrace, Response,
+    StreamingSession, SubjectiveLogicConfig,
 };
 use hari_lattice::{HexValue, Relation};
 use hari_swarm::{Agent, AgentRole, TrustModel};
@@ -68,6 +68,16 @@ fn main() {
         // the append-only JSONL ledger (HARI_STATE_DIR/forecasts/).
         if let Err(err) = run_forecast_cli(&args[2..]) {
             eprintln!("hari-core forecast failed: {err}");
+            process::exit(1);
+        }
+        return;
+    }
+
+    if args.get(1).map(String::as_str) == Some("reliability") {
+        // Giskard Track G2 tracer bullet. Read-only report over GA's PR
+        // grade cards; the pooled entry is the A/B baseline.
+        if let Err(err) = run_reliability_cli(&args[2..]) {
+            eprintln!("hari-core reliability failed: {err}");
             process::exit(1);
         }
         return;
@@ -207,6 +217,39 @@ fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => Err("usage: hari-core forecast <emit|resolve|calibration> …".into()),
     }
+}
+
+/// Giskard Track G2 CLI: `hari-core reliability <grades-dir> [--now <rfc3339Z>]`.
+///
+/// Reads every `pr-grade-v1` card in `<grades-dir>` (GA's
+/// `state/quality/pr-grades/`) and prints the per-agent reliability report
+/// as pretty JSON. Read-only: nothing is written anywhere. `--now` injects
+/// the report timestamp for deterministic runs.
+fn run_reliability_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let usage = "usage: hari-core reliability <grades-dir> [--now <YYYY-MM-DDTHH:MM:SSZ>]";
+    let dir = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .ok_or(usage)?
+        .as_str();
+    let now = args
+        .iter()
+        .position(|a| a == "--now")
+        .and_then(|i| args.get(i + 1))
+        .map(String::to_string)
+        .unwrap_or_else(forecast::rfc3339_now);
+    if !forecast::is_canonical_utc(&now) {
+        return Err(
+            format!("--now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC, got {now:?}").into(),
+        );
+    }
+    let (cards, skipped) = reliability::load_grades(std::path::Path::new(dir))?;
+    if skipped > 0 {
+        warn!("grades dir: skipped {skipped} non-card file(s)");
+    }
+    let report = reliability::report(&cards, skipped, &now);
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
 }
 
 /// Self-referential demo: Hari tracks the Phase 5 substrate decision

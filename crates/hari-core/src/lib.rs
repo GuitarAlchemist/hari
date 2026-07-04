@@ -54,6 +54,14 @@ pub mod forecast;
 pub use forecast::{ForecastRecord, Observable as ForecastObservable, Outcome as ForecastOutcome};
 
 // ---------------------------------------------------------------------------
+// Giskard Track G2 — agent reliability model over GA's PR grade cards
+// (mentalics-of-agents; input schema ga:state/quality/pr-grades/SCHEMA.json).
+// ---------------------------------------------------------------------------
+pub mod reliability;
+
+pub use reliability::{GradeCard, ReliabilityReport};
+
+// ---------------------------------------------------------------------------
 // Subjective Logic prior-art baseline (Jøsang 2016) — see
 // `docs/research/prior-art-survey.md` §4.
 // ---------------------------------------------------------------------------
