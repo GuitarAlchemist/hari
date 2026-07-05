@@ -54,6 +54,24 @@ pub mod forecast;
 pub use forecast::{ForecastRecord, Observable as ForecastObservable, Outcome as ForecastOutcome};
 
 // ---------------------------------------------------------------------------
+// Giskard Track G2 — agent reliability model over GA's PR grade cards
+// (mentalics-of-agents; input schema ga:state/quality/pr-grades/SCHEMA.json).
+// ---------------------------------------------------------------------------
+pub mod reliability;
+
+pub use reliability::{GradeCard, ReliabilityReport};
+
+// ---------------------------------------------------------------------------
+// Giskard Track G1 (ops face) — operator model (mentalics-of-the-human): a
+// seen/acknowledged/stale registry over signals surfaced to the operator,
+// plus the "don't re-notify what's already acknowledged" decision. Substrate
+// half only; the GA producer/consumer halves are a later slice.
+// ---------------------------------------------------------------------------
+pub mod operator_model;
+
+pub use operator_model::{OperatorEvent, SignalState};
+
+// ---------------------------------------------------------------------------
 // Subjective Logic prior-art baseline (Jøsang 2016) — see
 // `docs/research/prior-art-survey.md` §4.
 // ---------------------------------------------------------------------------

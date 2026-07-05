@@ -467,6 +467,7 @@ fn serve_eof_mid_session_emits_unclean_close_and_writes_replayable_trace() {
             Request::Event { .. } => event_lines += 1,
             Request::Close => close_lines += 1,
             Request::Metrics => {}
+            Request::Reliability { .. } => panic!("reliability is never recorded to a trace"),
             Request::Open { .. } => panic!("second Open in trace"),
         }
     }
@@ -480,4 +481,120 @@ fn serve_eof_mid_session_emits_unclean_close_and_writes_replayable_trace() {
     );
 
     let _ = fs::remove_file(&trace_path);
+}
+
+// ---------------------------------------------------------------------------
+// 7. Reliability request: stateless, session-free, deterministic via injected now
+// ---------------------------------------------------------------------------
+
+/// One inline `pr-grade-v1` fixture card (all required schema fields).
+const FIXTURE_CARD: &str = r#"{
+    "schema": "pr-grade-v1",
+    "pr_number": 101,
+    "merge_sha": "0000000000000000000000000000000000000001",
+    "merged_at": "2026-07-04T12:00:00Z",
+    "title": "feat: add thing",
+    "stated_intent": "feat: add thing",
+    "actual_files_changed": ["src/lib.rs"],
+    "alignment": "high",
+    "reasons": ["test fixture"],
+    "graded_at": "2026-07-04T12:05:00Z",
+    "grader": "test-model",
+    "agent": "jules"
+}"#;
+
+#[test]
+fn serve_reliability_answers_without_a_session_and_is_deterministic() {
+    // Temp grades dir with exactly one card.
+    let mut dir = std::env::temp_dir();
+    dir.push(format!(
+        "hari-phase6-serve-reliability-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create grades dir");
+    fs::write(dir.join("card.json"), FIXTURE_CARD).expect("write card");
+
+    let mut s = ServeChild::spawn();
+
+    // No `open` was sent: reliability is stateless read-only and must
+    // answer anyway (it is NOT a session request).
+    s.send(&Request::Reliability {
+        grades_dir: dir.clone(),
+        now: Some("2026-07-04T18:00:00Z".to_string()),
+    });
+    match s.recv() {
+        Response::ReliabilityReport { report } => {
+            // Injected `now` makes the report byte-deterministic.
+            assert_eq!(report.generated_at, "2026-07-04T18:00:00Z");
+            assert_eq!(report.graded_prs, 1);
+            assert_eq!(report.skipped, 0);
+            // One high card: pooled mean 1.0, smoothed (1 + 2·0.5)/(1 + 2).
+            assert_eq!(report.pooled.n, 1);
+            assert_eq!(report.pooled.mean, Some(1.0));
+            assert!((report.pooled.smoothed - 2.0 / 3.0).abs() < 1e-12);
+            let jules = &report.by_agent["jules"];
+            assert_eq!(jules.overall.n, 1);
+            assert_eq!(jules.by_class["feat"].n, 1);
+        }
+        other => panic!("expected ReliabilityReport, got {other:?}"),
+    }
+
+    // The server is not poisoned: a normal session still opens after
+    // the stateless request.
+    s.send(&Request::Open {
+        config: SessionConfig::default(),
+    });
+    match s.recv() {
+        Response::Opened { .. } => {}
+        other => panic!("expected Opened after reliability, got {other:?}"),
+    }
+
+    s.send(&Request::Close);
+    let _ = s.recv();
+    assert!(s.wait().success());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn serve_reliability_rejects_non_canonical_now() {
+    let mut s = ServeChild::spawn();
+
+    // Fractional seconds are rejected at the boundary, same rule as the
+    // forecast CLI (`forecast::is_canonical_utc`).
+    s.send(&Request::Reliability {
+        grades_dir: PathBuf::from("does-not-matter"),
+        now: Some("2026-07-04T18:00:00.500Z".to_string()),
+    });
+    match s.recv() {
+        Response::Error {
+            code,
+            fatal,
+            request_op,
+            ..
+        } => {
+            assert_eq!(code, "invalid_timestamp");
+            assert!(!fatal, "invalid_timestamp must be non-fatal");
+            assert_eq!(request_op.as_deref(), Some("reliability"));
+        }
+        other => panic!("expected Error::invalid_timestamp, got {other:?}"),
+    }
+
+    // Missing directory is an empty ledger, not an error — honest
+    // degradation over panics.
+    s.send(&Request::Reliability {
+        grades_dir: PathBuf::from("/definitely/absent/grades-dir"),
+        now: Some("2026-07-04T18:00:00Z".to_string()),
+    });
+    match s.recv() {
+        Response::ReliabilityReport { report } => {
+            assert_eq!(report.graded_prs, 0);
+            assert_eq!(report.pooled.n, 0);
+            assert!(report.pooled.mean.is_none());
+            assert!(report.by_agent.is_empty());
+        }
+        other => panic!("expected empty-ledger ReliabilityReport, got {other:?}"),
+    }
+
+    assert!(s.wait().success());
 }

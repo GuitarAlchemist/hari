@@ -271,7 +271,9 @@ fn replay_session_parity_with_batch_on_cognition_divergence() {
             Request::Event { event } => {
                 replay_session_obj.apply_event(event).expect("replay apply");
             }
-            Request::Metrics | Request::Close => { /* observation-only */ }
+            Request::Metrics | Request::Close | Request::Reliability { .. } => {
+                /* observation-only */
+            }
             Request::Open { .. } => panic!("second open in trace"),
         }
     }

@@ -3,9 +3,9 @@
 //! Main binary that demonstrates the cognitive loop with all subsystems.
 
 use hari_core::{
-    compare_replay, compare_replay_three_way, forecast, Action, CognitiveLoop, PriorityModel,
-    Request, ResearchEvent, ResearchEventPayload, ResearchTrace, Response, StreamingSession,
-    SubjectiveLogicConfig,
+    compare_replay, compare_replay_three_way, forecast, operator_model, reliability, Action,
+    CognitiveLoop, PriorityModel, Request, ResearchEvent, ResearchEventPayload, ResearchTrace,
+    Response, StreamingSession, SubjectiveLogicConfig,
 };
 use hari_lattice::{HexValue, Relation};
 use hari_swarm::{Agent, AgentRole, TrustModel};
@@ -68,6 +68,27 @@ fn main() {
         // the append-only JSONL ledger (HARI_STATE_DIR/forecasts/).
         if let Err(err) = run_forecast_cli(&args[2..]) {
             eprintln!("hari-core forecast failed: {err}");
+            process::exit(1);
+        }
+        return;
+    }
+
+    if args.get(1).map(String::as_str) == Some("reliability") {
+        // Giskard Track G2 tracer bullet. Read-only report over GA's PR
+        // grade cards; the pooled entry is the A/B baseline.
+        if let Err(err) = run_reliability_cli(&args[2..]) {
+            eprintln!("hari-core reliability failed: {err}");
+            process::exit(1);
+        }
+        return;
+    }
+
+    if args.get(1).map(String::as_str) == Some("operator") {
+        // Giskard Track G1 (ops face) tracer bullet. Seen/acknowledged/stale
+        // registry over operator signals; `status` is read-only, surface/ack
+        // append to the ledger.
+        if let Err(err) = run_operator_cli(&args[2..]) {
+            eprintln!("hari-core operator failed: {err}");
             process::exit(1);
         }
         return;
@@ -206,6 +227,123 @@ fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         _ => Err("usage: hari-core forecast <emit|resolve|calibration> …".into()),
+    }
+}
+
+/// Giskard Track G2 CLI: `hari-core reliability <grades-dir> [--now <rfc3339Z>]`.
+///
+/// Reads every `pr-grade-v1` card in `<grades-dir>` (GA's
+/// `state/quality/pr-grades/`) and prints the per-agent reliability report
+/// as pretty JSON. Read-only: nothing is written anywhere. `--now` injects
+/// the report timestamp for deterministic runs.
+fn run_reliability_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let usage = "usage: hari-core reliability <grades-dir> [--now <YYYY-MM-DDTHH:MM:SSZ>]";
+    let dir = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .ok_or(usage)?
+        .as_str();
+    let now = args
+        .iter()
+        .position(|a| a == "--now")
+        .and_then(|i| args.get(i + 1))
+        .map(String::to_string)
+        .unwrap_or_else(forecast::rfc3339_now);
+    if !forecast::is_canonical_utc(&now) {
+        return Err(
+            format!("--now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC, got {now:?}").into(),
+        );
+    }
+    let (cards, skipped) = reliability::load_grades(std::path::Path::new(dir))?;
+    if skipped > 0 {
+        warn!("grades dir: skipped {skipped} non-card file(s)");
+    }
+    let report = reliability::report(&cards, skipped, &now);
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+/// Giskard Track G1 CLI: `hari-core operator <surface|ack|status> …`.
+///
+/// - `surface --signal <id> --kind <k> --now <rfc3339Z> [--ttl-secs <n>]` —
+///   append a `Surfaced` event (surfaced_at = `--now`), print it.
+/// - `ack --signal <id> --now <rfc3339Z>` — append an `Acknowledged` event
+///   (acknowledged_at = `--now`), print it.
+/// - `status [--now <rfc3339Z>]` — read-only: fold the ledger and print each
+///   signal's state + `should_notify` + `is_stale` as pretty JSON. `--now`
+///   defaults to the wall clock.
+///
+/// All timestamps are validated against `forecast::is_canonical_utc`.
+fn run_operator_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .map(String::as_str)
+    }
+    fn require_canonical(now: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if !forecast::is_canonical_utc(now) {
+            return Err(format!(
+                "--now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC \
+                 (no offsets, no fractional seconds): {now:?}"
+            )
+            .into());
+        }
+        Ok(())
+    }
+
+    let dir = operator_model::ledger_dir();
+    match args.first().map(String::as_str) {
+        Some("surface") => {
+            let usage = "usage: hari-core operator surface --signal <id> --kind <k> \
+                         --now <rfc3339Z> [--ttl-secs <n>]";
+            let signal = flag(args, "--signal").ok_or(usage)?;
+            let kind = flag(args, "--kind").ok_or(usage)?;
+            let now = flag(args, "--now").ok_or(usage)?;
+            require_canonical(now)?;
+            let ttl_secs = match flag(args, "--ttl-secs") {
+                Some(s) => Some(s.parse::<u64>()?),
+                None => None,
+            };
+            let event = operator_model::OperatorEvent::Surfaced {
+                signal_id: signal.to_string(),
+                kind: kind.to_string(),
+                surfaced_at: now.to_string(),
+                ttl_secs,
+            };
+            let path = operator_model::append(&dir, &event)?;
+            println!("{}", serde_json::to_string_pretty(&event)?);
+            info!("operator event appended to {}", path.display());
+            Ok(())
+        }
+        Some("ack") => {
+            let usage = "usage: hari-core operator ack --signal <id> --now <rfc3339Z>";
+            let signal = flag(args, "--signal").ok_or(usage)?;
+            let now = flag(args, "--now").ok_or(usage)?;
+            require_canonical(now)?;
+            let event = operator_model::OperatorEvent::Acknowledged {
+                signal_id: signal.to_string(),
+                acknowledged_at: now.to_string(),
+            };
+            let path = operator_model::append(&dir, &event)?;
+            println!("{}", serde_json::to_string_pretty(&event)?);
+            info!("operator event appended to {}", path.display());
+            Ok(())
+        }
+        Some("status") => {
+            let now = flag(args, "--now")
+                .map(String::from)
+                .unwrap_or_else(forecast::rfc3339_now);
+            require_canonical(&now)?;
+            let (events, skipped) = operator_model::load(&dir)?;
+            if skipped > 0 {
+                warn!("operator ledger: skipped {skipped} malformed line(s)");
+            }
+            let report = operator_model::status_report(&events, &now);
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            Ok(())
+        }
+        _ => Err("usage: hari-core operator <surface|ack|status> …".into()),
     }
 }
 
@@ -538,7 +676,7 @@ fn replay_session(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> 
                     eprintln!("replay --session: event rejected: {e}");
                 }
             }
-            Request::Metrics | Request::Close => {
+            Request::Metrics | Request::Close | Request::Reliability { .. } => {
                 // Observation-only / lifecycle markers — no-ops on replay.
             }
             Request::Open { .. } => {
@@ -730,6 +868,34 @@ fn handle_request(session: &mut Option<StreamingSession>, req: Request) -> Respo
             Response::Closed {
                 final_report,
                 unclean: false,
+            }
+        }
+        Request::Reliability { grades_dir, now } => {
+            // Stateless read-only (Giskard Track G2): no session
+            // required, and nothing is recorded to any session trace —
+            // the report never influences replay parity.
+            let now = match now {
+                Some(n) if !forecast::is_canonical_utc(&n) => {
+                    return StreamingSession::make_error(
+                        "reliability",
+                        "invalid_timestamp",
+                        format!("now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC, got {n:?}"),
+                        false,
+                    );
+                }
+                Some(n) => n,
+                None => forecast::rfc3339_now(),
+            };
+            match reliability::load_grades(&grades_dir) {
+                Ok((cards, skipped)) => Response::ReliabilityReport {
+                    report: reliability::report(&cards, skipped, &now),
+                },
+                Err(e) => StreamingSession::make_error(
+                    "reliability",
+                    "grades_io",
+                    format!("cannot read grades dir {}: {e}", grades_dir.display()),
+                    false,
+                ),
             }
         }
     }
