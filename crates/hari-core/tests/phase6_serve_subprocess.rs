@@ -32,17 +32,26 @@ struct ServeChild {
 
 impl ServeChild {
     fn spawn() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hari-core"))
-            .arg("serve")
+        Self::spawn_with_env(&[])
+    }
+
+    /// Spawn `hari-core serve` with extra environment variables set — used
+    /// by the `operator_status` tests to point `HARI_STATE_DIR` at a temp
+    /// ledger so the read-only fold is deterministic and isolated.
+    fn spawn_with_env(env: &[(&str, &std::path::Path)]) -> Self {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_hari-core"));
+        cmd.arg("serve")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // Stderr is the subprocess's tracing sink. Keep it piped so
             // debug logs are reachable when tests fail; we never drain
             // it, but the volume is tiny (no INFO! calls in the serve
             // path) and the OS pipe buffer absorbs it.
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn hari-core serve");
+            .stderr(Stdio::piped());
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        let mut child = cmd.spawn().expect("spawn hari-core serve");
         let stdin = child.stdin.take().expect("stdin");
         let stdout = BufReader::new(child.stdout.take().expect("stdout"));
         Self {
@@ -468,6 +477,9 @@ fn serve_eof_mid_session_emits_unclean_close_and_writes_replayable_trace() {
             Request::Close => close_lines += 1,
             Request::Metrics => {}
             Request::Reliability { .. } => panic!("reliability is never recorded to a trace"),
+            Request::OperatorStatus { .. } => {
+                panic!("operator_status is never recorded to a trace")
+            }
             Request::Open { .. } => panic!("second Open in trace"),
         }
     }
@@ -594,6 +606,125 @@ fn serve_reliability_rejects_non_canonical_now() {
             assert!(report.by_agent.is_empty());
         }
         other => panic!("expected empty-ledger ReliabilityReport, got {other:?}"),
+    }
+
+    assert!(s.wait().success());
+}
+
+// ---------------------------------------------------------------------------
+// 8. OperatorStatus request: stateless, session-free, deterministic via injected now
+// ---------------------------------------------------------------------------
+
+#[test]
+fn serve_operator_status_answers_without_a_session_and_is_deterministic() {
+    // Temp HARI_STATE_DIR with a pre-populated operator-model ledger:
+    // one acknowledged signal (should_notify flips to false) and one
+    // fresh unacknowledged signal (still notifies). Written as JSONL in
+    // the `operator-model/<date>.jsonl` shape `operator surface`/`ack`
+    // produce, so `status_report`'s fold sees a real ledger.
+    let mut state_dir = std::env::temp_dir();
+    state_dir.push(format!("hari-phase6-serve-operator-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&state_dir);
+    let ledger = state_dir.join("operator-model");
+    fs::create_dir_all(&ledger).expect("create operator-model ledger dir");
+    fs::write(
+        ledger.join("2026-07-05.jsonl"),
+        concat!(
+            r#"{"event":"surfaced","signal_id":"acked","kind":"presence-snapshot","surfaced_at":"2026-07-05T15:00:00Z","ttl_secs":3600}"#,
+            "\n",
+            r#"{"event":"acknowledged","signal_id":"acked","acknowledged_at":"2026-07-05T15:05:00Z"}"#,
+            "\n",
+            r#"{"event":"surfaced","signal_id":"fresh","kind":"algedonic-inbox","surfaced_at":"2026-07-05T15:50:00Z","ttl_secs":3600}"#,
+            "\n",
+        ),
+    )
+    .expect("write operator ledger");
+
+    let mut s = ServeChild::spawn_with_env(&[("HARI_STATE_DIR", state_dir.as_path())]);
+
+    // No `open` was sent: operator_status is stateless read-only and must
+    // answer anyway (it is NOT a session request).
+    s.send(&Request::OperatorStatus {
+        now: Some("2026-07-05T16:00:00Z".to_string()),
+    });
+    match s.recv() {
+        Response::OperatorStatus { report } => {
+            // The acked signal: ack flipped should_notify to false, and an
+            // acknowledged signal is never stale.
+            let acked = &report["acked"];
+            assert!(
+                !acked.should_notify,
+                "acknowledged signal must not re-notify"
+            );
+            assert!(!acked.is_stale, "acknowledged signal is never stale");
+            assert_eq!(
+                acked.state.acknowledged_at.as_deref(),
+                Some("2026-07-05T15:05:00Z")
+            );
+            // The fresh signal: unacknowledged → notifies; deadline
+            // 16:50:00Z is still in the future at now=16:00:00Z → not stale.
+            let fresh = &report["fresh"];
+            assert!(fresh.should_notify, "unacknowledged signal must notify");
+            assert!(!fresh.is_stale, "before its TTL deadline → not stale");
+        }
+        other => panic!("expected OperatorStatus, got {other:?}"),
+    }
+
+    // The server is not poisoned: a normal session still opens after the
+    // stateless request.
+    s.send(&Request::Open {
+        config: SessionConfig::default(),
+    });
+    match s.recv() {
+        Response::Opened { .. } => {}
+        other => panic!("expected Opened after operator_status, got {other:?}"),
+    }
+
+    s.send(&Request::Close);
+    let _ = s.recv();
+    assert!(s.wait().success());
+    let _ = fs::remove_dir_all(&state_dir);
+}
+
+#[test]
+fn serve_operator_status_rejects_non_canonical_now() {
+    // Isolate from any real repo `state/` dir: point HARI_STATE_DIR at a
+    // fresh temp path whose ledger is a missing (hence empty) directory.
+    let mut state_dir = std::env::temp_dir();
+    state_dir.push(format!(
+        "hari-phase6-serve-operator-noncanon-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&state_dir);
+    let mut s = ServeChild::spawn_with_env(&[("HARI_STATE_DIR", state_dir.as_path())]);
+
+    // Fractional seconds are rejected at the boundary, same rule as the
+    // reliability request (`forecast::is_canonical_utc`).
+    s.send(&Request::OperatorStatus {
+        now: Some("2026-07-05T16:00:00.500Z".to_string()),
+    });
+    match s.recv() {
+        Response::Error {
+            code,
+            fatal,
+            request_op,
+            ..
+        } => {
+            assert_eq!(code, "invalid_timestamp");
+            assert!(!fatal, "invalid_timestamp must be non-fatal");
+            assert_eq!(request_op.as_deref(), Some("operator_status"));
+        }
+        other => panic!("expected Error::invalid_timestamp, got {other:?}"),
+    }
+
+    // The server keeps going: a canonical request afterward is fine (a
+    // missing/empty ledger is an empty status map, not an error).
+    s.send(&Request::OperatorStatus {
+        now: Some("2026-07-05T16:00:00Z".to_string()),
+    });
+    match s.recv() {
+        Response::OperatorStatus { .. } => {}
+        other => panic!("expected OperatorStatus after canonical now, got {other:?}"),
     }
 
     assert!(s.wait().success());

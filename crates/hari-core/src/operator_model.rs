@@ -188,7 +188,12 @@ pub fn is_stale(state: &SignalState, now: &str) -> bool {
 
 /// Per-signal status: the folded [`SignalState`] plus the two derived
 /// decisions, keyed by signal id. This is what the `status` CLI prints.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+///
+/// `Deserialize` exists for wire consumers of the Phase 6 `operator_status`
+/// response (`crate::protocol::Response` derives it) — hari itself never
+/// reads status reports back. Same convention as
+/// [`crate::reliability::ReliabilityReport`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SignalStatus {
     #[serde(flatten)]
     pub state: SignalState,
