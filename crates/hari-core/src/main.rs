@@ -676,7 +676,10 @@ fn replay_session(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> 
                     eprintln!("replay --session: event rejected: {e}");
                 }
             }
-            Request::Metrics | Request::Close | Request::Reliability { .. } => {
+            Request::Metrics
+            | Request::Close
+            | Request::Reliability { .. }
+            | Request::OperatorStatus { .. } => {
                 // Observation-only / lifecycle markers — no-ops on replay.
             }
             Request::Open { .. } => {
@@ -894,6 +897,40 @@ fn handle_request(session: &mut Option<StreamingSession>, req: Request) -> Respo
                     "reliability",
                     "grades_io",
                     format!("cannot read grades dir {}: {e}", grades_dir.display()),
+                    false,
+                ),
+            }
+        }
+        Request::OperatorStatus { now } => {
+            // Stateless read-only (Giskard Track G1 ops face): no session
+            // required, and nothing is recorded to any session trace —
+            // the report never influences replay parity.
+            let now = match now {
+                Some(n) if !forecast::is_canonical_utc(&n) => {
+                    return StreamingSession::make_error(
+                        "operator_status",
+                        "invalid_timestamp",
+                        format!("now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC, got {n:?}"),
+                        false,
+                    );
+                }
+                Some(n) => n,
+                None => forecast::rfc3339_now(),
+            };
+            let dir = operator_model::ledger_dir();
+            match operator_model::load(&dir) {
+                Ok((events, skipped)) => {
+                    if skipped > 0 {
+                        warn!("operator ledger: skipped {skipped} malformed line(s)");
+                    }
+                    Response::OperatorStatus {
+                        report: operator_model::status_report(&events, &now),
+                    }
+                }
+                Err(e) => StreamingSession::make_error(
+                    "operator_status",
+                    "ledger_io",
+                    format!("cannot read operator ledger {}: {e}", dir.display()),
                     false,
                 ),
             }

@@ -197,6 +197,19 @@ pub enum Request {
         #[serde(default)]
         now: Option<String>,
     },
+    /// Stateless read-only operator-model status report over the
+    /// injected-timestamp JSONL ledger under
+    /// `operator_model::ledger_dir()` (Giskard Track G1 ops face) — the
+    /// wire twin of `hari-core operator status`. Does not require an open
+    /// session and never touches session state; replay treats it as
+    /// observation-only.
+    OperatorStatus {
+        /// Injected report timestamp for deterministic runs. Must be
+        /// canonical `YYYY-MM-DDTHH:MM:SSZ` UTC when present; defaults
+        /// to the current time.
+        #[serde(default)]
+        now: Option<String>,
+    },
 }
 
 /// Outbound response (Hari → IX). Tagged on `op`.
@@ -232,6 +245,12 @@ pub enum Response {
     /// Reply to `reliability`.
     ReliabilityReport {
         report: crate::reliability::ReliabilityReport,
+    },
+    /// Reply to `operator_status`. Per-signal folded state plus the two
+    /// derived decisions (`should_notify`, `is_stale`), keyed by signal
+    /// id — the same map `hari-core operator status` prints.
+    OperatorStatus {
+        report: BTreeMap<String, crate::operator_model::SignalStatus>,
     },
     /// Typed protocol error (non-fatal unless `fatal == true`). See
     /// `phase6-design.md` §6 ("Failure modes").
