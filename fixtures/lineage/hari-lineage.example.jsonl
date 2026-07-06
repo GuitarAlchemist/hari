@@ -1,0 +1,12 @@
+{"record":"meta","lineage_version":"hari-evidence-lineage-v0.1.0","run":{"run_id":"cosmic-flux-2026-07-06","priority_model":"RecencyDecay","trace_source":"fixtures/ix/derivation.json","dimension":4,"event_count":6,"generated_at":"2026-07-06T00:00:00Z"},"redaction":{"policy":"origin-only-no-payload","redacted_node_ids":["src:agent-pool"],"note":"agent-pool vote reviewer ids withheld; vote values preserved"}}
+{"record":"node","node":{"id":"src:ix-experiment-runner","kind":"source_item","label":"IX experiment runner","origin":"ix-experiment-runner","redacted":false}}
+{"record":"node","node":{"id":"exp:cosmic-flux-bounded@4","kind":"experiment_event","proposition":"cosmic-flux-bounded","value":"True","cycle":4,"source":"ix-experiment-runner","evidence":{"benchmark":"variance-stress-v1","runs":12,"var_ratio":0.97}}}
+{"record":"node","node":{"id":"belief:cosmic-flux-bounded","kind":"belief_state","proposition":"cosmic-flux-bounded","value":"True","evidence_weight":0.9,"cycle":4}}
+{"record":"node","node":{"id":"derived:cosmic-flux-stable","kind":"derived_belief","proposition":"cosmic-flux-stable","previous_value":"Unknown","new_value":"True","round":1,"cycle":4}}
+{"record":"node","node":{"id":"derived:downstream-pipeline-stable","kind":"derived_belief","proposition":"downstream-pipeline-stable","previous_value":"Unknown","new_value":"Contradictory","round":2,"cycle":6}}
+{"record":"node","node":{"id":"rec:escalate-downstream@7","kind":"recommendation","action":"Escalate","proposition":"downstream-pipeline-stable","value":"Contradictory","reason":"irreconcilable support/contradiction; escalate rather than collapse","confidence":0.7,"cycle":7}}
+{"record":"edge","edge":{"from":"exp:cosmic-flux-bounded@4","to":"src:ix-experiment-runner","rel":"is_attributed_to"}}
+{"record":"edge","edge":{"from":"belief:cosmic-flux-bounded","to":"exp:cosmic-flux-bounded@4","rel":"uses"}}
+{"record":"edge","edge":{"from":"derived:cosmic-flux-stable","to":"belief:cosmic-flux-bounded","rel":"is_derived_from","round":1,"evidence":{"relation":"Implies","contributed_value":"True"}}}
+{"record":"edge","edge":{"from":"derived:cosmic-flux-stable","to":"derived:downstream-pipeline-stable","rel":"supports","round":2}}
+{"record":"edge","edge":{"from":"derived:downstream-pipeline-stable","to":"rec:escalate-downstream@7","rel":"leads_to_recommendation"}}

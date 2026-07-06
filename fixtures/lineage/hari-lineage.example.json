@@ -1,0 +1,199 @@
+{
+  "lineage_version": "hari-evidence-lineage-v0.1.0",
+  "run": {
+    "run_id": "cosmic-flux-2026-07-06",
+    "priority_model": "RecencyDecay",
+    "trace_source": "fixtures/ix/derivation.json",
+    "dimension": 4,
+    "event_count": 6,
+    "generated_at": "2026-07-06T00:00:00Z"
+  },
+  "redaction": {
+    "policy": "origin-only-no-payload",
+    "redacted_node_ids": ["src:agent-pool"],
+    "note": "Agent-pool votes carry an internal reviewer id in their raw evidence; only the coarse origin is exported here. The vote values are preserved, the reviewer identities are not."
+  },
+  "nodes": [
+    {
+      "id": "run:cosmic-flux-2026-07-06",
+      "kind": "run_report",
+      "run_id": "cosmic-flux-2026-07-06",
+      "priority_model": "RecencyDecay",
+      "event_count": 6,
+      "metrics": {
+        "false_acceptance_count": 0,
+        "contradiction_recovery_cycles": null
+      }
+    },
+    {
+      "id": "src:ix-experiment-runner",
+      "kind": "source_item",
+      "label": "IX experiment runner",
+      "origin": "ix-experiment-runner",
+      "redacted": false,
+      "detail": { "benchmark_family": "variance-stress" }
+    },
+    {
+      "id": "src:ix-monitor",
+      "kind": "source_item",
+      "label": "IX ingest monitor",
+      "origin": "ix-monitor",
+      "redacted": false
+    },
+    {
+      "id": "src:ix-domain-modeller",
+      "kind": "source_item",
+      "label": "IX domain modeller",
+      "origin": "ix-domain-modeller",
+      "redacted": false
+    },
+    {
+      "id": "src:agent-pool",
+      "kind": "source_item",
+      "label": "redacted agent pool",
+      "origin": "agent-pool:private",
+      "redacted": true
+    },
+    {
+      "id": "claim:cosmic-flux-bounded",
+      "kind": "claim",
+      "proposition": "cosmic-flux-bounded",
+      "asserted_value": "True"
+    },
+    {
+      "id": "claim:anomaly-detected",
+      "kind": "claim",
+      "proposition": "anomaly-detected",
+      "asserted_value": "True"
+    },
+    {
+      "id": "exp:cosmic-flux-bounded@4",
+      "kind": "experiment_event",
+      "proposition": "cosmic-flux-bounded",
+      "value": "True",
+      "cycle": 4,
+      "source": "ix-experiment-runner",
+      "evidence": {
+        "benchmark": "variance-stress-v1",
+        "runs": 12,
+        "var_ratio": 0.97,
+        "note": "variance stays under threshold across 12 runs"
+      }
+    },
+    {
+      "id": "exp:anomaly-detected@6",
+      "kind": "experiment_event",
+      "proposition": "anomaly-detected",
+      "value": "True",
+      "cycle": 6,
+      "source": "ix-monitor",
+      "evidence": {
+        "channel": "ingest-error-rate",
+        "spike": 4.2,
+        "note": "error rate spike above 4 sigma on ingest-error-rate"
+      }
+    },
+    {
+      "id": "belief:cosmic-flux-bounded",
+      "kind": "belief_state",
+      "proposition": "cosmic-flux-bounded",
+      "value": "True",
+      "evidence_weight": 0.9,
+      "cycle": 4
+    },
+    {
+      "id": "belief:anomaly-detected",
+      "kind": "belief_state",
+      "proposition": "anomaly-detected",
+      "value": "True",
+      "evidence_weight": 0.8,
+      "cycle": 6
+    },
+    {
+      "id": "derived:cosmic-flux-stable",
+      "kind": "derived_belief",
+      "proposition": "cosmic-flux-stable",
+      "previous_value": "Unknown",
+      "new_value": "True",
+      "round": 1,
+      "cycle": 4
+    },
+    {
+      "id": "derived:downstream-pipeline-stable",
+      "kind": "derived_belief",
+      "proposition": "downstream-pipeline-stable",
+      "previous_value": "Unknown",
+      "new_value": "Contradictory",
+      "round": 2,
+      "cycle": 6
+    },
+    {
+      "id": "vote:explorer@7",
+      "kind": "agent_vote",
+      "proposition": "downstream-pipeline-stable",
+      "value": "Doubtful",
+      "cycle": 7,
+      "agent": "explorer",
+      "role": "explorer"
+    },
+    {
+      "id": "vote:guardian@7",
+      "kind": "agent_vote",
+      "proposition": "downstream-pipeline-stable",
+      "value": "False",
+      "cycle": 7,
+      "agent": "guardian",
+      "role": "guardian"
+    },
+    {
+      "id": "consensus:downstream-pipeline-stable@7",
+      "kind": "consensus_result",
+      "proposition": "downstream-pipeline-stable",
+      "value": "False",
+      "trust_model": "RoleWeighted",
+      "participating_agents": ["explorer", "guardian"]
+    },
+    {
+      "id": "rec:escalate-downstream@7",
+      "kind": "recommendation",
+      "action": "Escalate",
+      "proposition": "downstream-pipeline-stable",
+      "value": "Contradictory",
+      "reason": "Support from cosmic-flux-stable and contradiction from anomaly-detected are irreconcilable; escalate rather than collapse.",
+      "confidence": 0.7,
+      "cycle": 7
+    }
+  ],
+  "edges": [
+    { "from": "exp:cosmic-flux-bounded@4", "to": "src:ix-experiment-runner", "rel": "is_attributed_to" },
+    { "from": "exp:anomaly-detected@6", "to": "src:ix-monitor", "rel": "is_attributed_to" },
+    { "from": "claim:cosmic-flux-bounded", "to": "src:ix-experiment-runner", "rel": "is_attributed_to" },
+    { "from": "claim:anomaly-detected", "to": "src:ix-monitor", "rel": "is_attributed_to" },
+    { "from": "vote:explorer@7", "to": "src:agent-pool", "rel": "is_attributed_to" },
+    { "from": "vote:guardian@7", "to": "src:agent-pool", "rel": "is_attributed_to" },
+
+    { "from": "claim:cosmic-flux-bounded", "to": "exp:cosmic-flux-bounded@4", "rel": "uses" },
+    { "from": "claim:anomaly-detected", "to": "exp:anomaly-detected@6", "rel": "uses" },
+    { "from": "belief:cosmic-flux-bounded", "to": "claim:cosmic-flux-bounded", "rel": "uses" },
+    { "from": "belief:anomaly-detected", "to": "claim:anomaly-detected", "rel": "uses" },
+    { "from": "rec:escalate-downstream@7", "to": "consensus:downstream-pipeline-stable@7", "rel": "uses" },
+
+    { "from": "derived:cosmic-flux-stable", "to": "belief:cosmic-flux-bounded", "rel": "is_derived_from", "round": 1, "evidence": { "relation": "Implies", "contributed_value": "True" } },
+    { "from": "derived:downstream-pipeline-stable", "to": "derived:cosmic-flux-stable", "rel": "is_derived_from", "round": 2 },
+    { "from": "derived:downstream-pipeline-stable", "to": "belief:anomaly-detected", "rel": "is_derived_from", "round": 2 },
+
+    { "from": "derived:cosmic-flux-stable", "to": "derived:downstream-pipeline-stable", "rel": "supports", "round": 2, "evidence": { "relation": "Supports", "contributed_value": "True" } },
+    { "from": "belief:anomaly-detected", "to": "derived:downstream-pipeline-stable", "rel": "contradicts", "round": 2, "evidence": { "relation": "Contradicts", "contributed_value": "False" } },
+
+    { "from": "derived:downstream-pipeline-stable", "to": "consensus:downstream-pipeline-stable@7", "rel": "is_revised_by" },
+
+    { "from": "consensus:downstream-pipeline-stable@7", "to": "rec:escalate-downstream@7", "rel": "leads_to_recommendation" },
+    { "from": "derived:downstream-pipeline-stable", "to": "rec:escalate-downstream@7", "rel": "leads_to_recommendation" },
+
+    { "from": "run:cosmic-flux-2026-07-06", "to": "run:cosmic-flux-2026-07-06", "rel": "is_part_of_run", "note": "self-edge anchor: the run_report node names the run every other node belongs to" },
+    { "from": "exp:cosmic-flux-bounded@4", "to": "run:cosmic-flux-2026-07-06", "rel": "is_part_of_run" },
+    { "from": "exp:anomaly-detected@6", "to": "run:cosmic-flux-2026-07-06", "rel": "is_part_of_run" },
+    { "from": "derived:downstream-pipeline-stable", "to": "run:cosmic-flux-2026-07-06", "rel": "is_part_of_run" },
+    { "from": "rec:escalate-downstream@7", "to": "run:cosmic-flux-2026-07-06", "rel": "is_part_of_run" }
+  ]
+}
