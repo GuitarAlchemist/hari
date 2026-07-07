@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guitaralchemist.dev/hari/contracts/hari-evidence-lineage.schema.json",
+  "title": "Hari Evidence Lineage Export",
+  "description": "JSON-first, local-first evidence lineage graph for Hari beliefs, derived beliefs, consensus results, and recommendations. A portable, audit-friendly externalisation of the provenance Hari already tracks internally (hari_lattice::Derivation / Contribution, ResearchReplayReport). Version v0.1 DRAFT. See docs/contracts/hari-evidence-lineage.contract.md.",
+  "type": "object",
+  "required": ["lineage_version", "run", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "lineage_version": { "$ref": "#/$defs/lineageVersion" },
+    "run": { "$ref": "#/$defs/run" },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "redaction": { "$ref": "#/$defs/redaction" }
+  },
+  "$defs": {
+    "lineageVersion": {
+      "type": "string",
+      "description": "Schema identity string. Bumping this is a coordinated cross-repo change, mirroring the one-way-door discipline on ResearchEvent payload tags.",
+      "pattern": "^hari-evidence-lineage-v[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "hexValue": {
+      "type": "string",
+      "description": "Hari's hexavalent logic value (hari_lattice::HexValue). PascalCase to match serde output.",
+      "enum": ["True", "Probable", "Unknown", "Doubtful", "False", "Contradictory"]
+    },
+    "priorityModel": {
+      "type": "string",
+      "description": "Which PriorityModel produced the run. Default substrate is RecencyDecay.",
+      "enum": ["Flat", "RecencyDecay", "Lie", "SubjectiveLogic"]
+    },
+    "actionKind": {
+      "type": "string",
+      "description": "The recommended Action variant returned to IX (hari-core Action enum).",
+      "enum": ["UpdateBelief", "SendMessage", "Investigate", "Escalate", "Retry", "Accept", "Wait", "Log"]
+    },
+    "relationKind": {
+      "type": "string",
+      "description": "Edge type. `supports` / `contradicts` mirror hari_lattice::Relation; the rest are lineage-graph relationships.",
+      "enum": [
+        "uses",
+        "supports",
+        "contradicts",
+        "is_derived_from",
+        "is_attributed_to",
+        "is_part_of_run",
+        "is_revised_by",
+        "leads_to_recommendation"
+      ]
+    },
+    "run": {
+      "type": "object",
+      "description": "Header identifying the replay/session this lineage was exported from.",
+      "required": ["run_id", "priority_model"],
+      "additionalProperties": true,
+      "properties": {
+        "run_id": { "type": "string" },
+        "priority_model": { "$ref": "#/$defs/priorityModel" },
+        "trace_source": {
+          "type": "string",
+          "description": "Local path or slug of the trace/session, e.g. fixtures/ix/derivation.json. Local-first: never a network URL that must resolve at read time."
+        },
+        "dimension": { "type": "integer", "minimum": 0 },
+        "event_count": { "type": "integer", "minimum": 0 },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339Z. Injected by the exporter, not read from the environment mid-computation (honest-timestamp discipline)."
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "description": "A lineage node. `kind` discriminates the required shape.",
+      "required": ["id", "kind"],
+      "oneOf": [
+        { "$ref": "#/$defs/nodes/sourceItem" },
+        { "$ref": "#/$defs/nodes/claim" },
+        { "$ref": "#/$defs/nodes/beliefState" },
+        { "$ref": "#/$defs/nodes/experimentEvent" },
+        { "$ref": "#/$defs/nodes/agentVote" },
+        { "$ref": "#/$defs/nodes/consensusResult" },
+        { "$ref": "#/$defs/nodes/derivedBelief" },
+        { "$ref": "#/$defs/nodes/recommendation" },
+        { "$ref": "#/$defs/nodes/runReport" }
+      ]
+    },
+    "nodes": {
+      "sourceItem": {
+        "type": "object",
+        "required": ["id", "kind", "origin", "redacted"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "source_item" },
+          "label": { "type": "string" },
+          "origin": {
+            "type": "string",
+            "description": "Coarse provenance label (agent/runner/benchmark). NOT raw private content."
+          },
+          "redacted": {
+            "type": "boolean",
+            "description": "True when private detail was withheld. When true, `detail` MUST be absent."
+          },
+          "detail": {
+            "type": "object",
+            "description": "Optional non-sensitive detail. Present only when redacted=false."
+          }
+        },
+        "if": { "properties": { "redacted": { "const": true } } },
+        "then": { "not": { "required": ["detail"] } }
+      },
+      "claim": {
+        "type": "object",
+        "required": ["id", "kind", "proposition", "asserted_value"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "claim" },
+          "proposition": { "type": "string" },
+          "asserted_value": { "$ref": "#/$defs/hexValue" }
+        }
+      },
+      "beliefState": {
+        "type": "object",
+        "required": ["id", "kind", "proposition", "value"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "belief_state" },
+          "proposition": { "type": "string" },
+          "value": { "$ref": "#/$defs/hexValue" },
+          "evidence_weight": { "type": "number", "minimum": 0 },
+          "cycle": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "experimentEvent": {
+        "type": "object",
+        "required": ["id", "kind", "proposition", "value", "cycle", "source"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "experiment_event" },
+          "proposition": { "type": "string" },
+          "value": { "$ref": "#/$defs/hexValue" },
+          "cycle": { "type": "integer", "minimum": 0 },
+          "source": { "type": "string" },
+          "evidence": {
+            "type": "object",
+            "description": "Free-form audit blob, preserved verbatim from ResearchEvent evidence."
+          }
+        }
+      },
+      "agentVote": {
+        "type": "object",
+        "required": ["id", "kind", "proposition", "value", "cycle", "agent"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "agent_vote" },
+          "proposition": { "type": "string" },
+          "value": { "$ref": "#/$defs/hexValue" },
+          "cycle": { "type": "integer", "minimum": 0 },
+          "agent": { "type": "string" },
+          "role": { "type": "string" },
+          "evidence": { "type": "object" }
+        }
+      },
+      "consensusResult": {
+        "type": "object",
+        "required": ["id", "kind", "proposition", "value"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "consensus_result" },
+          "proposition": { "type": "string" },
+          "value": { "$ref": "#/$defs/hexValue" },
+          "trust_model": {
+            "type": "string",
+            "enum": ["Equal", "RoleWeighted"]
+          },
+          "participating_agents": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "derivedBelief": {
+        "type": "object",
+        "required": ["id", "kind", "proposition", "previous_value", "new_value", "round"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "derived_belief" },
+          "proposition": { "type": "string" },
+          "previous_value": { "$ref": "#/$defs/hexValue" },
+          "new_value": { "$ref": "#/$defs/hexValue" },
+          "round": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-indexed propagation round from hari_lattice::Derivation."
+          },
+          "cycle": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "recommendation": {
+        "type": "object",
+        "required": ["id", "kind", "action"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "recommendation" },
+          "action": { "$ref": "#/$defs/actionKind" },
+          "proposition": { "type": "string" },
+          "value": { "$ref": "#/$defs/hexValue" },
+          "reason": { "type": "string" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "cycle": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "runReport": {
+        "type": "object",
+        "required": ["id", "kind", "run_id", "priority_model"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "run_report" },
+          "run_id": { "type": "string" },
+          "priority_model": { "$ref": "#/$defs/priorityModel" },
+          "event_count": { "type": "integer", "minimum": 0 },
+          "metrics": {
+            "type": "object",
+            "description": "Optional subset of ResearchReplayReport::metrics."
+          }
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["from", "to", "rel"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "description": "Source node id." },
+        "to": { "type": "string", "description": "Target node id." },
+        "rel": { "$ref": "#/$defs/relationKind" },
+        "round": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Propagation round for is_derived_from / supports / contradicts edges lifted from a Derivation."
+        },
+        "evidence": {
+          "type": "object",
+          "description": "Optional per-edge audit blob (e.g. contributed_value from a Contribution)."
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "description": "Declares that private source detail was withheld, per the contract's redaction model. Absence means nothing was redacted.",
+      "required": ["policy"],
+      "additionalProperties": true,
+      "properties": {
+        "policy": {
+          "type": "string",
+          "description": "Human-readable policy name, e.g. 'origin-only-no-payload'."
+        },
+        "redacted_node_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "streamRecord": {
+      "description": "One line of the JSONL streaming form (hari-lineage.jsonl). The first line is a `meta` record; subsequent lines are `node` or `edge` records. This makes lineage replay-friendly: a consumer can fold the stream without loading the whole bundle.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["record", "lineage_version", "run"],
+          "additionalProperties": false,
+          "properties": {
+            "record": { "const": "meta" },
+            "lineage_version": { "$ref": "#/$defs/lineageVersion" },
+            "run": { "$ref": "#/$defs/run" },
+            "redaction": { "$ref": "#/$defs/redaction" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["record", "node"],
+          "additionalProperties": false,
+          "properties": {
+            "record": { "const": "node" },
+            "node": { "$ref": "#/$defs/node" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["record", "edge"],
+          "additionalProperties": false,
+          "properties": {
+            "record": { "const": "edge" },
+            "edge": { "$ref": "#/$defs/edge" }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -83,6 +83,16 @@ pub use subjective_logic::{
 };
 
 // ---------------------------------------------------------------------------
+// Evidence lineage export (issue #15) — portable, JSON-first externalisation
+// of the provenance Hari already tracks internally. Contract + schema:
+// docs/contracts/hari-evidence-lineage.contract.md (v0.1 DRAFT). Shape anchor
+// only; automatic export from a live ResearchReplayReport is a later slice.
+// ---------------------------------------------------------------------------
+pub mod lineage;
+
+pub use lineage::{LineageBundle, LineageEdge, LineageNode, LineageRun};
+
+// ---------------------------------------------------------------------------
 // PriorityModel — strategy enum used by score_actions
 // ---------------------------------------------------------------------------
 
