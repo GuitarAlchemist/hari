@@ -1,7 +1,7 @@
 [package]
 name = "hari-extractor"
 version.workspace = true
-edition = "2024"
+edition.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "NL → ResearchEvent extraction for Hari, with an Inception Labs Mercury 2 subagent backend"
