@@ -179,10 +179,8 @@ pub fn eval_predicate(predicate: &str, value: &Value) -> Option<bool> {
     let p = predicate.trim();
     let (negated, rhs) = if let Some(r) = p.strip_prefix("==") {
         (false, r)
-    } else if let Some(r) = p.strip_prefix("!=") {
-        (true, r)
     } else {
-        return None;
+        (true, p.strip_prefix("!=")?)
     };
     let lhs = scalar_string(value)?;
     Some((lhs == rhs.trim()) != negated)
