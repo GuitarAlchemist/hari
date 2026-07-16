@@ -1,0 +1,51 @@
+name: Temporary apply forecast Clippy fix
+
+on:
+  push:
+    branches:
+      - agent/fix-forecast-clippy-question-mark
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-forecast-clippy-question-mark
+          fetch-depth: 0
+
+      - name: Apply exact Clippy-recommended rewrite and self-delete
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('crates/hari-core/src/forecast.rs')
+          text = path.read_text(encoding='utf-8')
+          old = '''    let (negated, rhs) = if let Some(r) = p.strip_prefix("==") {
+              (false, r)
+          } else if let Some(r) = p.strip_prefix("!=") {
+              (true, r)
+          } else {
+              return None;
+          };
+          '''
+          new = '''    let (negated, rhs) = if let Some(r) = p.strip_prefix("==") {
+              (false, r)
+          } else {
+              (true, p.strip_prefix("!=")?)
+          };
+          '''
+          if old not in text:
+              raise SystemExit('expected eval_predicate snippet not found; refusing to patch')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          rm .github/workflows/tmp-apply-forecast-clippy-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add crates/hari-core/src/forecast.rs .github/workflows/tmp-apply-forecast-clippy-fix.yml
+          git commit -m 'fix forecast clippy question-mark'
+          git push origin HEAD:agent/fix-forecast-clippy-question-mark
