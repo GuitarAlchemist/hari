@@ -29,3 +29,6 @@ state/digests/*
 
 # /teach generated courses (personal, regenerable)
 learning/
+
+# Editor settings (personal, not shared)
+.zed/
