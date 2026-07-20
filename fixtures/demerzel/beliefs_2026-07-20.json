@@ -1,0 +1,167 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "reconnaissance-tier1-self-check",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "demerzel/demerzel-framework-integrity",
+        "value": "True",
+        "evidence": {
+          "belief_file": "2026-03-17-demerzel-framework-integrity.belief.json",
+          "side": "supporting",
+          "claim": "All 4 constitutions, 11 policies, 14 personas, 9 schemas, 13 test suites verified present and versioned",
+          "reliability": 0.99,
+          "timestamp": "2026-03-17T20:00:00Z",
+          "demerzel_truth_value": "T",
+          "demerzel_confidence": 0.98
+        }
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "automated-remediation",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "demerzel/behavioral-test-coverage",
+        "value": "True",
+        "evidence": {
+          "belief_file": "2026-03-17-behavioral-test-coverage.belief.json",
+          "side": "supporting",
+          "claim": "All 14 original personas have dedicated behavioral test files in tests/behavioral/",
+          "reliability": 0.99,
+          "timestamp": "2026-03-17T21:00:00Z",
+          "demerzel_truth_value": "T",
+          "demerzel_confidence": 0.8
+        }
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "2026-03-18-session-work",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "demerzel/consumer-repo-integration-status",
+        "value": "True",
+        "evidence": {
+          "belief_file": "2026-03-18-consumer-repo-integration-status.belief.json",
+          "side": "supporting",
+          "claim": "ix submodule updated (142 commits), state/ created, CLAUDE.md governance section present, ix-governance crate with 83 tests",
+          "reliability": 0.95,
+          "timestamp": "2026-03-18T00:00:00Z",
+          "demerzel_truth_value": "T",
+          "demerzel_confidence": 0.85
+        }
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "2026-03-18-session-work",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "demerzel/consumer-repo-integration-status",
+        "value": "True",
+        "evidence": {
+          "belief_file": "2026-03-18-consumer-repo-integration-status.belief.json",
+          "side": "supporting",
+          "claim": "tars submodule updated (144 commits), state/ created, grammar-constrained governance generation (4 EBNF + F# module), research cycle modules",
+          "reliability": 0.95,
+          "timestamp": "2026-03-18T00:00:00Z",
+          "demerzel_truth_value": "T",
+          "demerzel_confidence": 0.85
+        }
+      }
+    },
+    {
+      "cycle": 5,
+      "source": "2026-03-18-session-work",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "demerzel/consumer-repo-integration-status",
+        "value": "True",
+        "evidence": {
+          "belief_file": "2026-03-18-consumer-repo-integration-status.belief.json",
+          "side": "supporting",
+          "claim": "ga submodule updated (144 commits), state/ created, CLAUDE.md updated (18 policies), 7 agent personas defined, build fixed",
+          "reliability": 0.9,
+          "timestamp": "2026-03-18T00:00:00Z",
+          "demerzel_truth_value": "T",
+          "demerzel_confidence": 0.85
+        }
+      }
+    },
+    {
+      "cycle": 6,
+      "source": "2026-03-23-belief-refresh",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "demerzel/behavioral-test-coverage",
+        "value": "Doubtful",
+        "evidence": {
+          "belief_file": "2026-03-17-behavioral-test-coverage.belief.json",
+          "side": "contradicting",
+          "claim": "Framework has expanded beyond 14 personas — 13 Streeling departments with persona heads, 7 ga agent personas, experimentation persona (v1.1.0 added post-belief). Test coverage for expanded persona set is unverified. Commit c6e0a25 (2026-03-21) added a missing behavioral test, confirming gaps existed after this belief was recorded.",
+          "reliability": 0.85,
+          "timestamp": "2026-03-23T00:00:00Z",
+          "demerzel_truth_value": "T",
+          "demerzel_confidence": 0.8
+        }
+      }
+    },
+    {
+      "cycle": 7,
+      "source": "2026-03-23-belief-refresh",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "demerzel/demerzel-framework-integrity",
+        "value": "True",
+        "evidence": {
+          "belief_file": "2026-03-17-demerzel-framework-integrity.belief.json",
+          "side": "supporting",
+          "claim": "Framework expanded significantly since initial assessment: 24 policies (was 11), 18 grammars, 23 courses, 38 skills, 29 test suites, 13 Streeling departments. 197+ commits since last assessment. All artifacts versioned and schema-validated.",
+          "reliability": 0.95,
+          "timestamp": "2026-03-23T00:00:00Z",
+          "demerzel_truth_value": "T",
+          "demerzel_confidence": 0.98
+        }
+      }
+    },
+    {
+      "cycle": 8,
+      "source": "ml-feedback-recommendation 1ccaa943-afef-4ab2-ad26-c2e92b4bd655",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "demerzel/confidence-calibration",
+        "value": "True",
+        "evidence": {
+          "belief_file": "confidence-calibration.belief.json",
+          "side": "supporting",
+          "claim": "2 of 6 high-confidence beliefs (>= 0.85) were later revised (overconfidence_rate=0.3333). Revisions evidenced by archived prior versions: 2026-03-17-consumer-repo-integration-status.belief.json, 2026-03-17-ga-governance-integration.belief.json. Nudge magnitude capped at +/-0.1/cycle per ml-governance-feedback-policy.",
+          "reliability": 0.92,
+          "timestamp": "2026-07-19T14:00:37Z",
+          "demerzel_truth_value": "P",
+          "demerzel_confidence": 0.92
+        }
+      }
+    },
+    {
+      "cycle": 9,
+      "source": "ml-feedback-recommendation fae5c200-8fc8-404d-b5de-b0433fa916b1",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "demerzel/remediation-effectiveness",
+        "value": "Probable",
+        "evidence": {
+          "belief_file": "remediation-effectiveness.belief.json",
+          "side": "supporting",
+          "claim": "Across 6 outcome-bearing PDCA records: proactive=0.333(n=3), standardize=1.0(n=3). Automation candidates: ['standardize']. Sample sizes are small â€” rates are directional, not conclusive.",
+          "reliability": 0.86,
+          "timestamp": "2026-07-19T14:00:38Z",
+          "demerzel_truth_value": "P",
+          "demerzel_confidence": 0.86
+        }
+      }
+    }
+  ]
+}
