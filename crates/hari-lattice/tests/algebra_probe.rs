@@ -121,25 +121,18 @@ fn probe_permutation_invariance_wellformed() {
     }
 }
 
-/// KNOWN DIVERGENCE #1 (defect, pinned as current behavior): two
-/// observations sharing a dedup key but disagreeing in payload.
-/// `dedup_key`'s doc says "two observations with the same key ARE the
-/// same observation", but the type does not enforce it, and first-wins
-/// dedup keeps whichever arrived first — input order leaks into the
-/// output, falsifying the step-1 claim "reproducible across runs
-/// regardless of input order — load-bearing for CRDT correctness" on
-/// representable input. This is also the SOLE root cause of the
-/// associativity failure: `probe_associativity_globally_distinct_keys`
-/// passes over 1000 random triples, while the same probe with
-/// cross-set collisions fails.
+/// THEOREM 4 (pinned; was KNOWN DIVERGENCE #1, fixed): colliding dedup
+/// keys with divergent payloads resolve order-independently. A source
+/// that asserts two different variants in the same observation slot
+/// has contradicted itself, and the resolution is `Contradictory` at
+/// the minimum weight — irreconcilable evidence is preserved, not
+/// silently tie-broken (CLAUDE.md's design ethos). Same-variant
+/// collisions keep the variant at minimum (conservative) weight.
 ///
-/// Candidate fixes (owner call — epistemics, not refactoring): reject
-/// colliding-key/differing-payload input as malformed; deterministic
-/// content tie-break; or treat a self-contradicting source as
-/// synthesizing `C`. Whichever is chosen, THIS TEST MUST FLIP —
-/// it asserts the defective behavior so the fix is loud.
+/// NOTE: this deliberately diverges from Demerzel-canonical /
+/// ix-fuzzy first-write-wins semantics until the fix is propagated.
 #[test]
-fn known_divergence_key_collision_is_order_dependent() {
+fn theorem_key_collision_resolves_order_independent() {
     let a = HexObservation {
         source: "tars".into(),
         diagnosis_id: "d0".into(),
@@ -156,16 +149,76 @@ fn known_divergence_key_collision_is_order_dependent() {
         ..a.clone()
     };
     let ab = merge_all(&[a.clone(), b.clone()]);
-    let ba = merge_all(&[b, a]);
-    // Current (defective) behavior: first-wins.
-    assert_eq!(ab.observations[0].variant, HexValue::True);
-    assert_eq!(ba.observations[0].variant, HexValue::False);
+    let ba = merge_all(&[b.clone(), a.clone()]);
     assert!(
-        !states_equal(&ab, &ba),
-        "key-collision order-dependence FIXED — update the audit doc \
-         (docs/research/2026-07-20-hex-merge-algebraic-audit.md §3) and \
-         convert this into a permutation-invariance pin"
+        states_equal(&ab, &ba),
+        "key-collision resolution is order-dependent again"
     );
+    // Divergent variants → self-conflict C at min weight.
+    assert_eq!(ab.observations[0].variant, HexValue::Contradictory);
+    assert_eq!(ab.observations[0].weight, 0.5);
+
+    // Same variant, divergent weight → variant kept at min weight.
+    let b2 = HexObservation {
+        weight: 0.25,
+        ..a.clone()
+    };
+    let same = merge_all(&[a.clone(), b2.clone()]);
+    let same_rev = merge_all(&[b2, a]);
+    assert!(states_equal(&same, &same_rev));
+    assert_eq!(same.observations[0].variant, HexValue::True);
+    assert_eq!(same.observations[0].weight, 0.25);
+}
+
+/// THEOREM 5 (pinned): permutation invariance and associativity hold
+/// UNCONDITIONALLY — no well-formedness precondition — now that
+/// key collisions resolve via an ACI fold. Random observations with
+/// no key-distinctness filtering at all: intra-set and cross-set
+/// collisions, divergent payloads, everything representable.
+#[test]
+fn theorem_unconditional_invariance_and_associativity() {
+    let mut rng = Rng(0x5EED);
+    for trial in 0..1500 {
+        // Raw random observations — collisions everywhere.
+        let a: Vec<_> = (0..4).map(|_| rand_obs(&mut rng)).collect();
+        let b: Vec<_> = (0..4).map(|_| rand_obs(&mut rng)).collect();
+        let c: Vec<_> = (0..4).map(|_| rand_obs(&mut rng)).collect();
+
+        let flat: Vec<_> = a.iter().chain(b.iter()).chain(c.iter()).cloned().collect();
+        let s_flat = merge_all(&flat);
+
+        // Permutation of the flat set.
+        let mut perm = flat.clone();
+        shuffle(&mut rng, &mut perm);
+        assert!(
+            states_equal(&s_flat, &merge_all(&perm)),
+            "permutation changed output under collisions (trial {trial})"
+        );
+
+        // Carried re-merge, both groupings.
+        let ab_state = merge_all(&a.iter().chain(b.iter()).cloned().collect::<Vec<_>>());
+        let left: Vec<_> = ab_state
+            .observations
+            .iter()
+            .chain(c.iter())
+            .cloned()
+            .collect();
+        assert!(
+            states_equal(&merge_all(&left), &s_flat),
+            "left-carried != flat under collisions (trial {trial})"
+        );
+
+        let bc_state = merge_all(&b.iter().chain(c.iter()).cloned().collect::<Vec<_>>());
+        let right: Vec<_> = a
+            .iter()
+            .cloned()
+            .chain(bc_state.observations.iter().cloned())
+            .collect();
+        assert!(
+            states_equal(&merge_all(&right), &s_flat),
+            "right-carried != flat under collisions (trial {trial})"
+        );
+    }
 }
 
 /// THEOREM 2 (pinned): the content-derived synthesis-id design
@@ -241,31 +294,19 @@ fn probe_remerge_idempotence_randomized() {
     }
 }
 
-/// Staleness divergence — "ghost contradiction". Two semantics are
-/// available to a caller holding merge output:
-///   (a) evidence-recompute: re-merge the RAW observations under the
-///       current staleness window;
-///   (b) state-carry: re-merge the previous OUTPUT (base + synthesized)
-///       under the current window.
-/// Construction: a (round 1, T) and b (round 5, F) conflict; synthesis
-/// stamps the C observation with round max(1,5)=5. At current_round=5,
-/// K=3 (cutoff 2), the raw recompute drops a — the pair no longer
-/// coexists, so no contradiction. The carried C, stamped round 5,
-/// survives its own parent's retirement.
+/// THEOREM 6 (pinned; was KNOWN DIVERGENCE #2, fixed): carried state
+/// and evidence-recompute agree under staleness. The fix: a
+/// synthesized C is stamped `round = min(parents)`, so it expires
+/// exactly when the pair stops coexisting — both semantics reduce to
+/// `min(parents) >= cutoff`. Evidence-recompute is authoritative; a
+/// derived contradiction is supported only while all of its evidence
+/// is inside the window the caller declared valid
+/// (contradiction-preservation, not contradiction-immortality).
 ///
-/// KNOWN DIVERGENCE #2 (design gap, pinned as current behavior): the
-/// two semantics DISAGREE — the substrate has two answers to "is this
-/// claim contradictory?" and no documented rule for which is
-/// authoritative. This is issue #16's retraction question in
-/// miniature: a derived contradiction has no defined lifecycle when
-/// the evidence beneath it is withdrawn or expires. Currently latent
-/// (nothing in hari-core calls merge yet), but any consumer that
-/// carries MergedState across staleness windows — the module's stated
-/// cross-repo purpose — will hit it.
-///
-/// When the owner picks a semantics (issue #16), THIS TEST MUST FLIP.
+/// Deterministic construction (the original ghost) plus a randomized
+/// sweep over rounds and windows.
 #[test]
-fn known_divergence_staleness_ghost_contradiction() {
+fn theorem_staleness_carried_equals_recompute() {
     let a = HexObservation {
         source: "tars".into(),
         diagnosis_id: "d0".into(),
@@ -291,15 +332,31 @@ fn known_divergence_staleness_ghost_contradiction() {
     let live = merge(&[a.clone(), b.clone()], None, None);
     assert_eq!(live.contradictions.len(), 1, "precondition: C synthesized");
 
-    // (a) evidence-recompute at round 5, K=3.
+    // The original ghost window: recompute and carried must agree.
     let recompute = merge(&[a, b], Some(5), Some(3));
-    // (b) state-carry of the earlier output under the same window.
     let carried = merge(&live.observations, Some(5), Some(3));
-
-    // Current behavior: the carried C (stamped round max(1,5)=5)
-    // outlives its round-1 parent; the recompute never re-derives it.
     assert_eq!(recompute.contradictions.len(), 0);
-    assert_eq!(carried.contradictions.len(), 1);
+    assert_eq!(
+        carried.contradictions.len(),
+        0,
+        "ghost is back: carried C outlived its round-1 parent"
+    );
+    assert!(states_equal(&recompute, &carried));
+
+    // Randomized sweep: any raw set, any window — carried == recompute.
+    let mut rng = Rng(0x9057);
+    for trial in 0..1500 {
+        let raw: Vec<_> = (0..8).map(|_| rand_obs(&mut rng)).collect();
+        let live = merge_all(&raw);
+        let current = rng.below(8) as u32;
+        let k = rng.below(4) as u32;
+        let recompute = merge(&raw, Some(current), Some(k));
+        let carried = merge(&live.observations, Some(current), Some(k));
+        assert!(
+            states_equal(&recompute, &carried),
+            "carried != recompute at current={current} k={k} (trial {trial})"
+        );
+    }
 }
 
 /// THEOREM 3 (pinned): anti-dilution. Naive normalization arithmetic

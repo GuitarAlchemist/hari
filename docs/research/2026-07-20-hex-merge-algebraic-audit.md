@@ -1,6 +1,7 @@
 # Algebraic audit of hex-merge — two theorems, two defects
 
-**Status: complete, results pinned in `crates/hari-lattice/tests/algebra_probe.rs`.**
+**Status: complete; both defects FIXED same day (see §7), all results
+pinned in `crates/hari-lattice/tests/algebra_probe.rs`.**
 Executed 2026-07-20 in one sitting; no external data, no cross-repo
 changes, no waiting. This is the formal-track answer to "do fundamental
 research on Hari" after the empirical track died at the tracer gate
@@ -92,3 +93,56 @@ Remaining formal targets, in rough value order: the same audit for
 hex-merge commutes with Subjective Logic fusion under the natural
 discretization, which would sharpen `prior-art-survey.md` §6 Q5 into a
 theorem-or-counterexample.
+
+## 7. Fixes (landed same day)
+
+The chosen semantics, one doctrine applied three times: **the merge is a
+pure, order-independent function of the base-evidence multiset.**
+
+1. **Key collision** (§3) — first-write-wins replaced by
+   `resolve_key_versions`, an associative-commutative-idempotent fold:
+   identical payloads dedup; same-variant collisions keep the variant at
+   *minimum* weight; divergent-variant collisions resolve to
+   `Contradictory` at minimum weight — a source contradicting itself
+   within one observation slot is irreconcilable evidence, and picking a
+   winner silently would violate the preservation ethos. The evidence
+   marker is derived from the key alone so the fold groups identically
+   across merge boundaries.
+2. **Ghost contradiction** (§4) — synthesized C is stamped
+   `round = min(parents)` instead of `max`: it expires exactly when the
+   pair stops coexisting, so carried state and evidence recompute both
+   reduce to `min(parents) ≥ cutoff`. Contradiction-preservation, not
+   contradiction-immortality: the caller's staleness window defines what
+   evidence is live, and a derivation is supported only while all its
+   evidence is.
+3. **Third defect, found by the probe while verifying the first fix** —
+   a carried *synthesis* derived from a pre-collision payload survived
+   into states where a fresh derivation would not produce it. The base
+   fold cannot fix this: synthesis is derived state. Fix: incoming
+   `MERGE_SOURCE` observations are treated as derived cache, dropped on
+   input, and re-derived from base evidence every merge (pipeline
+   step 0). This is the evidence-recompute doctrine applied
+   consistently, and it is what makes the unconditional theorems below
+   hold. Methodological note: the randomized probe caught the
+   hand-verified fix being insufficient — the reason to prefer probes
+   over proofs-by-inspection.
+
+Post-fix theorem set (all pinned): permutation invariance and
+associativity now hold **unconditionally** — no well-formedness
+precondition, collisions and divergent payloads included (1500 random
+triples, both carried groupings, plus permutation, seed 0x5EED) — and
+carried state equals evidence recompute under every staleness window
+tried (1500 random windows, seed 0x9057). The two `known_divergence_*`
+tests flipped to `theorem_*` as designed. `proof_dedup_by_key` and
+`dedup_preserves_first_write` pinned the defective first-write
+semantics and were updated (the latter renamed
+`dedup_same_variant_resolves_to_min_weight_both_orders`).
+
+**Cross-repo status:** the conformance corpus still passes byte-identical
+— no fixture exercises the fixed cases; fixture 06's *description*
+("keeps first-write") is now stale for hari but accurate for canonical.
+Hari now **deliberately diverges** from Demerzel-canonical /
+`ix-fuzzy` on all three semantics until the fix propagates
+(doctrine: land in Demerzel `logic/hex-merge.md` first, then mirror).
+resolve_key_versions, the min-stamp, and derived-cache step 0 are the
+complete propagation payload.
