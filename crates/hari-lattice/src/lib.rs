@@ -183,6 +183,15 @@ impl Lattice for HexValue {
 impl HexLattice {
     /// Combine two evidence streams. If they strongly disagree (one T-ish, one F-ish),
     /// the result is Contradictory. Otherwise delegates to join.
+    ///
+    /// NOTE: commutative but NOT associative — `(D⊕U)⊕T = T` while
+    /// `(D⊕T)⊕U = C`, because conflict detection only sees the two
+    /// arguments and `join(D, U) = U` erases the negative before the
+    /// positive arrives. Use it only where the argument order carries
+    /// real temporal meaning (e.g. an event stream, where later
+    /// evidence genuinely revises earlier state). For an unordered SET
+    /// of simultaneous contributions use
+    /// [`Self::combine_evidence_set`], which is order-independent.
     pub fn combine_evidence(a: HexValue, b: HexValue) -> HexValue {
         // Detect contradiction: one side believes true-ish, other false-ish
         let a_positive = matches!(a, HexValue::True | HexValue::Probable);
@@ -195,6 +204,43 @@ impl HexLattice {
         } else {
             HexValue::join(a, b)
         }
+    }
+
+    /// Order-independent n-ary evidence combination: the whole set is
+    /// inspected before any value is merged away.
+    ///
+    /// - any `Contradictory` in the set → `Contradictory` (absorbing);
+    /// - any positive (T/P) AND any negative (F/D) member → the set is
+    ///   in conflict → `Contradictory`, regardless of which arrived
+    ///   "first" — nothing can be laundered through `Unknown`;
+    /// - otherwise → `join` over all members (associative, commutative,
+    ///   idempotent, so grouping cannot matter).
+    ///
+    /// This is the propagation-round combinator: a node's incoming
+    /// edge contributions are a simultaneous SET, and folding them
+    /// pairwise let edge insertion order decide between `True` and
+    /// `Contradictory` fixpoints (see
+    /// `tests/propagation_probe.rs::known_divergence_*` history and
+    /// the 2026-07-20 propagation audit).
+    pub fn combine_evidence_set(values: impl IntoIterator<Item = HexValue>) -> HexValue {
+        let mut any_positive = false;
+        let mut any_negative = false;
+        let mut acc: Option<HexValue> = None;
+        for v in values {
+            if v == HexValue::Contradictory {
+                return HexValue::Contradictory;
+            }
+            any_positive |= matches!(v, HexValue::True | HexValue::Probable);
+            any_negative |= matches!(v, HexValue::False | HexValue::Doubtful);
+            acc = Some(match acc {
+                None => v,
+                Some(a) => HexValue::join(a, v),
+            });
+        }
+        if any_positive && any_negative {
+            return HexValue::Contradictory;
+        }
+        acc.unwrap_or(HexValue::Unknown)
     }
 }
 
@@ -392,9 +438,15 @@ impl BeliefNetwork {
 
             if !incoming_values.is_empty() {
                 let current = self.graph[target].value;
-                let combined = incoming_values
-                    .into_iter()
-                    .fold(current, HexLattice::combine_evidence);
+                // n-ary set combination, NOT a pairwise fold: edge
+                // iteration order is a construction artifact, and the
+                // pairwise fold let it pick between True and
+                // Contradictory fixpoints (2026-07-20 propagation
+                // audit). The node's current value is a member of the
+                // combined set.
+                let combined = HexLattice::combine_evidence_set(
+                    std::iter::once(current).chain(incoming_values),
+                );
                 if combined != current {
                     updates.push((target, combined));
                 }
@@ -458,9 +510,10 @@ impl BeliefNetwork {
                 continue;
             }
             let current = self.graph[target].value;
-            let combined = incoming_values
-                .into_iter()
-                .fold(current, HexLattice::combine_evidence);
+            // Same n-ary set combination as `propagate` — see the
+            // comment there.
+            let combined =
+                HexLattice::combine_evidence_set(std::iter::once(current).chain(incoming_values));
             if combined != current {
                 updates.push((target, combined, contribs, current));
             }
