@@ -1,0 +1,36 @@
+name: forecast-check
+
+# Jarvis J2 forecast-ledger tripwire (issue #29). Loop doctrine (compounding
+# strategy doc §4): a compounding-signal ledger only stays healthy when the
+# writer is also a CI check. A forecast whose horizon has passed but which
+# carries no resolution is drift; failing this job is the tripwire firing, and
+# a human then runs `forecast resolve` (or supersedes it) instead of letting
+# the prediction rot silently.
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays 06:17 UTC — weekly sweep of the ledger
+  push:
+    paths:
+      - 'state/forecasts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  forecast-check:
+    name: forecast check (overdue-unresolved tripwire)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + build
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo run --release -p hari-core -- forecast check
+        run: cargo run --release -p hari-core -- forecast check

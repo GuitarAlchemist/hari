@@ -285,6 +285,22 @@ pub fn load(dir: &Path) -> io::Result<(Vec<ForecastRecord>, usize)> {
     Ok((records.into_iter().map(|(_, r)| r).collect(), skipped))
 }
 
+/// The tripwire condition: forecasts whose horizon has passed but which
+/// still carry no resolution. A healthy ledger returns empty — every past
+/// forecast has been scored (or superseded). Read-only; `now` is injected
+/// so CI can run it deterministically. Order matches ledger order.
+///
+/// This is the "writer is the CI check" loop shape from the compounding
+/// strategy doc §4: an overdue-unresolved forecast is drift, and surfacing
+/// it as a build failure is what stops the prediction from rotting silently
+/// (issue #29).
+pub fn overdue_unresolved<'a>(records: &'a [ForecastRecord], now: &str) -> Vec<&'a ForecastRecord> {
+    records
+        .iter()
+        .filter(|r| r.is_pending() && r.is_past_horizon(now))
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Calibration — v0.1 minimum viable output: per-belief Brier mean + count
 // (contract open question 4, mean + count accepted).
@@ -530,6 +546,37 @@ mod tests {
         let c = &cal["ga-quality-snapshot-pipeline-healthy"];
         assert_eq!((c.scored, c.void, c.pending), (1, 1, 1));
         assert!((c.mean_brier.unwrap() - 0.01).abs() < 1e-12);
+    }
+
+    #[test]
+    fn overdue_unresolved_flags_pending_past_horizon() {
+        // sample_record is pending with horizon 2026-07-03T18:00:00Z.
+        let rec = sample_record(0.85);
+        let flagged = overdue_unresolved(std::slice::from_ref(&rec), "2026-07-05T00:00:00Z");
+        assert_eq!(flagged.len(), 1);
+        assert_eq!(flagged[0].forecast_id, rec.forecast_id);
+        // Exactly at horizon also counts — is_past_horizon is `<=`.
+        assert_eq!(
+            overdue_unresolved(std::slice::from_ref(&rec), "2026-07-03T18:00:00Z").len(),
+            1
+        );
+    }
+
+    #[test]
+    fn overdue_unresolved_ignores_resolved_and_not_yet_due() {
+        let now = "2026-07-05T00:00:00Z";
+        // Resolved past horizon → already scored, not a tripwire.
+        let mut resolved = sample_record(0.9);
+        resolved.resolution = Some(resolve(
+            &resolved,
+            Some(&presence_doc()),
+            "2026-07-03T18:05:00Z",
+        ));
+        assert!(overdue_unresolved(std::slice::from_ref(&resolved), now).is_empty());
+        // Pending but horizon still in the future → not yet due, passes.
+        let mut not_due = sample_record(0.7);
+        not_due.horizon = "2026-07-10T18:00:00Z".into();
+        assert!(overdue_unresolved(std::slice::from_ref(&not_due), now).is_empty());
     }
 
     #[test]

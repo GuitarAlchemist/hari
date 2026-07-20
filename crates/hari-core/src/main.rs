@@ -127,6 +127,9 @@ fn main() {
 ///   score every pending record past horizon whose observable.source
 ///   matches; unreadable artifact resolves as `void`, never dropped.
 /// - `calibration` — per-belief Brier mean + count over the whole ledger.
+/// - `check [--now <rfc3339Z>]` — read-only tripwire: exits nonzero listing
+///   any forecast past horizon that still has no resolution, so unresolved
+///   predictions fail CI instead of rotting silently (issue #29).
 fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
         args.iter()
@@ -226,7 +229,50 @@ fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             );
             Ok(())
         }
-        _ => Err("usage: hari-core forecast <emit|resolve|calibration> …".into()),
+        Some("check") => {
+            let now = flag(args, "--now")
+                .map(String::from)
+                .unwrap_or_else(forecast::rfc3339_now);
+            if !forecast::is_canonical_utc(&now) {
+                return Err(format!(
+                    "--now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC \
+                     (no offsets, no fractional seconds): {now:?}"
+                )
+                .into());
+            }
+            let (records, skipped) = forecast::load(&dir)?;
+            if skipped > 0 {
+                warn!("ledger: skipped {skipped} malformed line(s)");
+            }
+            let overdue = forecast::overdue_unresolved(&records, &now);
+            if overdue.is_empty() {
+                println!("forecast check OK: no unresolved forecasts past horizon as of {now}");
+                return Ok(());
+            }
+            eprintln!(
+                "forecast check FAILED: {} unresolved forecast(s) past horizon as of {now}:",
+                overdue.len()
+            );
+            for rec in &overdue {
+                eprintln!(
+                    "  {} belief={} horizon={} p={} — {} {} {}",
+                    rec.forecast_id,
+                    rec.belief_id,
+                    rec.horizon,
+                    rec.prediction.probability,
+                    rec.observable.source,
+                    rec.observable.field,
+                    rec.observable.predicate,
+                );
+            }
+            Err(format!(
+                "{} forecast(s) overdue for resolution — run `forecast resolve` \
+                 or supersede them",
+                overdue.len()
+            )
+            .into())
+        }
+        _ => Err("usage: hari-core forecast <emit|resolve|calibration|check> …".into()),
     }
 }
 
