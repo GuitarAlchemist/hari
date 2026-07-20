@@ -1,9 +1,18 @@
 # Pre-registration — substrate-role, open-loop (Phase 7 candidate)
 
-**Status: v0.1 DRAFT — not owner-approved, no data collected, no IX-side
-changes authorized.** This document exists to be attacked before it is
-executed. Nothing in it commits the project to the phase; §9 lists the
-decisions that must be made first, all of which are owner calls.
+**Status: v0.2 — ABANDONED at the §6 tracer gate, 2026-07-19. Design does
+not survive; see §11.** The gate was checked by static inspection of
+`ix-autoresearch` plus one throwaway probe, before any corpus was
+generated and before any IX-side change was made. Kill criterion §7.1
+fired. §§1–10 are preserved unedited as the pre-registered design so the
+abandonment is auditable against what was actually committed to in
+advance.
+
+Original status line, for the record: *v0.1 DRAFT — not owner-approved, no
+data collected, no IX-side changes authorized.* This document exists to be
+attacked before it is executed. Nothing in it commits the project to the
+phase; §9 lists the decisions that must be made first, all of which are
+owner calls.
 
 Selected from five candidate research questions by a multi-agent scoring +
 adversarial-review pass (2026-07-19). The other four — SAE/Contradicts
@@ -206,3 +215,93 @@ particular null, unlike any other result currently available, resolves the
 substrate question the project cannot move past without answering. If the
 owner does not accept that claim, the correct decision is **not to run this
 phase**.
+
+## 11. Gate result — the design is dead, and not for the reason §10 predicted
+
+**The §6 abandon gate cannot be passed. Not "is unlikely to pass" —
+cannot, structurally.**
+
+The gate asks whether noise-driven **re-evaluations of the same
+`config_hash`** consolidate to `HexValue::Contradictory`. That question
+presupposes the same config is evaluated more than once in a run. It never
+is.
+
+`ix-autoresearch`'s grammar target perturbs by drawing a **continuous**
+Gaussian on every rule weight and a **log-uniform** temperature
+(`crates/ix-autoresearch/src/target_grammar.rs:173-199`):
+
+```rust
+let perturbed = w + z * self.weight_sigma;   // continuous, per weight
+let log_t = log_lo + rng.random::<f64>() * (log_hi - log_lo);
+let new_temperature = log_t.exp();           // continuous
+```
+
+Two candidates serializing byte-identically is a measure-zero event.
+Confirmed empirically — 2000 perturbation steps from the smoke baseline at
+seed 42:
+
+```text
+PROBE: iters=2000 distinct_configs=2000 repeats=0
+```
+
+So no claim in this pipeline ever receives a second observation. Without a
+second observation there is no conflicting evidence about the same
+proposition, and **`Contradictory` cannot arise organically** no matter how
+much noise is injected. Injecting noise makes each single evaluation
+*wrong more often*; it does not make any evaluation *disagree with a prior
+evaluation of the same thing*, because there is no prior evaluation.
+
+The `CacheBridge` does not indicate otherwise. It exists to serve
+`resume_experiment` — cross-run reuse under a fixed seed — not intra-run
+repeats. Its `cache_hit_count` on a fresh grammar run is 0 by construction.
+
+### What this costs and what it saves
+
+Two IX-side changes were pre-registered as needed (§9.1). Neither is:
+
+- **Cache-disable already exists.** `Experiment::cache_salt() -> None`
+  disables caching per-target, by design
+  (`crates/ix-autoresearch/src/cache.rs:47-53`). No change required.
+- **Noise injection needs no core change either.** `GrammarTarget` and its
+  `Experiment` impl are fully public, so a noise wrapper is a newtype in a
+  consumer crate.
+
+**The cross-repo authorization this document spent §9.1 asking for was
+never actually necessary.** Total cost of discovering the design is dead:
+reading ~200 lines of `ix-autoresearch` and one 38-line throwaway probe,
+since deleted. `ix` is unmodified. No corpus, no adapter crate, no
+400 runs.
+
+### The methodological point
+
+§10 predicted the design's most likely failure was *a null against twenty
+lines of SPRT* — a real but expensive result. The actual failure was
+cheaper and more fundamental: **the phenomenon the study was designed to
+measure does not occur in the system chosen to measure it.** §10 was
+looking in the right direction (this pipeline has no organic epistemic
+content) but understated the case — it argued the contradictions would be
+*synthetic*, when in fact they would be *absent*.
+
+This is the tracer-bullet discipline working exactly as CLAUDE.md claims it
+should: the thin end-to-end slice surfaced a fatal unknown before any layer
+was built out. Note that the fatal fact was available by *reading*, not
+running. The gate could have been checked the day the design was drafted.
+
+### What survives
+
+- **The gate itself was correctly specified.** It named the load-bearing
+  assumption precisely enough to be falsified by inspection. That is the
+  design's one clear success and the pattern worth repeating.
+- **The §8 guard condition** is untouched by this and still worth adopting.
+- **The real constraint, now stated sharply:** any future "does Hari's
+  contradiction-preserving layer help?" study needs a target where **the
+  same proposition is observed more than once**. That is a hard filter on
+  candidate targets and it eliminates every single-pass optimizer loop,
+  which is what `ix-autoresearch` is. Repeated-observation structure is not
+  a nice-to-have for this research program — it is the precondition.
+- **Issue #13 should close** as *designed, gated, abandoned — reasons
+  recorded* rather than remain `ready-for-human`.
+
+The substrate question from `prior-art-survey.md` §6 Q5 remains open. This
+document does not answer it. It removes one candidate way of answering it,
+for a stated and checkable reason.
