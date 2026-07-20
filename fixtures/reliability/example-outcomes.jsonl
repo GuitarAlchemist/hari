@@ -1,0 +1,2 @@
+{"schema":"hari-source-outcome-v0.1.0","session_id":"e2e-demo","source":"ix-agent-critic","source_type":"unknown","recorded_at":"2026-07-20T12:00:00Z","claims":1,"accepted":0,"false_acceptances":0,"escalations":1,"false_escalations":0}
+{"schema":"hari-source-outcome-v0.1.0","session_id":"e2e-demo","source":"ix-agent-evaluator","source_type":"unknown","recorded_at":"2026-07-20T12:00:00Z","claims":1,"accepted":1,"false_acceptances":1,"escalations":0,"false_escalations":0}

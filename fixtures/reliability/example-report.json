@@ -1,0 +1,53 @@
+{
+  "schema": "hari-source-reliability-report-v0.1.0",
+  "generated_at": "2026-07-20T18:00:00Z",
+  "rows": 2,
+  "skipped": 0,
+  "pooled": {
+    "sessions": 2,
+    "claims": 2,
+    "accepted": 1,
+    "false_acceptances": 1,
+    "escalations": 1,
+    "false_escalations": 0,
+    "accepted_claim_precision": 0.0,
+    "smoothed_precision": 0.3333333333333333,
+    "false_escalation_rate": 0.0
+  },
+  "by_source": {
+    "ix-agent-critic": {
+      "sessions": 1,
+      "claims": 1,
+      "accepted": 0,
+      "false_acceptances": 0,
+      "escalations": 1,
+      "false_escalations": 0,
+      "smoothed_precision": 0.5,
+      "false_escalation_rate": 0.0
+    },
+    "ix-agent-evaluator": {
+      "sessions": 1,
+      "claims": 1,
+      "accepted": 1,
+      "false_acceptances": 1,
+      "escalations": 0,
+      "false_escalations": 0,
+      "accepted_claim_precision": 0.0,
+      "smoothed_precision": 0.3333333333333333
+    }
+  },
+  "entrenchment": [
+    {
+      "source": "ix-agent-critic",
+      "smoothed_precision": 0.5,
+      "accepted": 0,
+      "beats_pooled_baseline": false
+    },
+    {
+      "source": "ix-agent-evaluator",
+      "smoothed_precision": 0.3333333333333333,
+      "accepted": 1,
+      "beats_pooled_baseline": false
+    }
+  ]
+}

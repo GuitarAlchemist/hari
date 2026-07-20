@@ -3,9 +3,9 @@
 //! Main binary that demonstrates the cognitive loop with all subsystems.
 
 use hari_core::{
-    compare_replay, compare_replay_three_way, forecast, operator_model, reliability, Action,
-    CognitiveLoop, PriorityModel, Request, ResearchEvent, ResearchEventPayload, ResearchTrace,
-    Response, StreamingSession, SubjectiveLogicConfig,
+    compare_replay, compare_replay_three_way, forecast, operator_model, reliability,
+    source_reliability, Action, CognitiveLoop, PriorityModel, Request, ResearchEvent,
+    ResearchEventPayload, ResearchTrace, Response, StreamingSession, SubjectiveLogicConfig,
 };
 use hari_lattice::{HexValue, Relation};
 use hari_swarm::{Agent, AgentRole, TrustModel};
@@ -89,6 +89,17 @@ fn main() {
         // append to the ledger.
         if let Err(err) = run_operator_cli(&args[2..]) {
             eprintln!("hari-core operator failed: {err}");
+            process::exit(1);
+        }
+        return;
+    }
+
+    if args.get(1).map(String::as_str) == Some("source-reliability") {
+        // Issue #14 tracer bullet. `emit` replays a trace and appends per-source
+        // outcome rows to the cross-session ledger; `report` is read-only and
+        // prints per-source reliability with the pooled A/B baseline.
+        if let Err(err) = run_source_reliability_cli(&args[2..]) {
+            eprintln!("hari-core source-reliability failed: {err}");
             process::exit(1);
         }
         return;
@@ -390,6 +401,85 @@ fn run_operator_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         _ => Err("usage: hari-core operator <surface|ack|status> …".into()),
+    }
+}
+
+/// Issue #14 CLI: `hari-core source-reliability <emit|report> …`.
+///
+/// - `emit --trace <path> --session <id> [--now <rfc3339Z>]` — replay the trace
+///   (default `RecencyDecay`, matching the plain `replay` command), derive one
+///   per-source outcome row per source, append them to the cross-session ledger
+///   (`HARI_STATE_DIR/source-reliability/`), and print them. Additive: the
+///   trace's own `replay` output is unaffected.
+/// - `report [--now <rfc3339Z>]` — read-only: aggregate the whole ledger and
+///   print per-source reliability with the pooled A/B baseline and the
+///   entrenchment ordering as pretty JSON.
+///
+/// All timestamps are validated against `forecast::is_canonical_utc`.
+fn run_source_reliability_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .map(String::as_str)
+    }
+
+    let dir = source_reliability::ledger_dir();
+    match args.first().map(String::as_str) {
+        Some("emit") => {
+            let usage = "usage: hari-core source-reliability emit --trace <path> \
+                         --session <id> [--now <rfc3339Z>]";
+            let trace_path = flag(args, "--trace").ok_or(usage)?;
+            let session = flag(args, "--session").ok_or(usage)?;
+            let now = flag(args, "--now")
+                .map(String::from)
+                .unwrap_or_else(forecast::rfc3339_now);
+            if !forecast::is_canonical_utc(&now) {
+                return Err(format!(
+                    "--now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC \
+                     (no offsets, no fractional seconds): {now:?}"
+                )
+                .into());
+            }
+            let trace = parse_trace(&fs::read_to_string(trace_path)?)?;
+            let mut cognitive_loop = CognitiveLoop::new(trace.dimension);
+            let report = cognitive_loop.process_research_trace(trace);
+            let rows = source_reliability::outcomes_from_report(
+                session,
+                &now,
+                &report.outcomes,
+                &report.final_beliefs,
+            );
+            for row in &rows {
+                source_reliability::append(&dir, row)?;
+            }
+            println!("{}", serde_json::to_string_pretty(&rows)?);
+            info!(
+                "appended {} source-outcome row(s) for session {session} to {}",
+                rows.len(),
+                dir.display()
+            );
+            Ok(())
+        }
+        Some("report") => {
+            let now = flag(args, "--now")
+                .map(String::from)
+                .unwrap_or_else(forecast::rfc3339_now);
+            if !forecast::is_canonical_utc(&now) {
+                return Err(format!(
+                    "--now must be canonical YYYY-MM-DDTHH:MM:SSZ UTC, got {now:?}"
+                )
+                .into());
+            }
+            let (rows, skipped) = source_reliability::load(&dir)?;
+            if skipped > 0 {
+                warn!("source-reliability ledger: skipped {skipped} malformed line(s)");
+            }
+            let report = source_reliability::report(&rows, skipped, &now);
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            Ok(())
+        }
+        _ => Err("usage: hari-core source-reliability <emit|report> …".into()),
     }
 }
 

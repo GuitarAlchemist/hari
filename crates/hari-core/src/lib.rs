@@ -72,6 +72,21 @@ pub mod operator_model;
 pub use operator_model::{OperatorEvent, SignalState};
 
 // ---------------------------------------------------------------------------
+// Cross-session source reliability (issue #14) — trust earned by outcomes.
+// Generalises G2 (agents ← PR-grade cards) to any `source` ← the fate of the
+// claims it made in replayed IX traces, accumulated across sessions. Design:
+// docs/research/2026-07-20-source-reliability-design.md; contract:
+// docs/contracts/source-reliability-summary.contract.md (v0.1 DRAFT).
+// Read-only entrenchment ordering; no automated trust change (max_autonomy:
+// draft — full trust-calibration integration awaits owner review).
+// ---------------------------------------------------------------------------
+pub mod source_reliability;
+
+pub use source_reliability::{
+    SourceOutcomeRecord, SourceReliabilityEntry, SourceReliabilityReport,
+};
+
+// ---------------------------------------------------------------------------
 // Subjective Logic prior-art baseline (Jøsang 2016) — see
 // `docs/research/prior-art-survey.md` §4.
 // ---------------------------------------------------------------------------
@@ -1584,6 +1599,41 @@ pub fn compute_metrics_for(
     compute_metrics(outcomes, final_beliefs, final_goals, attention_norm_max)
 }
 
+/// Whether an `Accept(proposition, value)` emitted at `accept_cycle` was later
+/// invalidated by the rest of the trace: a subsequent `Retraction` of the same
+/// proposition, a final value of `Contradictory`, or a polarity flip between
+/// the accepted value and the final value. Single source of truth shared by the
+/// aggregate `false_acceptance_count` metric and per-source reliability
+/// (`source_reliability.rs`), so the two can never drift.
+pub(crate) fn accept_was_invalidated(
+    proposition: &str,
+    accepted_value: HexValue,
+    accept_cycle: u64,
+    outcomes: &[ResearchEventOutcome],
+    final_beliefs: &BTreeMap<String, HexValue>,
+) -> bool {
+    let later_retracted = outcomes.iter().any(|later| {
+        later.event.cycle > accept_cycle
+            && matches!(
+                &later.event.payload,
+                ResearchEventPayload::Retraction { proposition: p, .. } if p == proposition
+            )
+    });
+    let final_value = final_beliefs.get(proposition).copied();
+    let became_contradictory = matches!(final_value, Some(HexValue::Contradictory));
+    let flipped_polarity = matches!(
+        (accepted_value, final_value),
+        (
+            HexValue::True | HexValue::Probable,
+            Some(HexValue::Doubtful | HexValue::False),
+        ) | (
+            HexValue::Doubtful | HexValue::False,
+            Some(HexValue::True | HexValue::Probable),
+        )
+    );
+    later_retracted || became_contradictory || flipped_polarity
+}
+
 /// Compute the aggregate metrics over a finished replay.
 fn compute_metrics(
     outcomes: &[ResearchEventOutcome],
@@ -1681,32 +1731,20 @@ fn compute_metrics(
 
     // --- false_acceptance_count ---
     // Count Accept actions whose proposition was later retracted, marked
-    // Doubtful/False, or moved to Contradictory. We compare each Accept's
-    // value to the proposition's eventual final value.
+    // Doubtful/False, or moved to Contradictory. The per-Accept predicate is
+    // shared with per-source reliability (`source_reliability.rs`) via
+    // `accept_was_invalidated` so the two counts can never drift.
     let mut false_accepts: u32 = 0;
     for o in outcomes {
         for a in &o.actions {
             if let Action::Accept { proposition, value } = a {
-                let later_retracted = outcomes.iter().any(|later| {
-                    later.event.cycle > o.event.cycle
-                        && matches!(
-                            &later.event.payload,
-                            ResearchEventPayload::Retraction { proposition: p, .. } if p == proposition
-                        )
-                });
-                let final_value = final_beliefs.get(proposition).copied();
-                let became_contradictory = matches!(final_value, Some(HexValue::Contradictory));
-                let flipped_polarity = matches!(
-                    (*value, final_value),
-                    (
-                        HexValue::True | HexValue::Probable,
-                        Some(HexValue::Doubtful | HexValue::False),
-                    ) | (
-                        HexValue::Doubtful | HexValue::False,
-                        Some(HexValue::True | HexValue::Probable),
-                    )
-                );
-                if later_retracted || became_contradictory || flipped_polarity {
+                if accept_was_invalidated(
+                    proposition,
+                    *value,
+                    o.event.cycle,
+                    outcomes,
+                    final_beliefs,
+                ) {
                     false_accepts += 1;
                 }
             }
