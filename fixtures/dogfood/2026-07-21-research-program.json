@@ -1,0 +1,432 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "research-program",
+      "payload": {
+        "type": "goal_update",
+        "key": "settle-substrate-question-q5",
+        "description": "Answer prior-art-survey.md §6 Q5: is Hari's hexavalent substrate distinct from Subjective Logic, or is it SL in a costume?",
+        "priority": 0.95,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "preregistration-design",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "hexavalent-beats-sprt-on-ix-autoresearch",
+        "value": "Unknown",
+        "evidence": {
+          "doc": "docs/research/2026-07-19-substrate-role-preregistration.md §2 (H1)",
+          "commit": "d394039",
+          "as_of": "2026-07-19T22:38:58-04:00",
+          "note": "H1 pre-registered as a hypothesis to be attacked before execution; no data collected, no owner sign-off"
+        }
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "preregistration-design",
+      "payload": {
+        "type": "relation_declaration",
+        "from": "hexavalent-beats-sprt-on-ix-autoresearch",
+        "to": "hari-substrate-has-distinct-value",
+        "relation": "Supports"
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "preregistration-design",
+      "payload": {
+        "type": "goal_update",
+        "key": "run-empirical-substrate-study",
+        "description": "Open-loop decision-quality study on ix-autoresearch grammar runs vs EWMA/SPRT and SubjectiveLogic baselines (issue #13)",
+        "priority": 0.8,
+        "status": "Unknown"
+      }
+    },
+    {
+      "cycle": 5,
+      "source": "preregistration-design",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "ix-grammar-loop-yields-organic-contradictions",
+        "value": "Probable",
+        "evidence": {
+          "doc": "docs/research/2026-07-19-substrate-role-preregistration.md §6 (tracer-gate premise)",
+          "commit": "d394039",
+          "as_of": "2026-07-19T22:38:58-04:00",
+          "note": "SCHEMA Layer-2 view claims re-evaluations of the same config_hash consolidate to HexValue::Contradictory"
+        }
+      }
+    },
+    {
+      "cycle": 6,
+      "source": "tracer-gate-probe",
+      "payload": {
+        "type": "correction",
+        "proposition": "ix-grammar-loop-yields-organic-contradictions",
+        "reason": "the tracer gate falsified the premise by inspection: the grammar target perturbs with a continuous Gaussian per weight and a log-uniform temperature, so two byte-identical configs is a measure-zero event; no claim is ever observed twice, so Contradictory cannot arise organically",
+        "retracts": { "source": "preregistration-design" },
+        "value": "False",
+        "evidence": {
+          "doc": "docs/research/2026-07-19-substrate-role-preregistration.md §11",
+          "commit": "3eb1475",
+          "as_of": "2026-07-19T22:45:38-04:00",
+          "probe": "PROBE: iters=2000 distinct_configs=2000 repeats=0"
+        }
+      }
+    },
+    {
+      "cycle": 7,
+      "source": "study-abandonment",
+      "payload": {
+        "type": "retraction",
+        "proposition": "hexavalent-beats-sprt-on-ix-autoresearch",
+        "reason": "study abandoned at the §6 tracer gate before any data was collected — the phenomenon it would measure does not occur in ix-autoresearch. The hypothesis is withdrawn UNTESTED, not falsified: it should read Unknown-after-retraction, never False."
+      }
+    },
+    {
+      "cycle": 8,
+      "source": "study-abandonment",
+      "payload": {
+        "type": "relation_withdrawal",
+        "from": "hexavalent-beats-sprt-on-ix-autoresearch",
+        "to": "hari-substrate-has-distinct-value",
+        "relation": "Supports",
+        "reason": "the empirical leg was abandoned at the tracer gate; the substrate-value case no longer rests on ix-autoresearch decision-quality evidence"
+      }
+    },
+    {
+      "cycle": 9,
+      "source": "study-abandonment",
+      "payload": {
+        "type": "goal_update",
+        "key": "run-empirical-substrate-study",
+        "description": "Open-loop decision-quality study on ix-autoresearch (issue #13) — ABANDONED at tracer gate; needs a target where the same proposition is observed more than once",
+        "priority": 0.2,
+        "status": "Doubtful"
+      }
+    },
+    {
+      "cycle": 10,
+      "source": "merge-module-claim",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "hex-merge-permutation-invariant",
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hex-merge-algebraic-audit.md §1",
+          "claim": "merge.rs: reproducible across runs regardless of input order — load-bearing for CRDT correctness"
+        }
+      }
+    },
+    {
+      "cycle": 11,
+      "source": "algebraic-audit-probe",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "hex-merge-permutation-invariant",
+        "value": "False",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hex-merge-algebraic-audit.md §3",
+          "commit": "d47fc37",
+          "as_of": "2026-07-19T23:32:50-04:00",
+          "counterexample": "seed 0xC0FFEE trial 28: first-write-wins dedup leaks input order on representable same-key divergent payloads"
+        }
+      }
+    },
+    {
+      "cycle": 12,
+      "source": "merge-module-claim",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "hex-merge-associative",
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hex-merge-algebraic-audit.md §1",
+          "claim": "synthesis_diagnosis_id described as the property that restores associativity"
+        }
+      }
+    },
+    {
+      "cycle": 13,
+      "source": "algebraic-audit-probe",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "hex-merge-associative",
+        "value": "False",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hex-merge-algebraic-audit.md §3",
+          "commit": "d47fc37",
+          "counterexample": "unconditional associativity fails (same root cause as the commutativity defect); holds only conditional on globally distinct dedup keys"
+        }
+      }
+    },
+    {
+      "cycle": 14,
+      "source": "naive-arithmetic-prediction",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "escalation-survives-corroboration-flooding",
+        "value": "False",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hex-merge-algebraic-audit.md §2 (theorem 3, the misprediction)",
+          "prediction": "naive arithmetic: corroboration washes out C-mass below the 0.3 escalation threshold after one supporting observation, so an escalated contradiction would be muted"
+        }
+      }
+    },
+    {
+      "cycle": 15,
+      "source": "algebraic-audit-probe",
+      "payload": {
+        "type": "correction",
+        "proposition": "escalation-survives-corroboration-flooding",
+        "reason": "hand-analysis error: measured the opposite. Each corroborating P conflicts with the standing F ((P,F) -> 0.8 Belnap weight) and synthesizes MORE C; the trajectory rises 0.333 -> 0.435 toward the 0.444 asymptote. Escalation is anti-dilutive under support",
+        "retracts": { "source": "naive-arithmetic-prediction" },
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hex-merge-algebraic-audit.md §2",
+          "commit": "d47fc37",
+          "note": "first formally verified claim about what the hexavalent layer adds"
+        }
+      }
+    },
+    {
+      "cycle": 16,
+      "source": "hex-merge-fix",
+      "payload": {
+        "type": "supersession",
+        "proposition": "hex-merge-permutation-invariant",
+        "superseded_by": "hex-merge-permutation-invariant-purefold",
+        "reason": "924b5a4 replaced first-write-wins with resolve_key_versions + min-round stamp + derived-cache drop; the property is re-established as a claim about the fixed merge, which is now a pure function of the base-evidence multiset"
+      }
+    },
+    {
+      "cycle": 17,
+      "source": "algebraic-audit-probe-postfix",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "hex-merge-permutation-invariant-purefold",
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hex-merge-algebraic-audit.md §7",
+          "commit": "924b5a4",
+          "as_of": "2026-07-19T23:43:19-04:00",
+          "proof": "seed 0x5EED, 1500 random triples, both groupings, collisions included; known_divergence_* flipped to theorem_* — holds unconditionally"
+        }
+      }
+    },
+    {
+      "cycle": 18,
+      "source": "hex-merge-fix",
+      "payload": {
+        "type": "supersession",
+        "proposition": "hex-merge-associative",
+        "superseded_by": "hex-merge-associative-purefold",
+        "reason": "same root cause, same fix (924b5a4): with base-evidence recompute the associativity theorem no longer needs a distinct-key precondition"
+      }
+    },
+    {
+      "cycle": 19,
+      "source": "algebraic-audit-probe-postfix",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "hex-merge-associative-purefold",
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hex-merge-algebraic-audit.md §7",
+          "commit": "924b5a4",
+          "proof": "1500 random triples, both carried groupings plus permutation — unconditional"
+        }
+      }
+    },
+    {
+      "cycle": 20,
+      "source": "propagation-hand-conjecture",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "fixpoint-divergence-is-transient",
+        "value": "Probable",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-propagation-audit.md §2",
+          "conjecture": "the edge-order divergence is transient — the two fixpoints reconverge"
+        }
+      }
+    },
+    {
+      "cycle": 21,
+      "source": "propagation-audit-probe",
+      "payload": {
+        "type": "correction",
+        "proposition": "fixpoint-divergence-is-transient",
+        "reason": "the randomized probe falsified the conjecture within 6 trials: seed 0xF17ED trial 6, (D+U)+T = True vs (D+T)+U = Contradictory — both are fixpoints, permanently different final beliefs selected by edge insertion order. The divergence is permanent, not transient",
+        "retracts": { "source": "propagation-hand-conjecture" },
+        "value": "False",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-propagation-audit.md §2",
+          "commit": "f66d562",
+          "as_of": "2026-07-20T00:02:51-04:00"
+        }
+      }
+    },
+    {
+      "cycle": 22,
+      "source": "propagation-module-assumption",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "propagation-is-edge-order-independent",
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-propagation-audit.md §1",
+          "assumption": "the deterministic-replay doctrine assumes propagation is a function of evidence, not of edge insertion order"
+        }
+      }
+    },
+    {
+      "cycle": 23,
+      "source": "propagation-audit-probe",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "propagation-is-edge-order-independent",
+        "value": "False",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-propagation-audit.md §2",
+          "commit": "f66d562",
+          "counterexample": "the per-round pairwise combine_evidence fold ran in edge-insertion order; join(D,U)=U launders a standing negative, so True vs Contradictory was selected by construction order"
+        }
+      }
+    },
+    {
+      "cycle": 24,
+      "source": "propagation-fix",
+      "payload": {
+        "type": "supersession",
+        "proposition": "propagation-is-edge-order-independent",
+        "superseded_by": "propagation-edge-order-independent-nary",
+        "reason": "f66d562 replaced the pairwise fold with combine_evidence_set (n-ary, inspects the whole contribution set); the pairwise operator is kept where argument order carries real temporal meaning"
+      }
+    },
+    {
+      "cycle": 25,
+      "source": "propagation-audit-probe-postfix",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "propagation-edge-order-independent-nary",
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-propagation-audit.md §3 (theorem 4)",
+          "commit": "f66d562",
+          "proof": "1000 graphs x 3 permutations, fixpoint AND per-round; blast radius zero, all 24 workspace suites pass unchanged"
+        }
+      }
+    },
+    {
+      "cycle": 26,
+      "source": "sl-correspondence-probe",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "hex-merge-equals-discretized-sl",
+        "value": "False",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hexmerge-sl-correspondence.md §3.1",
+          "commit": "8aa5104",
+          "as_of": "2026-07-20T00:03:38-04:00",
+          "question": "prior-art-survey.md §6 Q5 — is the hexavalent layer SL in a costume?",
+          "counterexample": "idempotence separates them mapping-independently: hex-merge is idempotent (a CRDT proof obligation), SL cumulative fusion is deliberately not; no injective state mapping reconciles an idempotent operator with a non-idempotent one"
+        }
+      }
+    },
+    {
+      "cycle": 27,
+      "source": "sl-correspondence-probe",
+      "payload": {
+        "type": "experiment_result",
+        "proposition": "escalation-survives-corroboration-flooding",
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hexmerge-sl-correspondence.md §3.2",
+          "commit": "8aa5104",
+          "corroborates": "theorem_consensus_flooding_separates_the_two: hex C-mass rises 1/3 -> 0.444 under P-flooding while SL de-escalates at n=4 and accepts at n=22 — anti-dilution under support re-confirmed by an independent probe"
+        }
+      }
+    },
+    {
+      "cycle": 28,
+      "source": "sl-correspondence-probe",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "hex-merge-is-a-distinct-algebraic-family",
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hexmerge-sl-correspondence.md §5",
+          "commit": "8aa5104",
+          "finding": "an idempotent, multiset-averaging, CRDT-mergeable statistic with a contradiction channel — not SL in a costume, and not merely 'SL plus a C channel'"
+        }
+      }
+    },
+    {
+      "cycle": 29,
+      "source": "sl-correspondence",
+      "payload": {
+        "type": "relation_declaration",
+        "from": "hex-merge-is-a-distinct-algebraic-family",
+        "to": "hari-substrate-has-distinct-value",
+        "relation": "Supports"
+      }
+    },
+    {
+      "cycle": 30,
+      "source": "sl-correspondence-probe-v1.1",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "hex-sl-form-an-exact-support-abstention-mirror",
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hexmerge-sl-correspondence.md §3.2 (spec v1.1)",
+          "commit": "8aa5104",
+          "finding": "hex escalation is anti-dilutive under support but dilutable by abstention (one Unknown mutes it: 1/(3+n)); SL conflict is the exact mirror (support-mortal, abstention-immune)"
+        }
+      }
+    },
+    {
+      "cycle": 31,
+      "source": "sl-correspondence",
+      "payload": {
+        "type": "goal_update",
+        "key": "settle-substrate-question-q5",
+        "description": "Answer prior-art-survey.md §6 Q5 — ANSWERED: hex-merge is not discretized SL; the operators belong to different algebraic families, agreeing only on full-weight singletons and the maximally-direct conflict",
+        "priority": 0.95,
+        "status": "True"
+      }
+    },
+    {
+      "cycle": 32,
+      "source": "spec-v1.2-owner-ratification",
+      "payload": {
+        "type": "supersession",
+        "proposition": "hex-sl-form-an-exact-support-abstention-mirror",
+        "superseded_by": "hex-escalation-immune-to-both-flooding-directions",
+        "reason": "issue #28: the abstention-muting half of the mirror was judged a design defect, not a finding to preserve — an evidence-based alarm dilutable by non-evidence is exploitable once autonomy gates on escalation. Spec v1.2 compares C against the informative mass (U excluded from the denominator)"
+      }
+    },
+    {
+      "cycle": 33,
+      "source": "spec-v1.2",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "hex-escalation-immune-to-both-flooding-directions",
+        "value": "True",
+        "evidence": {
+          "doc": "docs/research/2026-07-20-hexmerge-sl-correspondence.md §3.2 (superseded-by-v1.2 note)",
+          "commit": "5d32abb, 97a3f1f; Demerzel 7e6a1cb; ix 76b9c71",
+          "as_of": "2026-07-20T21:11:29-04:00",
+          "finding": "informative-mass escalation is immune to both flooding directions; the separation from SL sharpened rather than closed. theorem_unknown_flooding_mirrors flipped; confusion matrix moved to 180/742/1076/2"
+        }
+      }
+    }
+  ]
+}
