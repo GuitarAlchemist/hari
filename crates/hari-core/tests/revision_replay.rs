@@ -14,7 +14,9 @@
 //! selective path equals a from-scratch survivor recompute and *differs*
 //! from that baseline on the fixtures — the row the baseline gets wrong.
 
-use hari_core::{CognitiveLoop, PriorityModel, ResearchEvent, ResearchTrace, RevisionCause};
+use hari_core::{
+    CognitiveLoop, PriorityModel, ResearchEvent, ResearchEventPayload, ResearchTrace, RevisionCause,
+};
 use hari_lattice::{HexLattice, HexValue};
 use std::fs;
 
@@ -175,10 +177,47 @@ fn supersession_chain_retires_claims_but_keeps_them_inspectable() {
     );
 }
 
+/// Strip the `retracts` selector from every `Retraction` in a trace,
+/// turning the selective retractions into the naive whole-proposition
+/// retractions the pre-slice handler performs. This reconstructs the A/B
+/// **baseline arm** from the *same* input, so the comparison exercises the
+/// real naive handler rather than asserting a hardcoded value.
+fn without_selectors(trace: &ResearchTrace) -> ResearchTrace {
+    let events = trace
+        .events
+        .iter()
+        .map(|e| {
+            let payload = match &e.payload {
+                ResearchEventPayload::Retraction {
+                    proposition,
+                    reason,
+                    ..
+                } => ResearchEventPayload::Retraction {
+                    proposition: proposition.clone(),
+                    reason: reason.clone(),
+                    retracts: None,
+                },
+                other => other.clone(),
+            };
+            ResearchEvent {
+                cycle: e.cycle,
+                source: e.source.clone(),
+                payload,
+            }
+        })
+        .collect();
+    ResearchTrace {
+        dimension: trace.dimension,
+        events,
+    }
+}
+
 /// A/B baseline (design §7): the selective-retraction path equals a
 /// from-scratch recompute over the surviving evidence (retraction fidelity),
-/// while the LWW-to-`Unknown` baseline diverges. Proven on both retraction
-/// fixtures.
+/// while the naive whole-proposition LWW handler — run on the *same* trace
+/// with its selector stripped — erases the belief to `Unknown`. Proven on
+/// both retraction fixtures by running the actual baseline handler, not a
+/// hardcoded constant.
 #[test]
 fn retraction_fidelity_beats_lww_baseline() {
     // (fixture, proposition, surviving evidence values after the retraction)
@@ -191,8 +230,10 @@ fn retraction_fidelity_beats_lww_baseline() {
 
     for (path, prop, survivors) in cases {
         let trace = load_trace(path);
-        let mut cl = CognitiveLoop::new(trace.dimension);
-        let report = cl.process_research_trace(trace);
+
+        // Experimental arm: the selective evidence-recompute path.
+        let mut experimental = CognitiveLoop::new(trace.dimension);
+        let report = experimental.process_research_trace(trace.clone());
         let actual = report.final_beliefs.get(*prop).copied().unwrap();
 
         // Retraction fidelity: the implemented value IS the survivor recompute.
@@ -202,13 +243,21 @@ fn retraction_fidelity_beats_lww_baseline() {
             "{path}: post-retraction belief must equal a from-scratch survivor recompute"
         );
 
-        // A/B: the naive last-write-wins baseline resets to Unknown; the
-        // evidence-recompute path does not — this is the divergence the
-        // metric measures.
-        let baseline = HexValue::Unknown;
+        // Baseline arm: the SAME trace with the selector stripped, run
+        // through the preserved naive whole-proposition handler.
+        let baseline_trace = without_selectors(&trace);
+        let mut baseline_loop = CognitiveLoop::new(baseline_trace.dimension);
+        let baseline_report = baseline_loop.process_research_trace(baseline_trace);
+        let baseline = baseline_report.final_beliefs.get(*prop).copied().unwrap();
+
+        assert_eq!(
+            baseline,
+            HexValue::Unknown,
+            "{path}: the naive baseline erases the belief to Unknown"
+        );
         assert_ne!(
             actual, baseline,
-            "{path}: evidence-recompute must beat the LWW-to-Unknown baseline"
+            "{path}: evidence-recompute must beat (differ from) the naive LWW baseline"
         );
     }
 }

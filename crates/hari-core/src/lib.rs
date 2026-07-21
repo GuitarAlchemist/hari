@@ -1581,28 +1581,35 @@ impl CognitiveLoop {
                             });
                         }
                     }
-                    // Whole-proposition retraction (no selector). Preserved
-                    // byte-for-byte from the pre-slice handler — this is
-                    // the A/B baseline (reset to Unknown, recommend Retry)
-                    // and the behavior existing fixtures/tests pin. A full
-                    // filter-and-recompute over an *all-retracted* ledger
-                    // yields Unknown too, so the value agrees; the action
-                    // emission is kept identical so recorded reports (e.g.
-                    // fixtures/ix/conflicting_benchmark.json) stay
-                    // byte-equal and no revision delta is emitted.
+                    // Whole-proposition retraction (no selector). Per the
+                    // design (§4 semantic 2) this goes "via the filter path,
+                    // not a mutation to Unknown": tombstone *all* the
+                    // proposition's evidence and recompute — which yields
+                    // Unknown, since the survivor set is now empty
+                    // (`combine_evidence_set([]) == Unknown`). So there is
+                    // one recompute mechanism, not a special-cased reset.
+                    //
+                    // This arm is also the A/B baseline the selective path
+                    // is measured against (design §7), and existing fixtures
+                    // (e.g. fixtures/ix/conflicting_benchmark.json) pin its
+                    // report. The design would emit a delta on any
+                    // belief-changing revision, but doing so here would
+                    // change those recorded reports; per the byte-compat
+                    // requirement the legacy action emission (Log + Retry)
+                    // is kept verbatim and NO revision delta is emitted for
+                    // the no-selector path. The new semantics *replace* the
+                    // naive handler (they are not opt-in) — the naive wire
+                    // shape stays parseable and its behavior is preserved as
+                    // this baseline arm.
                     None => {
                         if let Some(entries) = self.evidence_log.get_mut(proposition) {
                             for entry in entries.iter_mut() {
                                 entry.retracted = true;
                             }
                         }
-                        if let Some(prop) = self.state.beliefs.get_mut(proposition) {
-                            prop.value = HexValue::Unknown;
-                        } else {
-                            self.state
-                                .beliefs
-                                .add_proposition(proposition, HexValue::Unknown);
-                        }
+                        let recomputed = self.recompute_from_ledger(proposition);
+                        debug_assert_eq!(recomputed, HexValue::Unknown);
+                        self.set_belief_value(proposition, recomputed);
                         actions.push(Action::Log(format!(
                             "Retracted '{}': {}",
                             proposition, reason
