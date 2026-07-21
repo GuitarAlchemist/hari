@@ -76,9 +76,19 @@ A lineage export is a directed graph of typed **nodes** connected by typed
 | `is_part_of_run`          | any node → `run_report`                        | Run membership. |
 | `is_revised_by`           | old belief → revision                          | A belief_state/derived_belief was later revised (by a derivation, retraction, or consensus). |
 | `leads_to_recommendation` | belief/consensus → `recommendation`            | The belief or consensus that triggered a recommended action. |
+| `is_retracted_by`         | evidence → revision event                      | **Additive (issue #16).** A `source_item`/`claim`/`experiment_event` whose evidence was *retracted*, pointing at the retracting event. Joins `is_revised_by`; the retracted node stays in the bundle (preserve-for-audit) with `retracted: true` but contributes zero mass. |
 
 Edges may carry an optional `round` (for propagation-derived edges) and an
 optional `evidence` blob (e.g. the `contributed_value` from a `Contribution`).
+
+**Belief-revision node flag (additive, issue #16).** A `source_item`, `claim`,
+or `experiment_event` node MAY carry an optional `retracted: true` flag when its
+evidence has been withdrawn by a `retraction`/`correction`/`supersession` event
+(see [`retraction-events.contract.md`](retraction-events.contract.md)). The
+node is *preserved for audit* (never dropped) and paired with an
+`is_retracted_by` edge to the retracting event. Both fields are additive and
+optional — absent on every pre-revision export, skipped from JSON when unset, so
+existing bundles stay byte-identical and no `lineage_version` bump is forced.
 
 ### Redaction model
 

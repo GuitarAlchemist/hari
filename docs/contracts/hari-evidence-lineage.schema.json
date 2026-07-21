@@ -30,6 +30,10 @@
       "description": "Hari's hexavalent logic value (hari_lattice::HexValue). PascalCase to match serde output.",
       "enum": ["True", "Probable", "Unknown", "Doubtful", "False", "Contradictory"]
     },
+    "retracted": {
+      "type": "boolean",
+      "description": "Belief-revision tombstone flag (issue #16). True marks an evidence node (source_item / claim / experiment_event) whose evidence was retracted: it stays in the bundle for audit but contributes zero mass to the current distribution, and is joined by an `is_retracted_by` edge to the retracting event. Additive and optional — absent means not retracted; no lineage_version bump."
+    },
     "priorityModel": {
       "type": "string",
       "description": "Which PriorityModel produced the run. Default substrate is RecencyDecay.",
@@ -51,7 +55,8 @@
         "is_attributed_to",
         "is_part_of_run",
         "is_revised_by",
-        "leads_to_recommendation"
+        "leads_to_recommendation",
+        "is_retracted_by"
       ]
     },
     "run": {
@@ -111,7 +116,8 @@
           "detail": {
             "type": "object",
             "description": "Optional non-sensitive detail. Present only when redacted=false."
-          }
+          },
+          "retracted": { "$ref": "#/$defs/retracted" }
         },
         "if": { "properties": { "redacted": { "const": true } } },
         "then": { "not": { "required": ["detail"] } }
@@ -124,7 +130,8 @@
           "id": { "type": "string" },
           "kind": { "const": "claim" },
           "proposition": { "type": "string" },
-          "asserted_value": { "$ref": "#/$defs/hexValue" }
+          "asserted_value": { "$ref": "#/$defs/hexValue" },
+          "retracted": { "$ref": "#/$defs/retracted" }
         }
       },
       "beliefState": {
@@ -154,7 +161,8 @@
           "evidence": {
             "type": "object",
             "description": "Free-form audit blob, preserved verbatim from ResearchEvent evidence."
-          }
+          },
+          "retracted": { "$ref": "#/$defs/retracted" }
         }
       },
       "agentVote": {

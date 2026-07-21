@@ -10,6 +10,56 @@ use hari_core::lineage::{LineageBundle, LineageEdge, LineageNode, LINEAGE_VERSIO
 use std::collections::BTreeSet;
 use std::fs;
 
+/// Issue #16: the additive belief-revision lineage fields — a node's
+/// `retracted: true` flag and the `is_retracted_by` edge — round-trip
+/// through the typed model, and their *absence* leaves an export
+/// byte-identical (skip-if-`None` / free-form rel string).
+#[test]
+fn retraction_lineage_fields_are_additive_and_round_trip() {
+    // A minimal bundle exercising both additive fields.
+    let bundle_json = r#"{
+        "lineage_version": "hari-evidence-lineage-v0.1.0",
+        "run": { "run_id": "r1", "priority_model": "RecencyDecay" },
+        "nodes": [
+            { "id": "claim:deploy", "kind": "claim", "proposition": "deploy-is-safe",
+              "asserted_value": "False", "retracted": true },
+            { "id": "rev:3", "kind": "run_report" }
+        ],
+        "edges": [
+            { "from": "claim:deploy", "to": "rev:3", "rel": "is_retracted_by" }
+        ]
+    }"#;
+    let bundle: LineageBundle = serde_json::from_str(bundle_json).expect("bundle parses");
+
+    let retracted = bundle
+        .nodes
+        .iter()
+        .find(|n| n.id == "claim:deploy")
+        .expect("retracted claim present");
+    assert_eq!(retracted.retracted, Some(true));
+    assert_eq!(bundle.retracted_node_count(), 1);
+    assert!(bundle.edges.iter().any(|e| e.rel == "is_retracted_by"));
+
+    // Round-trip is a fixed point (no information lost).
+    let reser = serde_json::to_string(&bundle).expect("serialise");
+    let again: LineageBundle = serde_json::from_str(&reser).expect("re-parse");
+    assert_eq!(bundle, again);
+
+    // The existing example bundle carries neither field — proving they are
+    // absent (not defaulted-in) so pre-revision exports stay byte-identical.
+    let example = load_bundle();
+    assert_eq!(example.retracted_node_count(), 0);
+    let example_json = serde_json::to_string(&example).expect("serialise example");
+    assert!(
+        !example_json.contains("\"retracted\""),
+        "absent retracted flag must be skipped from JSON (byte-additive)"
+    );
+    assert!(
+        !example_json.contains("is_retracted_by"),
+        "the example has no is_retracted_by edge"
+    );
+}
+
 const BUNDLE_PATH: &str = "../../fixtures/lineage/hari-lineage.example.json";
 
 fn load_bundle() -> LineageBundle {

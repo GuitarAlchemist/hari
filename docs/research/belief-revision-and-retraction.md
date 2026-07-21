@@ -393,6 +393,32 @@ per fixture are in `fixtures/revision/README.md`.
    superseded claims are retired but the whole chain is inspectable, and
    replay-to-an-earlier-point shows the older claim as it stood.
 
+### 8.1 Addendum (merge-weight slice, 2026-07-20): fixtures 1 & 2 both dissolve to `Probable`
+
+The two fixtures above were *inconsistent as originally written*, and the
+merge-weight slice resolved that inconsistency uniformly. Fixture 1 expected
+retraction to dissolve the `C` to **`True`**; fixture 2 expected partial
+retraction to downgrade to **`Probable`**. But **after their retractions both
+fixtures reduce to the identical survivor set — a single source asserting
+`True`** (fixture 1: `{evaluator: True}` after the critic's `False` is
+withdrawn; fixture 2: `{runner: True}` after the evaluator's `True` is
+withdrawn). No pure function of the surviving evidence multiset — which is what
+evidence-recompute-authoritative *requires* — can return `True` for one and
+`Probable` for the other.
+
+The merge-weight slice adds the **single-source corroboration cap** the design
+called for (§7 "downgrades T→P", §8.2), counted over *distinct sources*: a lone
+uncorroborated `True`/`False` caps at `Probable`/`Doubtful`; two or more
+independent sources license the strong pole. Applied **uniformly** (the roadmap
+requires one rule, not a per-fixture special case), it makes **both** fixtures
+dissolve/downgrade to `Probable`. Fixture 1's headline — *the derived
+contradiction dissolves* — is unchanged and remains the A/B win against the
+LWW-to-`Unknown` baseline; only its residual strength moves `True → Probable`.
+Fixtures + README were updated to match; the implementation is
+`CognitiveLoop::project_belief` (routing through `hari_lattice::merge`), pinned
+by `partial_retraction_downgrades_to_probable` and
+`retraction_dissolves_derived_contradiction`.
+
 ## 9. What the implementation slice will need (out of scope here)
 
 1. **Enum extension** (`hari-core::ResearchEventPayload`) — add the optional

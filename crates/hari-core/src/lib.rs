@@ -794,11 +794,20 @@ pub struct CognitiveLoop {
 /// (issue #16). Addressed by `(source, cycle)` at the `ResearchEvent`
 /// boundary; `retracted` is the tombstone flag — a retracted entry
 /// contributes zero to the recompute but stays in the ledger for audit.
+///
+/// `weight` is the per-source confidence carried into the merge-routed
+/// recompute (merge-weight slice). It is `1.0` for every boundary event
+/// today — the ledger has no per-source reliability yet; that is earned,
+/// not declared, and owned by the source-reliability ledger (#14). The
+/// field exists so the recompute can route through
+/// [`hari_lattice::merge`] as weighted observations and so #14 can later
+/// supply real weights without another schema change.
 #[derive(Debug, Clone, PartialEq)]
 struct EvidenceEntry {
     source: String,
     cycle: u64,
     value: HexValue,
+    weight: f64,
     retracted: bool,
 }
 
@@ -1410,6 +1419,13 @@ impl CognitiveLoop {
                     source: event.source.clone(),
                     cycle: event.cycle,
                     value: *value,
+                    // Uniform confidence at the boundary: no per-source
+                    // reliability exists here yet (that is #14, earned not
+                    // declared). The recompute routes these through the
+                    // weighted merge; a corroboration cap over distinct
+                    // sources — not weight magnitude — is what downgrades a
+                    // single uncorroborated source (see `recompute_belief`).
+                    weight: 1.0,
                     retracted: false,
                 });
         }
@@ -1760,26 +1776,153 @@ impl CognitiveLoop {
         }
     }
 
-    /// Recompute a proposition's authoritative value from the surviving
-    /// (non-retracted) evidence in the ledger (issue #16). This is the
-    /// "evidence-recompute is authoritative" doctrine at the
-    /// `ResearchEvent` boundary: the value is an order-independent
-    /// function of the surviving evidence multiset, via
-    /// [`hari_lattice::HexLattice::combine_evidence_set`] (any standing
-    /// positive+negative pair is `Contradictory`; an empty survivor set
-    /// is `Unknown`). Because the value is derived fresh from survivors
-    /// and nothing is carried, a retraction that removes one side of a
-    /// conflict dissolves the derived contradiction with no cascade
-    /// logic.
+    /// Recompute a proposition's authoritative value from its evidence
+    /// ledger (issue #16), routing through [`hari_lattice::merge`] with the
+    /// belief-revision **tombstone step** (merge-weight slice; design §9
+    /// item 2).
+    ///
+    /// Every ledger entry — surviving *and* retracted — becomes a weighted
+    /// [`hari_lattice::HexObservation`]; the retracted ones' dedup keys form
+    /// the tombstone set that [`hari_lattice::merge_with_tombstones`] filters
+    /// out before merging. "Evidence-recompute is authoritative": a
+    /// tombstoned observation contributes zero mass, exactly as if it had
+    /// never been submitted, while remaining in this ledger for audit. The
+    /// merged distribution is then projected to a single [`HexValue`] by
+    /// [`Self::project_belief`], which reads the corroboration structure the
+    /// weightless `combine_evidence_set` could not — most importantly the
+    /// single-source cap that downgrades an uncorroborated `True`/`False`.
+    ///
+    /// Because the value is derived fresh from survivors and nothing is
+    /// carried, a retraction that removes one side of a conflict dissolves
+    /// the derived contradiction with no cascade logic.
     fn recompute_from_ledger(&self, proposition: &str) -> HexValue {
-        let survivors = self
-            .evidence_log
-            .get(proposition)
+        let mut observations: Vec<hari_lattice::HexObservation> = Vec::new();
+        let mut tombstoned: std::collections::BTreeSet<hari_lattice::DedupKey> =
+            std::collections::BTreeSet::new();
+        if let Some(entries) = self.evidence_log.get(proposition) {
+            for (idx, entry) in entries.iter().enumerate() {
+                let obs =
+                    Self::evidence_obs(&entry.source, entry.cycle, entry.value, entry.weight, idx);
+                if entry.retracted {
+                    tombstoned.insert(obs.dedup_key());
+                }
+                observations.push(obs);
+            }
+        }
+        let state = hari_lattice::merge_with_tombstones(&observations, &tombstoned, None, None);
+        Self::project_belief(&state)
+    }
+
+    /// Build one weighted merge observation from a ledger entry. All entries
+    /// for one proposition share a single `claim_key` (they are positions on
+    /// the *same* claim), so the merge's direct-contradiction synthesis fires
+    /// between opposite-polarity sources; `ordinal = idx` keeps every entry's
+    /// dedup key distinct so tombstoning one never removes another.
+    fn evidence_obs(
+        source: &str,
+        cycle: u64,
+        value: HexValue,
+        weight: f64,
+        idx: usize,
+    ) -> hari_lattice::HexObservation {
+        hari_lattice::HexObservation {
+            source: source.to_string(),
+            diagnosis_id: "revision-recompute".to_string(),
+            round: cycle as u32,
+            ordinal: idx as u32,
+            claim_key: "belief".to_string(),
+            variant: value,
+            weight,
+            evidence: None,
+        }
+    }
+
+    /// Project a merged evidence state to the single authoritative belief
+    /// value (issue #16 merge-weight slice). The rule, in order:
+    ///
+    /// 1. **Standing cross-source contradiction dominates.** If the merge
+    ///    escalates (`Contradictory` share of *informative* mass over the
+    ///    threshold — abstention cannot mute it, spec v1.2) the value is
+    ///    `Contradictory`. This is how a live `True`/`False` disagreement
+    ///    surfaces; retracting one side drops the synthesized `C` and this
+    ///    check no longer fires.
+    /// 2. **Base value** = `join` over the surviving *primary* (non-derived)
+    ///    variants — the lattice's own agreement combinator. No primary
+    ///    evidence → `Unknown`.
+    /// 3. **Single-source corroboration cap.** A strong pole (`True`/`False`)
+    ///    reached by only *one distinct source* downgrades to the adjacent
+    ///    uncertain value (`True → Probable`, `False → Doubtful`); two or more
+    ///    independent sources on that side license the strong value. This is
+    ///    the merge-weight slice's new capability: corroboration is counted
+    ///    over distinct sources, which the weightless `combine_evidence_set`
+    ///    could not see. It applies uniformly — the reason fixture 1's
+    ///    dissolved belief and fixture 2's partially-retracted belief both
+    ///    land on `Probable` from a lone surviving `True`.
+    fn project_belief(state: &hari_lattice::MergedState) -> HexValue {
+        if state.distribution.escalation_triggered() {
+            return HexValue::Contradictory;
+        }
+        let primaries: Vec<&hari_lattice::HexObservation> = state
+            .observations
+            .iter()
+            .filter(|o| o.source != hari_lattice::MERGE_SOURCE)
+            .collect();
+        let base = match primaries
+            .iter()
+            .map(|o| o.variant)
+            .reduce(<HexValue as hari_lattice::Lattice>::join)
+        {
+            Some(v) => v,
+            None => return HexValue::Unknown,
+        };
+        // A join can still surface `Contradictory` if a primary observation
+        // itself asserted it (a source directly reporting a contradiction),
+        // independent of the escalation share — preserve it.
+        let (strong_downgrade, on_side): (HexValue, fn(HexValue) -> bool) = match base {
+            HexValue::True => (HexValue::Probable, |v| {
+                matches!(v, HexValue::True | HexValue::Probable)
+            }),
+            HexValue::False => (HexValue::Doubtful, |v| {
+                matches!(v, HexValue::False | HexValue::Doubtful)
+            }),
+            other => return other,
+        };
+        let distinct_sources: std::collections::BTreeSet<&str> = primaries
+            .iter()
+            .filter(|o| on_side(o.variant))
+            .map(|o| o.source.as_str())
+            .collect();
+        if distinct_sources.len() >= 2 {
+            base
+        } else {
+            strong_downgrade
+        }
+    }
+
+    /// Authoritative belief recompute over an explicit set of *surviving*
+    /// evidence assertions, routed through the same weighted merge +
+    /// projection the boundary uses after a selective retraction (issue #16
+    /// merge-weight slice). Each item is `(source, value, weight)`.
+    ///
+    /// This is the A/B **retraction-fidelity** oracle: the belief after a
+    /// selective retraction must equal `recompute_belief` over exactly the
+    /// evidence that survived — i.e. exactly what you would get had the
+    /// retracted evidence never been submitted. Exposed so tests and probes
+    /// assert fidelity against the real engine rather than a reconstruction.
+    pub fn recompute_belief<'a>(
+        evidence: impl IntoIterator<Item = (&'a str, HexValue, f64)>,
+    ) -> HexValue {
+        let observations: Vec<hari_lattice::HexObservation> = evidence
             .into_iter()
-            .flatten()
-            .filter(|e| !e.retracted)
-            .map(|e| e.value);
-        hari_lattice::HexLattice::combine_evidence_set(survivors)
+            .enumerate()
+            .map(|(idx, (source, value, weight))| {
+                Self::evidence_obs(source, idx as u64, value, weight, idx)
+            })
+            .collect();
+        let empty: std::collections::BTreeSet<hari_lattice::DedupKey> =
+            std::collections::BTreeSet::new();
+        let state = hari_lattice::merge_with_tombstones(&observations, &empty, None, None);
+        Self::project_belief(&state)
     }
 
     /// Record an `AgentVote` into [`Self::swarm`]. The agent identified

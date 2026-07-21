@@ -79,6 +79,16 @@ pub struct LineageNode {
     /// `experiment_event`, `agent_vote`, `consensus_result`, `derived_belief`,
     /// `recommendation`, `run_report`).
     pub kind: String,
+    /// Belief-revision tombstone flag (issue #16): `Some(true)` marks a
+    /// `source_item` / `claim` / `experiment_event` whose evidence was
+    /// **retracted**. A retracted node stays in the bundle (preserve-for-audit)
+    /// but contributes zero mass to the current distribution; the retracting
+    /// event is joined by an `is_retracted_by` edge. Additive and
+    /// backward-compatible — absent on every pre-revision export, and skipped
+    /// from JSON when `None` so those exports stay byte-identical. No
+    /// `lineage_version` bump is forced (contract "Additive evolution").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retracted: Option<bool>,
     /// Kind-specific fields, preserved for audit.
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
@@ -90,9 +100,12 @@ pub struct LineageNode {
 pub struct LineageEdge {
     pub from: String,
     pub to: String,
-    /// One of the eight relationships (`uses`, `supports`, `contradicts`,
+    /// One of the relationships (`uses`, `supports`, `contradicts`,
     /// `is_derived_from`, `is_attributed_to`, `is_part_of_run`,
-    /// `is_revised_by`, `leads_to_recommendation`).
+    /// `is_revised_by`, `leads_to_recommendation`, and the belief-revision
+    /// additive `is_retracted_by` — evidence node → the retracting event —
+    /// which joins the existing `is_revised_by` for issue #16). Free-form
+    /// `String` so an additive relationship needs no type change.
     pub rel: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub round: Option<usize>,
@@ -123,5 +136,16 @@ impl LineageBundle {
             .as_ref()
             .map(|r| r.redacted_node_ids.len())
             .unwrap_or(0)
+    }
+
+    /// Number of nodes flagged `retracted: true` (issue #16 belief-revision
+    /// fields). Zero on every pre-revision bundle (honest degradation: an
+    /// absent flag is not retracted). The retracted nodes stay in the bundle
+    /// for audit — this only counts them.
+    pub fn retracted_node_count(&self) -> usize {
+        self.nodes
+            .iter()
+            .filter(|n| n.retracted == Some(true))
+            .count()
     }
 }

@@ -17,7 +17,7 @@
 use hari_core::{
     CognitiveLoop, PriorityModel, ResearchEvent, ResearchEventPayload, ResearchTrace, RevisionCause,
 };
-use hari_lattice::{HexLattice, HexValue};
+use hari_lattice::HexValue;
 use std::fs;
 
 fn load_trace(path: &str) -> ResearchTrace {
@@ -30,8 +30,15 @@ const F_PARTIAL: &str = "../../fixtures/revision/partial_retraction_downgrades.j
 const F_SUPERSEDE: &str = "../../fixtures/revision/supersession_chain.json";
 
 /// Fixture 1: two sources disagree (`True` + `False` → derived
-/// `Contradictory`), then one retracts its `False`. Current belief
-/// recomputes over `{True}` → `True`; the derived contradiction dissolves.
+/// `Contradictory`), then one retracts its `False`. The derived
+/// contradiction **dissolves** and the belief recomputes over `{evaluator:
+/// True}`. Under the merge-weight slice's single-source corroboration cap a
+/// lone surviving source no longer yields full `True`, so the belief lands on
+/// `Probable` — the load-bearing result is that the `C` is gone, not the
+/// exact strength. See the README note and the design doc §8 addendum for why
+/// this is `Probable` rather than the design's original `True` (fixtures 1 and
+/// 2 have identical single-source survivor sets, so a uniform cap must treat
+/// them alike).
 #[test]
 fn retraction_dissolves_derived_contradiction() {
     let trace = load_trace(F_DISSOLVE);
@@ -40,8 +47,9 @@ fn retraction_dissolves_derived_contradiction() {
 
     assert_eq!(
         report.final_beliefs.get("deploy-is-safe"),
-        Some(&HexValue::True),
-        "after retracting the critic's False, the belief recomputes to True and the C dissolves"
+        Some(&HexValue::Probable),
+        "after retracting the critic's False, the C dissolves and the belief recomputes \
+         to Probable (single uncorroborated surviving source)"
     );
 
     // The report carries the previous→current delta with cause=retraction.
@@ -51,7 +59,7 @@ fn retraction_dissolves_derived_contradiction() {
         .find(|d| d.proposition == "deploy-is-safe")
         .expect("a retraction revision delta must be reported");
     assert_eq!(delta.previous, HexValue::Contradictory);
-    assert_eq!(delta.current, HexValue::True);
+    assert_eq!(delta.current, HexValue::Probable);
     assert_eq!(delta.cause, RevisionCause::Retraction);
     assert_eq!(delta.cycle, 3);
 }
@@ -82,16 +90,13 @@ fn historical_replay_to_conflict_still_shows_contradiction() {
 
 /// Fixture 2: a belief corroborated by two `True` sources loses one support
 /// to a selective retraction. It **survives on the remaining source** rather
-/// than being reset to `Unknown` — the row the LWW baseline gets wrong.
-///
-/// Note: the substrate has no per-source weight at this boundary, so the
-/// survivor recompute yields `True` (not the finer-grained `Probable` a
-/// corroboration cap would give — that is deferred to the merge-weight
-/// slice, design §9 item 2). The load-bearing A/B property — survives vs
-/// erased — holds either way and is asserted in
-/// [`retraction_fidelity_beats_lww_baseline`].
+/// than being reset to `Unknown` — the row the LWW baseline gets wrong — and
+/// is **downgraded** `True → Probable` by the merge-weight slice's
+/// single-source corroboration cap: one uncorroborated surviving source no
+/// longer licenses full `True`. This is the design's originally-intended
+/// fixture-2 semantic (§8.2), now delivered.
 #[test]
-fn partial_retraction_survives_on_remaining_evidence() {
+fn partial_retraction_downgrades_to_probable() {
     let trace = load_trace(F_PARTIAL);
     let mut cl = CognitiveLoop::new(trace.dimension);
     let report = cl.process_research_trace(trace);
@@ -99,8 +104,8 @@ fn partial_retraction_survives_on_remaining_evidence() {
     let value = report.final_beliefs.get("model-v3-beats-baseline").copied();
     assert_eq!(
         value,
-        Some(HexValue::True),
-        "belief survives on the remaining source, not reset to Unknown"
+        Some(HexValue::Probable),
+        "belief survives on the remaining source but downgrades True -> Probable"
     );
     assert_ne!(
         value,
@@ -220,12 +225,28 @@ fn without_selectors(trace: &ResearchTrace) -> ResearchTrace {
 /// hardcoded constant.
 #[test]
 fn retraction_fidelity_beats_lww_baseline() {
-    // (fixture, proposition, surviving evidence values after the retraction)
-    let cases: &[(&str, &str, &[HexValue])] = &[
+    // (fixture, proposition, surviving (source, value) evidence after the
+    // retraction). The survivor recompute routes through the same weighted
+    // merge + corroboration cap the boundary uses, so the source identity is
+    // load-bearing (it is what the cap counts).
+    type Case = (
+        &'static str,
+        &'static str,
+        &'static [(&'static str, HexValue)],
+    );
+    let cases: &[Case] = &[
         // Fixture 1: critic's False retracted → {evaluator: True}.
-        (F_DISSOLVE, "deploy-is-safe", &[HexValue::True]),
+        (
+            F_DISSOLVE,
+            "deploy-is-safe",
+            &[("ix-agent-evaluator", HexValue::True)],
+        ),
         // Fixture 2: evaluator's True retracted → {runner: True}.
-        (F_PARTIAL, "model-v3-beats-baseline", &[HexValue::True]),
+        (
+            F_PARTIAL,
+            "model-v3-beats-baseline",
+            &[("ix-runner", HexValue::True)],
+        ),
     ];
 
     for (path, prop, survivors) in cases {
@@ -236,8 +257,10 @@ fn retraction_fidelity_beats_lww_baseline() {
         let report = experimental.process_research_trace(trace.clone());
         let actual = report.final_beliefs.get(*prop).copied().unwrap();
 
-        // Retraction fidelity: the implemented value IS the survivor recompute.
-        let from_scratch = HexLattice::combine_evidence_set(survivors.iter().copied());
+        // Retraction fidelity: the implemented value IS the survivor recompute,
+        // through the real engine (weighted merge + single-source cap).
+        let from_scratch =
+            CognitiveLoop::recompute_belief(survivors.iter().map(|(s, v)| (*s, *v, 1.0)));
         assert_eq!(
             actual, from_scratch,
             "{path}: post-retraction belief must equal a from-scratch survivor recompute"

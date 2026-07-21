@@ -13,8 +13,12 @@
 //!
 //!   (a) **retract-then-recompute == recompute-without** — after a
 //!       selective retraction the belief equals a from-scratch
-//!       `combine_evidence_set` over the *surviving* evidence, i.e. exactly
-//!       what you would get had the retracted evidence never been submitted.
+//!       [`CognitiveLoop::recompute_belief`] over the *surviving* evidence,
+//!       i.e. exactly what you would get had the retracted evidence never
+//!       been submitted. (Merge-weight slice: the recompute now routes
+//!       through `hari_lattice::merge` with the single-source corroboration
+//!       cap, so the oracle is that same engine — not the weightless
+//!       `combine_evidence_set`, which cannot see corroboration.)
 //!   (b) **retraction commutes with merge** — the recomputed belief depends
 //!       only on the surviving evidence multiset, not on the order the
 //!       evidence arrived nor the order the retractions were issued.
@@ -30,7 +34,17 @@
 use hari_core::{
     CognitiveLoop, Evidence, ResearchEvent, ResearchEventPayload, ResearchTrace, RetractionSelector,
 };
-use hari_lattice::{HexLattice, HexValue};
+use hari_lattice::HexValue;
+
+/// The merge-routed survivor recompute — the same engine
+/// `recompute_from_ledger` uses — over the surviving evidence of a trial.
+fn survivor_recompute(evs: &[Ev]) -> HexValue {
+    CognitiveLoop::recompute_belief(
+        evs.iter()
+            .filter(|e| !e.retracted)
+            .map(|e| (e.source.as_str(), e.value, 1.0)),
+    )
+}
 
 struct Rng(u64);
 
@@ -152,8 +166,7 @@ fn retract_then_recompute_equals_recompute_without() {
             });
         }
 
-        let expected =
-            HexLattice::combine_evidence_set(evs.iter().filter(|e| !e.retracted).map(|e| e.value));
+        let expected = survivor_recompute(&evs);
 
         let update_order: Vec<usize> = (0..n).collect();
         let retract_order: Vec<usize> = (0..n).collect();
@@ -205,8 +218,7 @@ fn retraction_commutes_with_evidence_order() {
         );
 
         // And both equal the order-free survivor recompute.
-        let expected =
-            HexLattice::combine_evidence_set(evs.iter().filter(|e| !e.retracted).map(|e| e.value));
+        let expected = survivor_recompute(&evs);
         assert_eq!(va, expected);
     }
 }

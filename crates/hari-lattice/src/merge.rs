@@ -40,7 +40,14 @@
 
 use crate::HexValue;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+/// A `(source, diagnosis_id, round, ordinal)` dedup key — the value
+/// [`HexObservation::dedup_key`] returns. Named here so the
+/// tombstone-aware entry point ([`merge_with_tombstones`]) can take a
+/// *set* of retracted keys as plain data, without importing any
+/// caller-side (e.g. `hari-core`) evidence types.
+pub type DedupKey = (String, String, u32, u32);
 
 /// Default staleness budget: observations from rounds older than
 /// `current_round - K` are dropped before merging. Matches the
@@ -599,6 +606,45 @@ pub fn merge_with_default_staleness(
     current_round: u32,
 ) -> MergedState {
     merge(observations, Some(current_round), Some(DEFAULT_STALENESS_K))
+}
+
+/// Merge after excluding every observation whose [`HexObservation::dedup_key`]
+/// is in `tombstoned` — the belief-revision tombstone step (issue #16,
+/// design §9 item 2).
+///
+/// **Evidence-recompute is authoritative.** A tombstoned base observation
+/// contributes *zero mass* to the result — the merge behaves exactly as if
+/// that observation had never been submitted — while the caller keeps the
+/// retracted observation in its own audit ledger (this crate never sees it
+/// again). The filter is applied *before* the pipeline, which is byte-equal
+/// to filtering it at the design's "step 1.5" for full-key tombstones:
+/// dedup groups by the same key, so dropping the whole key up front removes
+/// exactly the observations step 1.5 would, and the surviving multiset — and
+/// therefore the [`MergedState`] — is identical.
+///
+/// This is the design's *tombstone-aware entry point in the lattice crate*.
+/// It deliberately takes **plain data only** — a slice of observations plus a
+/// set of dedup keys — and imports no caller types, keeping `hari-lattice` a
+/// leaf. The two pinned properties (see `tests/tombstone_probe.rs`):
+///
+/// - **tombstone == never-present**: `merge_with_tombstones(all, T)` is
+///   byte-equal to `merge_all(all \ T)` (merging the multiset that never
+///   contained the tombstoned observations);
+/// - **commutes with merge order**: the result depends only on the surviving
+///   multiset, not on the order observations or tombstones are presented,
+///   inheriting [`merge`]'s permutation-invariance.
+pub fn merge_with_tombstones(
+    observations: &[HexObservation],
+    tombstoned: &BTreeSet<DedupKey>,
+    current_round: Option<u32>,
+    staleness_k: Option<u32>,
+) -> MergedState {
+    let surviving: Vec<HexObservation> = observations
+        .iter()
+        .filter(|o| !tombstoned.contains(&o.dedup_key()))
+        .cloned()
+        .collect();
+    merge(&surviving, current_round, staleness_k)
 }
 
 // ---------------------------------------------------------------------------
