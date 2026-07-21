@@ -244,17 +244,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hari-mcp"
-version = "0.1.0"
-dependencies = [
- "hari-core",
- "hari-lattice",
- "hari-swarm",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "hari-swarm"
 version = "0.1.0"
 dependencies = [
