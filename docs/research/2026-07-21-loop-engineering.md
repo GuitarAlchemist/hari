@@ -160,3 +160,17 @@ P2 — compounding channels (items 6–7), owner-review items:
   machine-readable gate vs. human-eyeball; % of sessions ending with a digest written.
 
 P0/P1 are mechanical and reversible; each lands as one guarded commit per repo, no pushes.
+
+## 6. Execution status (cross-session coordination)
+
+- **P1 #4 (tars) — DONE** by the tars session, 2026-07-21: CLAUDE.md advisory drift fixed
+  (default option: doc corrected, skills not installed) — tars commit `79c71013` on
+  `refactor/reason-feedback-seam`. Also relevant to §4's tars row: item 7 is no longer
+  empty-channel — 12 verified research docs landed in tars `docs/research/` (`a55efaaf`)
+  and seeded a round-3 self-improve backlog (`d258b4d1`). Tars digest hooks (P2 port
+  candidate) are already partially present: 6 hooks incl. activity tracker + validate.
+  Claimed via tars `state/digests/latest.md`; coordinate there before touching tars items.
+- **Cross-session claim ledger now exists**: `~/.agents/claims.jsonl` (schema in
+  `~/.agents/README.md`) — append a `claimed` line before starting any lane in §5;
+  seeded 2026-07-21 by the tars session after the ix session confirmed no explicit
+  channel exists. Latest line per (repo, lane) wins; append-only.

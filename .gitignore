@@ -33,3 +33,7 @@ learning/
 
 # Editor settings (personal, not shared)
 .zed/
+
+# Crash artifacts and scratch test dirs — never commit
+bash.exe.stackdump
+target-test/
