@@ -419,6 +419,38 @@ Fixtures + README were updated to match; the implementation is
 by `partial_retraction_downgrades_to_probable` and
 `retraction_dissolves_derived_contradiction`.
 
+### 8.2 Addendum (correction / relation-withdrawal slice, 2026-07-20): two more fixtures
+
+The final belief-revision slice added the remaining two of the four contract
+variants on the `ResearchEvent` boundary, each with its own fixture:
+
+4. **`correction_replaces_claim.json`** — a source asserts `False`, then
+   *corrects* itself to `True` in one atomic `correction` event. The
+   correction tombstones the mislabeled original (same selector machinery as a
+   selective retraction) and merges the replacement, recomputing over
+   `{ix-runner: True}` → `Probable` (uniform single-source cap). The report
+   carries **one** revision delta with `cause: correction` — the causal link
+   between withdrawn evidence and its replacement, distinguishing a correction
+   from a plain retraction. A bare `belief_update` cannot express that link.
+5. **`relation_withdrawal_reverts_derived_belief.json`** — a base belief
+   `Supports` a derived belief through a declared relation; withdrawing the
+   relation reverts the derived belief on the next propagation. This realizes
+   §4.1's RelationWithdrawal: the edge is **tombstoned in the `BeliefNetwork`,
+   not deleted** (`is_relation_withdrawn` still reports it), propagation skips
+   it, and derivation-only propositions reset to their `Unknown` base and
+   re-derive over the reduced edge set — the same evidence-recompute doctrine
+   as observation retraction, now on relations. The A/B baseline (retract the
+   derived proposition instead) resets only that node and leaves the inducing
+   edge live, so the belief re-derives right back; withdrawal makes the revert
+   *stick*.
+
+Implementation: `hari_lattice::BeliefNetwork::withdraw_relation` (leaf-clean —
+plain `&str`/`Relation`, no `hari-core` types; propagation skips withdrawn
+edges), the `Correction`/`RelationWithdrawal` arms in `process_research_event`,
+and `RevisionCause::{Correction, RelationWithdrawal}`. Probed by
+`crates/hari-lattice/tests/withdrawal_probe.rs` (withdraw == never-declared;
+withdrawal order-independence, 1500 trials each).
+
 ## 9. What the implementation slice will need (out of scope here)
 
 1. **Enum extension** (`hari-core::ResearchEventPayload`) — add the optional

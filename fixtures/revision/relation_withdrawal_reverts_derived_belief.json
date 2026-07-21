@@ -1,0 +1,39 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-runner",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "benchmark-x-passes",
+        "value": "True",
+        "evidence": {
+          "runs": 5,
+          "note": "benchmark-x green across five runs"
+        }
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-planner",
+      "payload": {
+        "type": "relation_declaration",
+        "from": "benchmark-x-passes",
+        "to": "deploy-is-safe",
+        "relation": "Supports"
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-planner",
+      "payload": {
+        "type": "relation_withdrawal",
+        "from": "benchmark-x-passes",
+        "to": "deploy-is-safe",
+        "relation": "Supports",
+        "reason": "benchmark-x measured a different workload; it no longer supports the deploy claim"
+      }
+    }
+  ]
+}

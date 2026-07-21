@@ -1,19 +1,18 @@
 # Belief-revision replay fixtures
 
-Three deterministic replay fixtures for the belief-revision design
+Five deterministic replay fixtures for the belief-revision design
 (`docs/research/belief-revision-and-retraction.md`, issue #16). Each
 isolates one semantic and each is an **A/B case** against the naive
 last-write-wins baseline (design §7).
 
-**These now replay** (issue #16 retraction tracer slice + merge-weight slice).
-`hari-core replay fixtures/revision/<name>.json` consumes all three: the
-`retraction` variant's additive `retracts` selector and the new `supersession`
-variant are on the `ResearchEvent` boundary, and each fixture is wired as a
-regression test (`crates/hari-core/tests/revision_replay.rs`) pinned against the
-LWW baseline. The `correction` and `relation_withdrawal` variants from
-`docs/contracts/retraction-events.contract.md` are **still deferred** — no
-fixture here needs them (design doc §9; tracer-bullet discipline: implement
-exactly what the fixtures exercise).
+**All five replay** (issue #16 retraction tracer slice + merge-weight slice +
+correction / relation-withdrawal slice). `hari-core replay
+fixtures/revision/<name>.json` consumes every one: all **four** belief-revision
+variants from `docs/contracts/retraction-events.contract.md` — `retraction`
+(with its additive `retracts` selector), `supersession`, `correction`, and
+`relation_withdrawal` — are now on the `ResearchEvent` boundary, and each
+fixture is wired as a regression test
+(`crates/hari-core/tests/revision_replay.rs`) pinned against the LWW baseline.
 
 Doctrine under all three: **evidence-recompute is authoritative** — retraction
 appends a tombstone, current belief is recomputed from surviving evidence, and
@@ -108,3 +107,49 @@ audit trail.
 **Baseline (LWW):** a bare re-assert would leave the stale `…-14` claim
 standing as an independent live belief (the exact four-month rot), with no
 recorded link between the successive claims.
+
+## `correction_replaces_claim.json`
+
+A source corrects its own mislabeled result in one atomic event.
+
+| cycle | event | effect |
+|---|---|---|
+| 1 | ix-runner: `model-v3-latency-ok` = **False** | reported p99 = 920ms, over budget |
+| 2 | ix-runner **corrects** its cycle-1 result → **True** | original mislabeled p50 as p99; re-measured p99 = 420ms, within budget |
+
+**Expected (current belief):** the correction tombstones the mislabeled `False`
+and merges the replacement `True`, so the belief recomputes over the survivor
+set `{ix-runner: True}` → **`Probable`** (the same single-source cap fixtures 1
+& 2 land on). The report carries **one** revision delta whose `cause =
+correction` — the causal link between the withdrawn evidence and its
+replacement, which a bare `belief_update` cannot express and which
+distinguishes a correction from a plain retraction.
+**Expected (historical, replay-to-cycle-1):** `False` as it stood — the
+correction never rewrites the past; the tombstoned original stays in the trace.
+**Baseline (a plain `belief_update` to True):** would overwrite the value with
+no recorded link that the earlier `False` was *wrong* (not merely superseded by
+fresh evidence), losing the correction provenance a #14 reliability grader needs.
+
+## `relation_withdrawal_reverts_derived_belief.json`
+
+A withdrawn relation dissolves the belief it induced — the first non-append-only
+relation path.
+
+| cycle | event | effect |
+|---|---|---|
+| 1 | ix-runner: `benchmark-x-passes` = **True** | base belief (direct evidence) |
+| 2 | declare `benchmark-x-passes` –Supports→ `deploy-is-safe` | propagation derives `deploy-is-safe` = **True** |
+| 3 | **withdraw** `benchmark-x-passes` –Supports→ `deploy-is-safe` | edge tombstoned; `deploy-is-safe` reverts to **Unknown** on re-propagation |
+
+**Expected (current belief):** `deploy-is-safe` reverts `True → Unknown` — its
+only support is gone, so re-propagation over the reduced edge set derives
+nothing (evidence-recompute: derivation-only beliefs reset to their `Unknown`
+base and re-derive). The base belief `benchmark-x-passes` stays `True`
+(untouched — it has direct evidence). The withdrawn edge is **tombstoned, not
+deleted**: `is_relation_withdrawn(...)` still reports it, preserving the audit
+trail. The revert is reported as a `relation_withdrawal` revision delta.
+**Baseline (retract the derived proposition):** the append-only "undo" resets
+only the `deploy-is-safe` node to `Unknown` while leaving the inducing edge
+live, so the *next* propagation re-derives it right back — the revert does not
+stick. Withdrawal beats it (pinned by
+`withdrawal_sticks_where_retracting_the_derived_belief_would_not`).

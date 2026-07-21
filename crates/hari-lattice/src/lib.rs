@@ -17,9 +17,9 @@
 //! The `BeliefNetwork` builds on this to create a graph of propositions
 //! connected by logical relations, with belief propagation through the network.
 
-use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 pub mod merge;
@@ -314,6 +314,18 @@ pub struct Proposition {
 pub struct BeliefNetwork {
     graph: DiGraph<Proposition, Relation>,
     index: HashMap<String, NodeIndex>,
+    /// Withdrawn relation edges (issue #16, belief-revision slice). A
+    /// `relation_withdrawal` event marks an edge's index here **without
+    /// deleting the edge** — the audit-preservation doctrine, exactly as
+    /// evidence retraction tombstones an observation rather than removing
+    /// it. Propagation skips every edge in this set, so the beliefs a
+    /// withdrawn edge induced dissolve on the next propagation pass, while
+    /// the edge itself stays inspectable via
+    /// [`Self::is_relation_withdrawn`]. Empty by default; when empty the
+    /// skip check in [`Self::propagate`] /
+    /// [`Self::propagate_with_provenance`] is a no-op, so networks that
+    /// never withdraw an edge propagate byte-identically.
+    withdrawn_edges: HashSet<EdgeIndex>,
 }
 
 impl BeliefNetwork {
@@ -322,6 +334,7 @@ impl BeliefNetwork {
         Self {
             graph: DiGraph::new(),
             index: HashMap::new(),
+            withdrawn_edges: HashSet::new(),
         }
     }
 
@@ -372,6 +385,86 @@ impl BeliefNetwork {
         (from_idx, to_idx)
     }
 
+    /// Withdraw a previously-declared relation edge (issue #16,
+    /// belief-revision slice) — the tombstone path parallel to
+    /// [`Self::declare_relation`].
+    ///
+    /// Marks the matching `from -relation-> to` edge withdrawn **without
+    /// deleting it**: the edge stays in the graph (inspectable via
+    /// [`Self::is_relation_withdrawn`]) but every subsequent propagation
+    /// skips it, so the beliefs it induced dissolve on the next pass. This
+    /// is the same recompute doctrine as evidence retraction — a withdrawn
+    /// edge contributes nothing, exactly as if it had never been declared,
+    /// while the record that it *was* declared and then withdrawn survives.
+    ///
+    /// Matching is by the full `(from, to, relation)` triple, so a
+    /// `Supports` edge can be withdrawn while a parallel `Implies` edge
+    /// between the same endpoints stands. Returns `true` if a live
+    /// (not-already-withdrawn) matching edge was found and withdrawn;
+    /// `false` for an unmatched triple (a logged no-op at the boundary —
+    /// honest degradation, never a panic). Takes plain `&str`/[`Relation`]
+    /// only, importing no caller types, so `hari-lattice` stays a leaf.
+    pub fn withdraw_relation(&mut self, from: &str, to: &str, relation: Relation) -> bool {
+        let (from_idx, to_idx) = match (self.index.get(from), self.index.get(to)) {
+            (Some(&f), Some(&t)) => (f, t),
+            _ => return false,
+        };
+        let target = self.graph.edge_indices().find(|&e| {
+            if self.withdrawn_edges.contains(&e) {
+                return false;
+            }
+            match self.graph.edge_endpoints(e) {
+                Some((s, t)) => {
+                    s == from_idx
+                        && t == to_idx
+                        && *self.graph.edge_weight(e).expect("edge index is valid") == relation
+                }
+                None => false,
+            }
+        });
+        match target {
+            Some(e) => self.withdrawn_edges.insert(e),
+            None => false,
+        }
+    }
+
+    /// Whether a live matching `from -relation-> to` edge has been
+    /// withdrawn (issue #16). The edge is still present in the graph — this
+    /// only reports whether propagation currently skips it — so an audit
+    /// consumer can confirm a withdrawal took effect without the edge
+    /// having been deleted.
+    pub fn is_relation_withdrawn(&self, from: &str, to: &str, relation: Relation) -> bool {
+        let (from_idx, to_idx) = match (self.index.get(from), self.index.get(to)) {
+            (Some(&f), Some(&t)) => (f, t),
+            _ => return false,
+        };
+        self.graph.edge_indices().any(|e| {
+            self.withdrawn_edges.contains(&e)
+                && match self.graph.edge_endpoints(e) {
+                    Some((s, t)) => {
+                        s == from_idx
+                            && t == to_idx
+                            && *self.graph.edge_weight(e).expect("edge index is valid") == relation
+                    }
+                    None => false,
+                }
+        })
+    }
+
+    /// Number of edges currently withdrawn (issue #16). Zero for any
+    /// network that never called [`Self::withdraw_relation`].
+    pub fn withdrawn_relation_count(&self) -> usize {
+        self.withdrawn_edges.len()
+    }
+
+    /// Every proposition label currently in the network, in unspecified
+    /// order. Used by the belief-revision relation-withdrawal path
+    /// (issue #16) to reset derivation-only beliefs to their base value
+    /// before re-propagating over the reduced edge set.
+    pub fn labels(&self) -> Vec<String> {
+        self.index.keys().cloned().collect()
+    }
+
     /// Look up a proposition by label.
     pub fn get(&self, label: &str) -> Option<&Proposition> {
         self.index.get(label).map(|&idx| &self.graph[idx])
@@ -416,6 +509,13 @@ impl BeliefNetwork {
             // Walk all edges pointing to this node
             let edge_indices: Vec<_> = self.graph.edge_indices().collect();
             for edge_idx in edge_indices {
+                // Skip withdrawn edges (issue #16): a withdrawn relation
+                // contributes nothing, exactly as if it had never been
+                // declared. Empty set → no-op, so networks that never
+                // withdraw propagate byte-identically.
+                if self.withdrawn_edges.contains(&edge_idx) {
+                    continue;
+                }
                 let (src, tgt) = self.graph.edge_endpoints(edge_idx).unwrap();
                 if tgt != target {
                     continue;
@@ -481,6 +581,10 @@ impl BeliefNetwork {
             let mut contribs: Vec<Contribution> = Vec::new();
             let edge_indices: Vec<_> = self.graph.edge_indices().collect();
             for edge_idx in edge_indices {
+                // Skip withdrawn edges (issue #16) — see `propagate`.
+                if self.withdrawn_edges.contains(&edge_idx) {
+                    continue;
+                }
                 let (src, tgt) = self.graph.edge_endpoints(edge_idx).unwrap();
                 if tgt != target {
                     continue;
@@ -937,6 +1041,98 @@ mod tests {
 
         let iterations = net.propagate_until_stable(10);
         assert!(iterations <= 10);
+        assert_eq!(net.get("leaf").unwrap().value, HexValue::True);
+    }
+
+    // -- Relation withdrawal (issue #16, belief-revision slice) --
+
+    #[test]
+    fn withdraw_relation_skips_edge_without_deleting_it() {
+        // A withdrawn edge contributes nothing to propagation, but the
+        // edge stays in the graph and is inspectable as withdrawn.
+        let mut net = BeliefNetwork::new();
+        net.declare_relation("evidence", "hypothesis", Relation::Supports);
+        net.get_mut("evidence").unwrap().value = HexValue::True;
+
+        assert!(
+            net.withdraw_relation("evidence", "hypothesis", Relation::Supports),
+            "a declared edge is found and withdrawn"
+        );
+        assert!(net.is_relation_withdrawn("evidence", "hypothesis", Relation::Supports));
+        assert_eq!(net.withdrawn_relation_count(), 1);
+
+        // Propagation over the withdrawn edge derives nothing.
+        let changed = net.propagate();
+        assert_eq!(changed, 0, "withdrawn edge fires no derivation");
+        assert_eq!(net.get("hypothesis").unwrap().value, HexValue::Unknown);
+    }
+
+    #[test]
+    fn withdraw_relation_is_edge_specific_and_reports_no_match() {
+        // Withdrawing a Supports edge leaves a parallel Implies edge
+        // between the same endpoints standing; an unmatched triple is a
+        // reported no-op.
+        let mut net = BeliefNetwork::new();
+        net.declare_relation("a", "b", Relation::Supports);
+        net.declare_relation("a", "b", Relation::Implies);
+        net.get_mut("a").unwrap().value = HexValue::True;
+
+        assert!(net.withdraw_relation("a", "b", Relation::Supports));
+        assert!(
+            !net.withdraw_relation("a", "b", Relation::Contradicts),
+            "no Contradicts edge exists — a reported no-op, never a panic"
+        );
+        assert!(
+            !net.withdraw_relation("a", "missing", Relation::Supports),
+            "unknown endpoint — a reported no-op"
+        );
+
+        // The surviving Implies edge still fires (antecedent True).
+        net.propagate();
+        assert_eq!(net.get("b").unwrap().value, HexValue::True);
+    }
+
+    #[test]
+    fn withdraw_equals_never_declared() {
+        // Declaring an edge then withdrawing it before any propagation is
+        // byte-equal to never declaring it at all — the base property the
+        // relation-withdrawal doctrine rests on.
+        let mut withdrawn = BeliefNetwork::new();
+        withdrawn.add_proposition("src", HexValue::True);
+        withdrawn.add_proposition("dst", HexValue::Unknown);
+        withdrawn.declare_relation("src", "dst", Relation::Supports);
+        withdrawn.withdraw_relation("src", "dst", Relation::Supports);
+        withdrawn.propagate_until_stable(10);
+
+        let mut absent = BeliefNetwork::new();
+        absent.add_proposition("src", HexValue::True);
+        absent.add_proposition("dst", HexValue::Unknown);
+        absent.propagate_until_stable(10);
+
+        assert_eq!(
+            withdrawn.get("dst").unwrap().value,
+            absent.get("dst").unwrap().value,
+            "withdraw-before-propagate == never-declared"
+        );
+        assert_eq!(withdrawn.get("dst").unwrap().value, HexValue::Unknown);
+    }
+
+    #[test]
+    fn propagation_byte_identical_when_nothing_withdrawn() {
+        // Regression pin: the withdrawn-edge skip is a no-op when the
+        // withdrawn set is empty, so a network that never withdraws
+        // propagates exactly as before the withdrawal machinery existed.
+        let mut net = BeliefNetwork::new();
+        let a = net.add_proposition("root", HexValue::True);
+        let b = net.add_proposition("mid", HexValue::Unknown);
+        let c = net.add_proposition("leaf", HexValue::Unknown);
+        net.add_relation(a, b, Relation::Supports);
+        net.add_relation(b, c, Relation::Implies);
+        assert_eq!(net.withdrawn_relation_count(), 0);
+
+        let (rounds, derivations) = net.propagate_until_stable_with_provenance(10);
+        assert_eq!(rounds, 3, "r1 derives mid, r2 derives leaf, r3 confirms");
+        assert_eq!(derivations.len(), 2);
         assert_eq!(net.get("leaf").unwrap().value, HexValue::True);
     }
 }

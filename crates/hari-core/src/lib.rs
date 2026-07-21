@@ -312,6 +312,52 @@ pub enum ResearchEventPayload {
         superseded_by: String,
         reason: String,
     },
+    /// Atomic retract-plus-replace (issue #16, belief-revision slice): "that
+    /// result was wrong; here is the corrected one."
+    ///
+    /// A correction is a [`Retraction`](Self::Retraction) of the named prior
+    /// evidence (via the same `retracts` selector machinery) *plus* a
+    /// [`BeliefUpdate`](Self::BeliefUpdate) of the corrected `(value,
+    /// evidence)`, executed as one causally-linked event: the report records
+    /// it with `cause = correction`, which a bare `belief_update` cannot
+    /// express. Both the tombstoned original and the replacement stay in the
+    /// evidence ledger for audit; the belief is recomputed over the survivors
+    /// (evidence-recompute is authoritative), so the correction's new value is
+    /// merged in exactly as any other source assertion.
+    ///
+    /// `retracts` is the evidence being corrected. It follows the contract's
+    /// "required" shape but is `#[serde(default)]` for robustness: an empty
+    /// selector (`{}`) corrects *all* prior evidence for the proposition, the
+    /// same wildcard rule as [`RetractionSelector`]. A correction with nothing
+    /// to correct degrades to a plain belief update over the ledger.
+    Correction {
+        proposition: String,
+        reason: String,
+        #[serde(default)]
+        retracts: RetractionSelector,
+        value: HexValue,
+        #[serde(default)]
+        evidence: Evidence,
+    },
+    /// Withdraw a previously-declared relation edge (issue #16,
+    /// belief-revision slice) — the first non-append-only relation path.
+    ///
+    /// Relations were append-only (see the [`RelationDeclaration`] doc-comment
+    /// above). A withdrawal **tombstones** the matching `from -relation-> to`
+    /// edge in the [`BeliefNetwork`] via
+    /// [`BeliefNetwork::withdraw_relation`] — the edge is *marked withdrawn,
+    /// not deleted* (audit-preservation), so it stays inspectable while
+    /// propagation skips it. The beliefs the edge induced then dissolve on the
+    /// next propagation pass: derivation-only propositions (no direct
+    /// evidence) reset to their `Unknown` base and re-derive over the reduced
+    /// edge set, the same recompute doctrine as evidence retraction. An
+    /// unmatched `(from, to, relation)` triple is a logged no-op.
+    RelationWithdrawal {
+        from: String,
+        to: String,
+        relation: hari_lattice::Relation,
+        reason: String,
+    },
     /// Update or create a goal that should influence future prioritization.
     GoalUpdate {
         key: String,
@@ -402,6 +448,10 @@ impl ResearchEvent {
                 superseded_by,
                 ..
             } => vec![proposition.clone(), superseded_by.clone()],
+            ResearchEventPayload::Correction { proposition, .. } => vec![proposition.clone()],
+            ResearchEventPayload::RelationWithdrawal { from, to, .. } => {
+                vec![from.clone(), to.clone()]
+            }
             ResearchEventPayload::GoalUpdate { .. } => Vec::new(),
         }
     }
@@ -440,6 +490,14 @@ pub struct ResearchEventOutcome {
 pub enum RevisionCause {
     /// A selective `Retraction` tombstoned evidence and recomputed.
     Retraction,
+    /// A `Correction` atomically retracted prior evidence and replaced it
+    /// with a corrected value (issue #16). Distinguished from a plain
+    /// `Retraction` so a consumer can see the belief moved *because it was
+    /// corrected*, not merely withdrawn.
+    Correction,
+    /// A `RelationWithdrawal` tombstoned a relation edge; a belief that the
+    /// edge had induced reverted on re-propagation (issue #16).
+    RelationWithdrawal,
     /// A `Supersession` retired a claim for a successor.
     Supersession,
 }
@@ -1394,6 +1452,14 @@ impl CognitiveLoop {
         let mut actions: Vec<Action> = Vec::new();
         let mut action_cycles: Vec<u64> = Vec::new();
         let mut revisions: Vec<RevisionDelta> = Vec::new();
+        // `event` is moved into the outcome at the end; `cycle` is Copy so
+        // capture it up front for the post-propagation withdrawal delta.
+        let event_cycle = event.cycle;
+        // Belief snapshot taken by a `RelationWithdrawal` *before* it resets
+        // derivation-only nodes, so the reverted beliefs can be diffed
+        // against their post-re-propagation values once the once-per-event
+        // propagation pass has run (issue #16). `None` for every other event.
+        let mut withdrawal_before: Option<BTreeMap<String, HexValue>> = None;
 
         // Ledger the asserted evidence for belief-bearing events
         // (issue #16) so a later selective `Retraction` can recompute
@@ -1668,6 +1734,127 @@ impl CognitiveLoop {
                     });
                 }
             }
+            ResearchEventPayload::Correction {
+                proposition,
+                reason,
+                retracts,
+                value,
+                evidence,
+            } => {
+                // Atomic retract-plus-replace (issue #16). Same evidence
+                // ledger as a selective retraction: tombstone the corrected
+                // evidence, append the replacement as a fresh assertion, then
+                // recompute the belief over the survivors (which now include
+                // the replacement and exclude the tombstoned original). One
+                // recompute engine — the correction's new value is merged in
+                // exactly like any other source assertion.
+                let previous = self.current_claim_value(proposition);
+                let mut tombstoned = 0usize;
+                if let Some(entries) = self.evidence_log.get_mut(proposition) {
+                    for entry in entries.iter_mut() {
+                        if !entry.retracted && retracts.matches(&entry.source, entry.cycle) {
+                            entry.retracted = true;
+                            tombstoned += 1;
+                        }
+                    }
+                }
+                // Append the corrected evidence. It carries the correction's
+                // own `(source, cycle)`, so the tombstoned original and its
+                // replacement coexist in the ledger — the audit link between
+                // "what was wrong" and "what replaced it".
+                self.evidence_log
+                    .entry(proposition.clone())
+                    .or_default()
+                    .push(EvidenceEntry {
+                        source: event.source.clone(),
+                        cycle: event.cycle,
+                        value: *value,
+                        weight: 1.0,
+                        retracted: false,
+                    });
+                let recomputed = self.recompute_from_ledger(proposition);
+                self.set_belief_value(proposition, recomputed);
+
+                actions.push(Action::Log(format!(
+                    "Corrected '{}' ({}): tombstoned {} item(s), replaced with {}; \
+                     recomputed {} -> {}",
+                    proposition,
+                    reason,
+                    tombstoned,
+                    value,
+                    previous
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "n/a".to_string()),
+                    recomputed,
+                )));
+                action_cycles.push(event.cycle);
+                for a in Self::recommend_for_claim(proposition, recomputed) {
+                    actions.push(a);
+                    action_cycles.push(event.cycle);
+                }
+                if !evidence.is_empty() {
+                    actions.push(Action::Log(format!(
+                        "Recorded {} correction field(s) for '{}'",
+                        evidence.len(),
+                        proposition
+                    )));
+                    action_cycles.push(event.cycle);
+                }
+                // One revision delta, cause = correction — the causal link
+                // that distinguishes a correction from a plain retraction.
+                if let Some(prev) = previous {
+                    revisions.push(RevisionDelta {
+                        proposition: proposition.clone(),
+                        previous: prev,
+                        current: recomputed,
+                        cause: RevisionCause::Correction,
+                        cycle: event.cycle,
+                        superseded_by: None,
+                    });
+                }
+            }
+            ResearchEventPayload::RelationWithdrawal {
+                from,
+                to,
+                relation,
+                reason,
+            } => {
+                // Tombstone the relation edge (marked withdrawn, not deleted
+                // — audit-preservation), then dissolve the beliefs it induced
+                // by evidence-recompute: reset every derivation-only
+                // proposition (no surviving direct evidence) to its `Unknown`
+                // base and let the once-per-event propagation pass below
+                // re-derive over the reduced edge set. Base beliefs (those
+                // with ledger evidence) are untouched. An unmatched triple is
+                // a logged no-op that touches nothing.
+                let matched = self.state.beliefs.withdraw_relation(from, to, *relation);
+                if matched {
+                    // Snapshot before the reset so the reverted beliefs can
+                    // be diffed after re-propagation.
+                    withdrawal_before = Some(self.snapshot_belief_values());
+                    for label in self.state.beliefs.labels() {
+                        let has_evidence = self
+                            .evidence_log
+                            .get(&label)
+                            .map(|es| es.iter().any(|e| !e.retracted))
+                            .unwrap_or(false);
+                        if !has_evidence {
+                            self.set_belief_value(&label, HexValue::Unknown);
+                        }
+                    }
+                    actions.push(Action::Log(format!(
+                        "Withdrew relation {:?}: '{}' -> '{}' ({}); re-propagating over the \
+                         reduced edge set",
+                        relation, from, to, reason
+                    )));
+                } else {
+                    actions.push(Action::Log(format!(
+                        "No live relation {:?}: '{}' -> '{}' to withdraw ({}) — no-op",
+                        relation, from, to, reason
+                    )));
+                }
+                action_cycles.push(event.cycle);
+            }
             ResearchEventPayload::GoalUpdate {
                 key,
                 description,
@@ -1733,6 +1920,28 @@ impl CognitiveLoop {
             }
         }
 
+        // Relation-withdrawal deltas (issue #16): now that the reduced-edge
+        // re-propagation has run, diff every belief that changed against the
+        // pre-withdrawal snapshot. A derived belief that reverted (e.g.
+        // `True -> Unknown` once its only supporting edge was withdrawn)
+        // surfaces here as a `RelationWithdrawal` revision delta, in
+        // deterministic proposition order (the snapshot is a BTreeMap).
+        if let Some(before) = withdrawal_before {
+            for (proposition, prev) in before {
+                let current = self.current_claim_value(&proposition).unwrap_or(prev);
+                if current != prev {
+                    revisions.push(RevisionDelta {
+                        proposition,
+                        previous: prev,
+                        current,
+                        cause: RevisionCause::RelationWithdrawal,
+                        cycle: event_cycle,
+                        superseded_by: None,
+                    });
+                }
+            }
+        }
+
         // Single scoring pass for the whole event so the priority model can
         // re-rank cycle-actions and recommendation-actions together.
         let scored = self.score_actions_with_cycles(actions, &action_cycles);
@@ -1754,6 +1963,19 @@ impl CognitiveLoop {
 
     fn current_claim_value(&self, proposition: &str) -> Option<HexValue> {
         self.state.beliefs.get(proposition).map(|p| p.value)
+    }
+
+    /// Snapshot every proposition's current belief value (issue #16). Used by
+    /// the `RelationWithdrawal` path to capture the pre-withdrawal state so
+    /// reverted beliefs can be diffed after re-propagation. A `BTreeMap` so
+    /// the emitted deltas are in deterministic proposition order.
+    fn snapshot_belief_values(&self) -> BTreeMap<String, HexValue> {
+        self.state
+            .beliefs
+            .labels()
+            .into_iter()
+            .filter_map(|label| self.current_claim_value(&label).map(|v| (label, v)))
+            .collect()
     }
 
     /// The successor claim a proposition was retired in favour of, if it
@@ -1985,11 +2207,15 @@ impl ResearchEventPayload {
             | Self::Retraction { proposition, .. }
             // Supersession's primary proposition is the *retired* claim;
             // the successor is reached via `touched_propositions`.
-            | Self::Supersession { proposition, .. } => Some(proposition),
-            // RelationDeclaration touches two propositions; callers
-            // that need both should use
+            | Self::Supersession { proposition, .. }
+            // Correction targets a single proposition (retract + replace).
+            | Self::Correction { proposition, .. } => Some(proposition),
+            // RelationDeclaration and RelationWithdrawal touch two
+            // propositions; callers that need both should use
             // `ResearchEvent::touched_propositions` instead.
-            Self::RelationDeclaration { .. } | Self::GoalUpdate { .. } => None,
+            Self::RelationDeclaration { .. }
+            | Self::RelationWithdrawal { .. }
+            | Self::GoalUpdate { .. } => None,
         }
     }
 }
@@ -2080,9 +2306,13 @@ pub fn compute_metrics_for(
 }
 
 /// Whether an `Accept(proposition, value)` emitted at `accept_cycle` was later
-/// invalidated by the rest of the trace: a subsequent `Retraction` of the same
-/// proposition, a final value of `Contradictory`, or a polarity flip between
-/// the accepted value and the final value. Single source of truth shared by the
+/// invalidated by the rest of the trace: a subsequent `Retraction` **or
+/// `Correction`** of the same proposition, a final value of `Contradictory`,
+/// or a polarity flip between the accepted value and the final value. A
+/// correction counts because a corrected accepted claim is itself a
+/// reliability signal — it flips a prior `Accept` outcome (retraction-events
+/// contract, cross-contract compatibility with #14) — even when the corrected
+/// value keeps the same polarity. Single source of truth shared by the
 /// aggregate `false_acceptance_count` metric and per-source reliability
 /// (`source_reliability.rs`), so the two can never drift.
 pub(crate) fn accept_was_invalidated(
@@ -2096,7 +2326,9 @@ pub(crate) fn accept_was_invalidated(
         later.event.cycle > accept_cycle
             && matches!(
                 &later.event.payload,
-                ResearchEventPayload::Retraction { proposition: p, .. } if p == proposition
+                ResearchEventPayload::Retraction { proposition: p, .. }
+                    | ResearchEventPayload::Correction { proposition: p, .. }
+                if p == proposition
             )
     });
     let final_value = final_beliefs.get(proposition).copied();
@@ -2263,13 +2495,21 @@ fn compute_metrics(
             ResearchEventPayload::Retraction { proposition, .. } => {
                 (proposition.clone(), HexValue::Unknown)
             }
-            // GoalUpdate doesn't touch beliefs; RelationDeclaration may
-            // *cause* belief changes via propagation but doesn't itself
-            // emit a (proposition, value) tuple to attribute; Supersession
-            // freezes a claim at its last value (no new value to
-            // flip-track). All skip the per-proposition flip metric.
+            // A correction asserts a replacement value; track it as a
+            // (proposition, value) flip using the corrected assertion, the
+            // same way the belief-bearing events use their payload value.
+            ResearchEventPayload::Correction {
+                proposition, value, ..
+            } => (proposition.clone(), *value),
+            // GoalUpdate doesn't touch beliefs; RelationDeclaration and
+            // RelationWithdrawal may *cause* belief changes via propagation
+            // but don't themselves emit a (proposition, value) tuple to
+            // attribute; Supersession freezes a claim at its last value (no
+            // new value to flip-track). All skip the per-proposition flip
+            // metric.
             ResearchEventPayload::GoalUpdate { .. }
             | ResearchEventPayload::RelationDeclaration { .. }
+            | ResearchEventPayload::RelationWithdrawal { .. }
             | ResearchEventPayload::Supersession { .. } => continue,
         };
         *events_per_prop.entry(prop.clone()).or_insert(0) += 1;

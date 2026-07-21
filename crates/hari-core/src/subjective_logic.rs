@@ -628,6 +628,38 @@ pub(crate) fn process_event(
                 proposition, superseded_by
             )));
         }
+        // A correction is a hexavalent-ledger retract-plus-replace (issue
+        // #16); SL has no per-source evidence ledger to tombstone. The
+        // cleanest analog is the same as its retraction handling — reset the
+        // opinion to vacuous so subsequent fusion re-accumulates from a
+        // no-evidence prior. Log and ignore the replacement value (SL fuses
+        // Opinions, not hexavalent assertions).
+        ResearchEventPayload::Correction {
+            proposition,
+            reason,
+            ..
+        } => {
+            state
+                .opinions
+                .insert(proposition.clone(), Opinion::vacuous(cfg.default_base_rate));
+            actions.push(Action::Log(format!(
+                "SL treated Correction '{}' as a reset to vacuous: {} (no hexavalent ledger)",
+                proposition, reason
+            )));
+        }
+        // SL operates on Opinion fusion, not the BeliefNetwork — there is no
+        // relation graph to withdraw an edge from (mirrors the
+        // RelationDeclaration handling). Log and ignore so SL sessions can
+        // consume traces containing relation_withdrawal events without
+        // erroring (issue #16).
+        ResearchEventPayload::RelationWithdrawal {
+            from, to, relation, ..
+        } => {
+            actions.push(Action::Log(format!(
+                "SL ignored RelationWithdrawal {:?}: '{}' -> '{}' (SL has no relation graph)",
+                relation, from, to
+            )));
+        }
     }
 
     let state_summary = {

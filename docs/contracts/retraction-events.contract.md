@@ -5,16 +5,19 @@
   Phase-4 milestone of the parent epic, `GuitarAlchemist/hari#12`)
 - **Payloads:** additive `ResearchEventPayload` variants in
   `crates/hari-core/src/lib.rs` (serde `#[serde(tag = "type", rename_all = "snake_case")]`).
-  **Not yet implemented** — this contract specifies the target shape for the
-  implementation slice (issue #16 §9 of the design doc).
+  **Implemented** — all four variants (`retraction` with its additive
+  `retracts` selector, `supersession`, `correction`, `relation_withdrawal`)
+  are on the `ResearchEvent` boundary and exercised by `fixtures/revision/`
+  (issue #16 belief-revision slices).
 - **Examples:** [`fixtures/revision/`](../../fixtures/revision/) — three
   target-behavior replay fixtures with a `README.md` of expected semantics.
 - **Design:** [`docs/research/belief-revision-and-retraction.md`](../research/belief-revision-and-retraction.md)
 - **Issue:** `GuitarAlchemist/hari#16` (parent epic `#12`)
-- **Status:** design ratified (evidence-recompute authoritative); wire shape
-  proposed, **not** on the `ResearchEvent` boundary yet. Remains v0.1 DRAFT
-  until the implementation slice lands and an owner signs off. Companion to
-  `hari-evidence-lineage` (#15) and `source-reliability-summary` (#14).
+- **Status:** design ratified (evidence-recompute authoritative); all four
+  wire shapes **implemented** on the `ResearchEvent` boundary and
+  fixture-backed. Remains v0.1 DRAFT until an owner signs off on the frozen
+  shape. Companion to `hari-evidence-lineage` (#15) and
+  `source-reliability-summary` (#14).
 
 ## Purpose
 

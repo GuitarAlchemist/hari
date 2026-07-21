@@ -1178,9 +1178,10 @@ mod tests {
     #[test]
     fn parse_trace_accepts_revision_payloads_in_both_forms() {
         // Belief-revision variants (issue #16): the `retraction` variant's
-        // additive `retracts` selector and the new `supersession` variant
-        // must deserialize through BOTH parse_trace paths (object + array),
-        // per the CLAUDE.md rule to keep the two in lockstep.
+        // additive `retracts` selector and the new `supersession`,
+        // `correction`, and `relation_withdrawal` variants must deserialize
+        // through BOTH parse_trace paths (object + array), per the CLAUDE.md
+        // rule to keep the two in lockstep.
         let object_form = parse_trace(
             r#"{
                 "dimension": 4,
@@ -1190,12 +1191,19 @@ mod tests {
                         "retracts": { "source": "ix", "cycle": 1 } } },
                     { "cycle": 2, "source": "ix", "payload": {
                         "type": "supersession", "proposition": "p",
-                        "superseded_by": "q", "reason": "grew" } }
+                        "superseded_by": "q", "reason": "grew" } },
+                    { "cycle": 3, "source": "ix", "payload": {
+                        "type": "correction", "proposition": "p", "reason": "mislabeled",
+                        "retracts": { "source": "ix", "cycle": 1 }, "value": "Probable",
+                        "evidence": { "note": "re-measured" } } },
+                    { "cycle": 4, "source": "ix", "payload": {
+                        "type": "relation_withdrawal", "from": "p", "to": "q",
+                        "relation": "Supports", "reason": "no longer supports" } }
                 ]
             }"#,
         )
         .unwrap();
-        assert_eq!(object_form.events.len(), 2);
+        assert_eq!(object_form.events.len(), 4);
 
         let array_form = parse_trace(
             r#"[
@@ -1204,11 +1212,17 @@ mod tests {
                     "retracts": { "cycle": 1 } } },
                 { "cycle": 2, "source": "ix", "payload": {
                     "type": "supersession", "proposition": "p",
-                    "superseded_by": "q", "reason": "grew" } }
+                    "superseded_by": "q", "reason": "grew" } },
+                { "cycle": 3, "source": "ix", "payload": {
+                    "type": "correction", "proposition": "p", "reason": "mislabeled",
+                    "retracts": { "cycle": 1 }, "value": "Probable" } },
+                { "cycle": 4, "source": "ix", "payload": {
+                    "type": "relation_withdrawal", "from": "p", "to": "q",
+                    "relation": "Supports", "reason": "no longer supports" } }
             ]"#,
         )
         .unwrap();
-        assert_eq!(array_form.events.len(), 2);
+        assert_eq!(array_form.events.len(), 4);
         assert_eq!(array_form.dimension, 4);
     }
 

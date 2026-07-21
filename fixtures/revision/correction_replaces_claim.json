@@ -1,0 +1,33 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-runner",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "model-v3-latency-ok",
+        "value": "False",
+        "evidence": {
+          "p99_ms": 920,
+          "note": "reported p99 = 920ms, over the 500ms budget"
+        }
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-runner",
+      "payload": {
+        "type": "correction",
+        "proposition": "model-v3-latency-ok",
+        "reason": "original run mislabeled p50 as p99; re-measured true p99 within budget",
+        "retracts": { "source": "ix-runner", "cycle": 1 },
+        "value": "True",
+        "evidence": {
+          "p99_ms": 420,
+          "note": "re-measured, corrected label: p99 = 420ms, within budget"
+        }
+      }
+    }
+  ]
+}

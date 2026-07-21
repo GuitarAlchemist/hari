@@ -28,6 +28,9 @@ fn load_trace(path: &str) -> ResearchTrace {
 const F_DISSOLVE: &str = "../../fixtures/revision/retraction_dissolves_derived_contradiction.json";
 const F_PARTIAL: &str = "../../fixtures/revision/partial_retraction_downgrades.json";
 const F_SUPERSEDE: &str = "../../fixtures/revision/supersession_chain.json";
+const F_CORRECTION: &str = "../../fixtures/revision/correction_replaces_claim.json";
+const F_WITHDRAWAL: &str =
+    "../../fixtures/revision/relation_withdrawal_reverts_derived_belief.json";
 
 /// Fixture 1: two sources disagree (`True` + `False` → derived
 /// `Contradictory`), then one retracts its `False`. The derived
@@ -182,6 +185,192 @@ fn supersession_chain_retires_claims_but_keeps_them_inspectable() {
     );
 }
 
+/// `correction` fixture: a source asserts `False`, then corrects itself to
+/// `True` in one atomic event. The correction tombstones the mislabeled
+/// original and merges in the replacement, so the belief recomputes over
+/// `{ix-runner: True}` — capped to `Probable` by the single-source rule, the
+/// same uniform cap fixtures 1 & 2 land on. The report carries **one**
+/// revision delta whose `cause = correction` — the causal link a bare
+/// `belief_update` cannot express, distinguishing a correction from a plain
+/// retraction.
+#[test]
+fn correction_replaces_claim_with_causal_link() {
+    let trace = load_trace(F_CORRECTION);
+    let mut cl = CognitiveLoop::new(trace.dimension);
+    let report = cl.process_research_trace(trace);
+
+    assert_eq!(
+        report.final_beliefs.get("model-v3-latency-ok"),
+        Some(&HexValue::Probable),
+        "the corrected claim recomputes over {{ix-runner: True}}, single-source capped to Probable"
+    );
+
+    let deltas: Vec<_> = report
+        .revisions
+        .iter()
+        .filter(|d| d.proposition == "model-v3-latency-ok")
+        .collect();
+    assert_eq!(
+        deltas.len(),
+        1,
+        "a correction emits exactly one revision delta"
+    );
+    let delta = deltas[0];
+    assert_eq!(
+        delta.previous,
+        HexValue::False,
+        "the mislabeled original was False"
+    );
+    assert_eq!(delta.current, HexValue::Probable, "corrected to Probable");
+    assert_eq!(
+        delta.cause,
+        RevisionCause::Correction,
+        "cause distinguishes a correction from a plain retraction"
+    );
+    assert_eq!(delta.cycle, 2);
+}
+
+/// `correction` fixture, historical replay: replaying only through cycle 1
+/// (before the correction) shows the original `False`. The correction never
+/// rewrites the past — current-vs-historical is a replay-endpoint choice, and
+/// the tombstoned original stays in the trace.
+#[test]
+fn historical_replay_before_correction_shows_original() {
+    let full = load_trace(F_CORRECTION);
+    let truncated = ResearchTrace {
+        dimension: full.dimension,
+        events: full.events.into_iter().take(1).collect(),
+    };
+    let mut cl = CognitiveLoop::new(truncated.dimension);
+    let report = cl.process_research_trace(truncated);
+    assert_eq!(
+        report.final_beliefs.get("model-v3-latency-ok"),
+        Some(&HexValue::False),
+        "replay-to-cycle-1 reproduces the historical (pre-correction) False"
+    );
+    assert!(
+        report.revisions.is_empty(),
+        "no revision events before the correction"
+    );
+}
+
+/// `relation_withdrawal` fixture: a direct belief supports a derived belief
+/// through a declared relation; withdrawing that relation reverts the derived
+/// belief on the next propagation, while the withdrawn edge stays inspectable
+/// (tombstone, not delete) and the base belief is untouched.
+#[test]
+fn relation_withdrawal_reverts_derived_belief() {
+    let trace = load_trace(F_WITHDRAWAL);
+    let mut cl = CognitiveLoop::new(trace.dimension);
+    let report = cl.process_research_trace(trace);
+
+    // The base belief (direct evidence) is untouched by the withdrawal.
+    assert_eq!(
+        cl.state.beliefs.get("benchmark-x-passes").map(|p| p.value),
+        Some(HexValue::True),
+        "the base belief with direct evidence survives the withdrawal"
+    );
+    // The derived belief reverts to its Unknown base — nothing supports it now.
+    // (`deploy-is-safe` is reached only through relation events, so it is not a
+    // `touched_proposition` in `final_beliefs`; read it from the network.)
+    assert_eq!(
+        cl.state.beliefs.get("deploy-is-safe").map(|p| p.value),
+        Some(HexValue::Unknown),
+        "the derived belief reverts once its only supporting edge is withdrawn"
+    );
+
+    // The withdrawn edge is tombstoned, not deleted — still inspectable.
+    assert!(
+        cl.state.beliefs.is_relation_withdrawn(
+            "benchmark-x-passes",
+            "deploy-is-safe",
+            hari_lattice::Relation::Supports,
+        ),
+        "the withdrawn edge stays inspectable (audit-preservation)"
+    );
+    assert_eq!(cl.state.beliefs.withdrawn_relation_count(), 1);
+
+    // The revert is reported as a relation_withdrawal revision delta.
+    let delta = report
+        .revisions
+        .iter()
+        .find(|d| d.proposition == "deploy-is-safe")
+        .expect("the reverted derived belief is reported");
+    assert_eq!(delta.previous, HexValue::True);
+    assert_eq!(delta.current, HexValue::Unknown);
+    assert_eq!(delta.cause, RevisionCause::RelationWithdrawal);
+    assert_eq!(delta.cycle, 3);
+}
+
+/// A/B baseline for relation withdrawal: the current append-only "undo" is a
+/// `Retraction` of the derived proposition (reset-to-`Unknown`), which resets
+/// *only* the named node and leaves the inducing edge live — so on the next
+/// propagation the belief is re-derived right back. Withdrawal beats it: the
+/// edge is gone from propagation, so the revert *sticks*.
+#[test]
+fn withdrawal_sticks_where_retracting_the_derived_belief_would_not() {
+    use hari_core::{ResearchEvent, ResearchEventPayload};
+    use hari_lattice::Relation;
+
+    // Baseline: same setup, but instead of withdrawing the edge, retract the
+    // derived belief and then re-assert the base + let it re-propagate.
+    let mut cl = CognitiveLoop::new(4);
+    cl.process_research_event(ResearchEvent {
+        cycle: 1,
+        source: "ix-runner".into(),
+        payload: ResearchEventPayload::BeliefUpdate {
+            proposition: "benchmark-x-passes".into(),
+            value: HexValue::True,
+            evidence: Default::default(),
+        },
+    });
+    cl.process_research_event(ResearchEvent {
+        cycle: 2,
+        source: "ix-planner".into(),
+        payload: ResearchEventPayload::RelationDeclaration {
+            from: "benchmark-x-passes".into(),
+            to: "deploy-is-safe".into(),
+            relation: Relation::Supports,
+        },
+    });
+    // Retract the derived belief (the append-only "undo"): resets the node…
+    cl.process_research_event(ResearchEvent {
+        cycle: 3,
+        source: "ix-planner".into(),
+        payload: ResearchEventPayload::Retraction {
+            proposition: "deploy-is-safe".into(),
+            reason: "no longer supported".into(),
+            retracts: None,
+        },
+    });
+    // …but the edge is still live, so any further propagation re-derives it.
+    // Force a propagation pass by re-asserting the base belief.
+    cl.process_research_event(ResearchEvent {
+        cycle: 4,
+        source: "ix-runner".into(),
+        payload: ResearchEventPayload::BeliefUpdate {
+            proposition: "benchmark-x-passes".into(),
+            value: HexValue::True,
+            evidence: Default::default(),
+        },
+    });
+    assert_eq!(
+        cl.state.beliefs.get("deploy-is-safe").map(|p| p.value),
+        Some(HexValue::True),
+        "retracting the derived node does NOT stick: the live edge re-derives it"
+    );
+
+    // Withdrawal arm: the fixture. The revert sticks because the edge is gone.
+    let trace = load_trace(F_WITHDRAWAL);
+    let mut w = CognitiveLoop::new(trace.dimension);
+    w.process_research_trace(trace);
+    assert_eq!(
+        w.state.beliefs.get("deploy-is-safe").map(|p| p.value),
+        Some(HexValue::Unknown),
+        "withdrawing the edge makes the revert stick"
+    );
+}
+
 /// Strip the `retracts` selector from every `Retraction` in a trace,
 /// turning the selective retractions into the naive whole-proposition
 /// retractions the pre-slice handler performs. This reconstructs the A/B
@@ -329,20 +518,33 @@ fn new_payloads_parse_in_both_trace_forms() {
                 "type": "retraction", "proposition": "p", "reason": "r",
                 "retracts": { "source": "s", "cycle": 1 } } },
             { "cycle": 2, "source": "s", "payload": {
-                "type": "supersession", "proposition": "p", "superseded_by": "q", "reason": "r" } }
+                "type": "supersession", "proposition": "p", "superseded_by": "q", "reason": "r" } },
+            { "cycle": 3, "source": "s", "payload": {
+                "type": "correction", "proposition": "p", "reason": "r",
+                "retracts": { "source": "s", "cycle": 1 }, "value": "True",
+                "evidence": { "note": "corrected" } } },
+            { "cycle": 4, "source": "s", "payload": {
+                "type": "relation_withdrawal", "from": "p", "to": "q",
+                "relation": "Supports", "reason": "r" } }
         ]
     }"#;
     let trace: ResearchTrace = serde_json::from_str(object_form).expect("object form parses");
-    assert_eq!(trace.events.len(), 2);
+    assert_eq!(trace.events.len(), 4);
 
     let array_form = r#"[
         { "cycle": 1, "source": "s", "payload": {
             "type": "retraction", "proposition": "p", "reason": "r",
             "retracts": { "cycle": 1 } } },
         { "cycle": 2, "source": "s", "payload": {
-            "type": "supersession", "proposition": "p", "superseded_by": "q", "reason": "r" } }
+            "type": "supersession", "proposition": "p", "superseded_by": "q", "reason": "r" } },
+        { "cycle": 3, "source": "s", "payload": {
+            "type": "correction", "proposition": "p", "reason": "r",
+            "retracts": { "cycle": 1 }, "value": "True" } },
+        { "cycle": 4, "source": "s", "payload": {
+            "type": "relation_withdrawal", "from": "p", "to": "q",
+            "relation": "Supports", "reason": "r" } }
     ]"#;
     let events: Vec<ResearchEvent> = serde_json::from_str(array_form).expect("array form parses");
     let trace2: ResearchTrace = events.into();
-    assert_eq!(trace2.events.len(), 2);
+    assert_eq!(trace2.events.len(), 4);
 }
