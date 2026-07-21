@@ -112,11 +112,29 @@ escalation flag (1/4 < 0.3). SL's embedded Unknown is near-vacuous
 evidence ((r,s) = (1/9, 1/9)): fused b = d → 0.5 from below and the
 conflict flag never clears.
 
-So: hex escalation is anti-dilutive against *support* but fully
-dilutable by *abstentions*; SL conflict is the exact mirror. Neither
-contradiction detector simulates the other — they disagree about what
-counts as washing out a conflict. This mirror was not a design goal
-stated anywhere in either module; the probe surfaced it.
+So (as measured, spec v1.1): hex escalation was anti-dilutive against
+*support* but fully dilutable by *abstentions*; SL conflict is the
+exact mirror. Neither contradiction detector simulates the other —
+they disagree about what counts as washing out a conflict. This mirror
+was not a design goal stated anywhere in either module; the probe
+surfaced it.
+
+> **Superseded 2026-07-20 by spec v1.2 (issue #28).** The
+> abstention-muting half of this mirror was judged a design defect,
+> not a finding to preserve: an evidence-based alarm dilutable by
+> non-evidence is an exploitable hole once autonomy gates on
+> escalation. Ratified fix: escalation compares C against the
+> *informative* mass (U excluded from the denominator; all-U never
+> escalates). Hex is now immune to both flooding directions while SL
+> conflict remains support-mortal — the separation *sharpened* rather
+> than closed. `theorem_unknown_flooding_mirrors_the_separation`
+> flipped accordingly, and the §4 confusion matrix moved to
+> 180/742/1076/2 (agreement 46.1%): the SL-only stray cells that
+> revealed this mirror collapsed 10 → 2, because they *were* the
+> mirror. Landed: Demerzel `7e6a1cb` (spec v1.2 + fixtures 11/12),
+> hari `5d32abb`/`97a3f1f`, ix `76b9c71`. The v1.1 numbers elsewhere
+> in this doc are kept as the historical record of what motivated the
+> change.
 
 ### 3.3 Weight semantics: relative vs absolute
 
