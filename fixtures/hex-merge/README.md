@@ -99,3 +99,8 @@ claim_key, variant, weight)` are checked.
 | `05_staleness_drops_old_rounds.json` | Round filter at K=5 |
 | `06_dedup_collapses_duplicates.json` | Same dedup key, first-write wins |
 | `07_empty_yields_uniform.json` | Empty input → uniform 1/6 fallback |
+| `08_collision_divergent_payload.json` | Same dedup key, divergent variants → resolved base C at min weight |
+| `09_staleness_expires_synthesis.json` | Older parent expires → no synthesis; pins min(parents) round stamp |
+| `10_incoming_merge_source_dropped.json` | Incoming `demerzel-merge` obs is derived cache, dropped at step 0 |
+| `11_abstention_cannot_mute_escalation.json` | T+F synth C flooded by Unknowns → escalation true under v1.2 (false under v1.1); informative-mass predicate |
+| `12_all_unknown_no_escalation.json` | All-Unknown input → zero informative mass → escalation false (v1.2 boundary) |
