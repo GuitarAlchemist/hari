@@ -267,6 +267,11 @@ impl StreamingSession {
         let final_state_summary = self.primary.state.summary();
         let priority_model = self.primary.priority_model;
 
+        let revisions = self
+            .outcomes
+            .iter()
+            .flat_map(|o| o.revisions.iter().cloned())
+            .collect();
         ResearchReplayReport {
             event_count: self.outcomes.len(),
             outcomes: self.outcomes,
@@ -276,6 +281,7 @@ impl StreamingSession {
             priority_model,
             metrics,
             comparison,
+            revisions,
         }
     }
 
@@ -376,6 +382,11 @@ impl StreamingSession {
         );
         let final_state_summary = self.primary.state.summary();
         let priority_model = self.primary.priority_model;
+        let revisions = self
+            .outcomes
+            .iter()
+            .flat_map(|o| o.revisions.iter().cloned())
+            .collect();
         ResearchReplayReport {
             event_count: self.outcomes.len(),
             outcomes: self.outcomes.clone(),
@@ -385,6 +396,7 @@ impl StreamingSession {
             priority_model,
             metrics,
             comparison,
+            revisions,
         }
     }
 

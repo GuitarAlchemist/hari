@@ -334,6 +334,10 @@ impl RawExtraction {
                     .proposition
                     .ok_or(ExtractError::MissingField("proposition"))?,
                 reason: self.reason.ok_or(ExtractError::MissingField("reason"))?,
+                // The extractor maps flat records; the `retracts` selector
+                // is a structured belief-revision field (issue #16) not yet
+                // surfaced by this extraction path.
+                retracts: None,
             }),
             RawType::GoalUpdate => Ok(ResearchEventPayload::GoalUpdate {
                 key: self

@@ -1176,6 +1176,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_trace_accepts_revision_payloads_in_both_forms() {
+        // Belief-revision variants (issue #16): the `retraction` variant's
+        // additive `retracts` selector and the new `supersession` variant
+        // must deserialize through BOTH parse_trace paths (object + array),
+        // per the CLAUDE.md rule to keep the two in lockstep.
+        let object_form = parse_trace(
+            r#"{
+                "dimension": 4,
+                "events": [
+                    { "cycle": 1, "source": "ix", "payload": {
+                        "type": "retraction", "proposition": "p", "reason": "stale",
+                        "retracts": { "source": "ix", "cycle": 1 } } },
+                    { "cycle": 2, "source": "ix", "payload": {
+                        "type": "supersession", "proposition": "p",
+                        "superseded_by": "q", "reason": "grew" } }
+                ]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(object_form.events.len(), 2);
+
+        let array_form = parse_trace(
+            r#"[
+                { "cycle": 1, "source": "ix", "payload": {
+                    "type": "retraction", "proposition": "p", "reason": "stale",
+                    "retracts": { "cycle": 1 } } },
+                { "cycle": 2, "source": "ix", "payload": {
+                    "type": "supersession", "proposition": "p",
+                    "superseded_by": "q", "reason": "grew" } }
+            ]"#,
+        )
+        .unwrap();
+        assert_eq!(array_form.events.len(), 2);
+        assert_eq!(array_form.dimension, 4);
+    }
+
+    #[test]
     fn parse_trace_accepts_array_form() {
         let trace = parse_trace(
             r#"[

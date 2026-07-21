@@ -1,21 +1,19 @@
-# Belief-revision replay fixtures (target-behavior)
+# Belief-revision replay fixtures
 
 Three deterministic replay fixtures for the belief-revision design
 (`docs/research/belief-revision-and-retraction.md`, issue #16). Each
 isolates one semantic and each is an **A/B case** against the naive
 last-write-wins baseline (design §7).
 
-**These are target-behavior fixtures.** They use the **proposed** wire
-payloads (`retraction` with a `retracts` selector, and `supersession`) that
-`hari-core replay` does **not yet consume** — the `retracts` field and the
-`supersession` / `correction` / `relation_withdrawal` variants are not on the
-`ResearchEvent` boundary yet (see the design doc §9 and
-`docs/contracts/retraction-events.contract.md`). Replaying them today either
-ignores the `retracts` selector (`retraction` degrades to today's
-whole-proposition reset) or fails to deserialize (`supersession`). They are
-the **acceptance targets** for the implementation slice, not currently-green
-regressions. When that slice lands, wire these as regression tests pinned
-against the LWW baseline.
+**These now replay** (issue #16 retraction tracer slice, commit landing this
+slice). `hari-core replay fixtures/revision/<name>.json` consumes all three:
+the `retraction` variant's additive `retracts` selector and the new
+`supersession` variant are on the `ResearchEvent` boundary, and each fixture
+is wired as a regression test (`crates/hari-core/tests/revision_replay.rs`)
+pinned against the LWW baseline. The `correction` and `relation_withdrawal`
+variants from `docs/contracts/retraction-events.contract.md` are **still
+deferred** — no fixture here needs them (design doc §9; tracer-bullet
+discipline: implement exactly what the fixtures exercise).
 
 Doctrine under all three: **evidence-recompute is authoritative** — retraction
 appends a tombstone, current belief is recomputed from surviving evidence, and
@@ -50,11 +48,24 @@ Corroborated belief loses one of its two supports.
 | 2 | runner: `model-v3-beats-baseline` = **True** | two independent sources → **True** (corroborated) |
 | 3 | evaluator **retracts** its cycle-1 support | one support remains |
 
-**Expected (current belief):** the belief **survives on the remaining single
-source, downgraded True → Probable** (single-source cap; corroboration by a
-second source is what licensed `True`). It is **not** reset to `Unknown`.
+**Expected (current belief, as implemented):** the belief **survives on the
+remaining source** — recompute over `{runner: True}` → `True`. It is **not**
+reset to `Unknown`. This is the load-bearing A/B distinction: survives vs
+erased.
 **Baseline (LWW-to-Unknown):** resets to `Unknown`, erasing a belief that
 still has standing evidence — this is the row the baseline gets wrong.
+
+> **Note on granularity.** The design's original target was a finer-grained
+> *downgrade* `True → Probable` (a single-source cap: corroboration by a
+> second source is what would license `True`). The `hari-core` boundary has
+> no per-source *weight* in this slice — the survivor recompute uses
+> `combine_evidence_set`, which has no corroboration cap — so the
+> implemented value is `True`, not `Probable`. No pure evidence-recompute can
+> give fixture 1 `True` and this fixture `Probable` from identical
+> single-source-`True` survivor sets, so the slice follows fixtures 1 & 3 as
+> written and defers the corroboration cap to the merge-weight slice (design
+> §9 item 2). The A/B win (survives, not erased) holds either way and is
+> asserted by `retraction_fidelity_beats_lww_baseline`.
 
 ## `supersession_chain.json`
 

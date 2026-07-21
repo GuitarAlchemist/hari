@@ -97,6 +97,7 @@ async fn extract_retraction_carries_reason() {
         ResearchEventPayload::Retraction {
             proposition,
             reason,
+            ..
         } => {
             assert!(proposition.to_lowercase().contains("benchmark-x"));
             assert!(!reason.is_empty(), "reason should be non-empty");

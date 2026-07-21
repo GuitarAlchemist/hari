@@ -480,6 +480,10 @@ pub fn process_research_trace_subjective_logic(
         priority_model: Default::default(),
         metrics,
         comparison: None,
+        // SL has no belief-revision ledger; retraction resets an opinion
+        // to vacuous rather than recomputing from tombstoned evidence, so
+        // it emits no `RevisionDelta`s (issue #16 is a hexavalent-path slice).
+        revisions: Vec::new(),
     }
 }
 
@@ -559,6 +563,11 @@ pub(crate) fn process_event(
         ResearchEventPayload::Retraction {
             proposition,
             reason,
+            // The `retracts` selector is a hexavalent-ledger concept
+            // (issue #16); SL has no per-source evidence ledger to
+            // tombstone, so it ignores the selector and resets the whole
+            // opinion regardless.
+            ..
         } => {
             // SL has no native retraction; the cleanest analog is to
             // reset the opinion to vacuous so subsequent fusion
@@ -606,6 +615,19 @@ pub(crate) fn process_event(
                 relation, from, to
             )));
         }
+        // SL fuses Opinions and has no lineage graph to retire a claim
+        // on; log and ignore so SL sessions can still consume traces that
+        // include supersession events without erroring (issue #16).
+        ResearchEventPayload::Supersession {
+            proposition,
+            superseded_by,
+            ..
+        } => {
+            actions.push(Action::Log(format!(
+                "SL ignored Supersession '{}' -> '{}' (SL has no lineage graph)",
+                proposition, superseded_by
+            )));
+        }
     }
 
     let state_summary = {
@@ -631,6 +653,8 @@ pub(crate) fn process_event(
         // SL operates on Opinion fusion, not the BeliefNetwork — no
         // belief-graph derivations apply.
         derivations: Vec::new(),
+        // No belief-revision ledger on the SL path (issue #16).
+        revisions: Vec::new(),
     }
 }
 

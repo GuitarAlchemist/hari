@@ -444,6 +444,7 @@ mod tests {
             actions,
             state_summary: String::new(),
             derivations: Vec::new(),
+            revisions: Vec::new(),
         }
     }
 
@@ -455,11 +456,13 @@ mod tests {
                 payload: ResearchEventPayload::Retraction {
                     proposition: proposition.to_string(),
                     reason: "test".to_string(),
+                    retracts: None,
                 },
             },
             actions: Vec::new(),
             state_summary: String::new(),
             derivations: Vec::new(),
+            revisions: Vec::new(),
         }
     }
 

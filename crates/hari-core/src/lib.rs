@@ -282,7 +282,36 @@ pub enum ResearchEventPayload {
         evidence: Evidence,
     },
     /// A previous claim or result has been withdrawn or invalidated.
-    Retraction { proposition: String, reason: String },
+    ///
+    /// The optional `retracts` selector (issue #16, belief-revision slice)
+    /// names *which* prior evidence to withdraw. When present, the
+    /// targeted evidence is tombstoned and the proposition is recomputed
+    /// from the surviving evidence (evidence-recompute is authoritative);
+    /// when absent, this stays byte-for-byte the pre-slice
+    /// whole-proposition reset to `Unknown` (the A/B baseline the
+    /// selective path is measured against). The field is additive and
+    /// backward-compatible: traces without it deserialize unchanged.
+    Retraction {
+        proposition: String,
+        reason: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retracts: Option<RetractionSelector>,
+    },
+    /// Retire a whole claim in favour of a successor claim (issue #16).
+    ///
+    /// Records a directed `proposition → superseded_by` lineage edge and
+    /// *freezes* the superseded proposition: its last value stays
+    /// inspectable (never reset) but it is marked retired so a consumer
+    /// can tell the live chain head from the audit tail. Chains compose
+    /// (`A → B → C`); only the head is live. Mirrors the Demerzel
+    /// persona-count rot the design cites. Freezing the superseded
+    /// claim's *downstream mass* is a no-op in this slice (no dependency
+    /// fixture exercises it yet — design §10).
+    Supersession {
+        proposition: String,
+        superseded_by: String,
+        reason: String,
+    },
     /// Update or create a goal that should influence future prioritization.
     GoalUpdate {
         key: String,
@@ -311,6 +340,37 @@ pub enum ResearchEventPayload {
     },
 }
 
+/// Names which prior evidence a [`ResearchEventPayload::Retraction`]
+/// withdraws (issue #16). At the `ResearchEvent` boundary evidence is
+/// addressed by `source` and/or `cycle`; an entry matches when every
+/// present field matches. An empty selector (`{}`) matches all prior
+/// evidence for the proposition, same as omitting `retracts`. The
+/// contract's `dedup_key` form is a merge-layer concern and is not part
+/// of this boundary slice.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct RetractionSelector {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cycle: Option<u64>,
+}
+
+impl RetractionSelector {
+    /// Whether this selector names a specific piece of evidence (has at
+    /// least one constraint). An unconstrained selector behaves like the
+    /// whole-proposition retraction.
+    fn is_targeted(&self) -> bool {
+        self.source.is_some() || self.cycle.is_some()
+    }
+
+    /// Whether a ledger entry from `source` at `cycle` is matched by this
+    /// selector. Every present field must match; absent fields are
+    /// wildcards.
+    fn matches(&self, source: &str, cycle: u64) -> bool {
+        self.source.as_deref().is_none_or(|s| s == source) && self.cycle.is_none_or(|c| c == cycle)
+    }
+}
+
 impl ResearchEvent {
     /// Owned copy of the *primary* proposition this event targets, if
     /// any. Returns the single proposition for direct claim events
@@ -337,6 +397,11 @@ impl ResearchEvent {
             ResearchEventPayload::RelationDeclaration { from, to, .. } => {
                 vec![from.clone(), to.clone()]
             }
+            ResearchEventPayload::Supersession {
+                proposition,
+                superseded_by,
+                ..
+            } => vec![proposition.clone(), superseded_by.clone()],
             ResearchEventPayload::GoalUpdate { .. } => Vec::new(),
         }
     }
@@ -359,6 +424,48 @@ pub struct ResearchEventOutcome {
     /// stay byte-equal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub derivations: Vec<hari_lattice::Derivation>,
+    /// Belief-revision deltas produced by this event (issue #16): the
+    /// `(previous → current, cause)` change a selective `Retraction` or
+    /// `Supersession` caused. Empty (and skipped from JSON) for every
+    /// non-revision event and for the legacy whole-proposition
+    /// retraction, so existing fixtures and recorded sessions stay
+    /// byte-equal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub revisions: Vec<RevisionDelta>,
+}
+
+/// What kind of belief-revision event produced a [`RevisionDelta`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RevisionCause {
+    /// A selective `Retraction` tombstoned evidence and recomputed.
+    Retraction,
+    /// A `Supersession` retired a claim for a successor.
+    Supersession,
+}
+
+/// A single `report_delta_between_previous_and_current_belief` record
+/// (design §4 semantic 5): the belief change a revision event caused,
+/// emitted so an IX consumer can audit *why* a value moved. For a
+/// `Retraction` this is the recompute-over-survivors delta; for a
+/// `Supersession` `previous == current` (the retired claim freezes at
+/// its last value) and `superseded_by` names the successor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RevisionDelta {
+    /// The proposition whose belief the revision acted on.
+    pub proposition: String,
+    /// Belief value before the revision was applied.
+    pub previous: HexValue,
+    /// Belief value after the revision (recomputed from survivors, or
+    /// frozen for supersession).
+    pub current: HexValue,
+    /// Why the belief was revised.
+    pub cause: RevisionCause,
+    /// Cycle of the revision event.
+    pub cycle: u64,
+    /// Successor claim, set only for `Supersession`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<String>,
 }
 
 /// Replayable IX/autoresearch trace.
@@ -406,6 +513,12 @@ pub struct ResearchReplayReport {
     /// Side-by-side comparison populated by the `--compare` CLI flow.
     #[serde(default)]
     pub comparison: Option<ReplayComparison>,
+    /// Belief-revision deltas across the whole trace, in event order
+    /// (issue #16) — the flattened `revisions` of every outcome. Empty
+    /// (and skipped from JSON) for traces with no selective retraction
+    /// or supersession, so pre-slice reports stay byte-equal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub revisions: Vec<RevisionDelta>,
 }
 
 /// Aggregate metrics computed once per replay.
@@ -660,6 +773,33 @@ pub struct CognitiveLoop {
     /// `PriorityModel::SubjectiveLogic`. Stays `None` for non-SL
     /// runs so the per-loop memory footprint is unchanged.
     sl_state: Option<subjective_logic::SubjectiveLogicState>,
+    /// Per-proposition evidence ledger for belief-revision recompute
+    /// (issue #16). Every belief-bearing event (`BeliefUpdate` /
+    /// `ExperimentResult` / `AgentVote`) appends an entry; a selective
+    /// `Retraction` tombstones matching entries and the proposition is
+    /// recomputed from the survivors. Pure bookkeeping — appending emits
+    /// no actions and does not touch belief values, so traces without a
+    /// selective retraction replay bit-identically. Retracted entries
+    /// are kept flagged, never removed (preserve-for-audit / tombstone,
+    /// not delete).
+    evidence_log: BTreeMap<String, Vec<EvidenceEntry>>,
+    /// Propositions retired by a `Supersession` event (issue #16),
+    /// mapped to the successor claim. A superseded claim keeps its last
+    /// value but is marked here so a consumer can tell the live chain
+    /// head from the audit tail.
+    superseded: BTreeMap<String, String>,
+}
+
+/// One recorded piece of evidence in the belief-revision ledger
+/// (issue #16). Addressed by `(source, cycle)` at the `ResearchEvent`
+/// boundary; `retracted` is the tombstone flag — a retracted entry
+/// contributes zero to the recompute but stays in the ledger for audit.
+#[derive(Debug, Clone, PartialEq)]
+struct EvidenceEntry {
+    source: String,
+    cycle: u64,
+    value: HexValue,
+    retracted: bool,
 }
 
 impl CognitiveLoop {
@@ -697,6 +837,8 @@ impl CognitiveLoop {
             use_swarm_consensus: false,
             sl_config: subjective_logic::SubjectiveLogicConfig::default(),
             sl_state: None,
+            evidence_log: BTreeMap::new(),
+            superseded: BTreeMap::new(),
         }
     }
 
@@ -1198,6 +1340,14 @@ impl CognitiveLoop {
             self.attention_norm_max,
         );
 
+        // Flatten every outcome's revision deltas into a trace-level log,
+        // in event order (issue #16). Empty for traces without selective
+        // retraction or supersession, so pre-slice reports stay byte-equal.
+        let revisions: Vec<RevisionDelta> = outcomes
+            .iter()
+            .flat_map(|o| o.revisions.iter().cloned())
+            .collect();
+
         ResearchReplayReport {
             event_count: outcomes.len(),
             outcomes,
@@ -1207,6 +1357,7 @@ impl CognitiveLoop {
             priority_model: self.priority_model,
             metrics,
             comparison: None,
+            revisions,
         }
     }
 
@@ -1233,6 +1384,35 @@ impl CognitiveLoop {
 
         let mut actions: Vec<Action> = Vec::new();
         let mut action_cycles: Vec<u64> = Vec::new();
+        let mut revisions: Vec<RevisionDelta> = Vec::new();
+
+        // Ledger the asserted evidence for belief-bearing events
+        // (issue #16) so a later selective `Retraction` can recompute
+        // from the survivors. Inert bookkeeping: it appends no actions
+        // and never touches a belief value, so a trace without a
+        // selective retraction replays bit-identically. The recorded
+        // value is the source's *assertion* (the payload value), which
+        // is what evidence-recompute filters on.
+        if let ResearchEventPayload::BeliefUpdate {
+            proposition, value, ..
+        }
+        | ResearchEventPayload::ExperimentResult {
+            proposition, value, ..
+        }
+        | ResearchEventPayload::AgentVote {
+            proposition, value, ..
+        } = &event.payload
+        {
+            self.evidence_log
+                .entry(proposition.clone())
+                .or_default()
+                .push(EvidenceEntry {
+                    source: event.source.clone(),
+                    cycle: event.cycle,
+                    value: *value,
+                    retracted: false,
+                });
+        }
 
         match &event.payload {
             ResearchEventPayload::BeliefUpdate {
@@ -1343,23 +1523,127 @@ impl CognitiveLoop {
             ResearchEventPayload::Retraction {
                 proposition,
                 reason,
+                retracts,
             } => {
-                if let Some(prop) = self.state.beliefs.get_mut(proposition) {
-                    prop.value = HexValue::Unknown;
-                } else {
-                    self.state
-                        .beliefs
-                        .add_proposition(proposition, HexValue::Unknown);
+                match retracts.as_ref().filter(|s| s.is_targeted()) {
+                    // Selective retraction (issue #16): tombstone the
+                    // matched evidence in the ledger, recompute the
+                    // proposition's value from the survivors
+                    // (evidence-recompute is authoritative), and report
+                    // the delta. This is the path that beats the
+                    // whole-proposition LWW-to-Unknown baseline: the
+                    // belief survives on remaining evidence instead of
+                    // being erased, and a derived contradiction dissolves
+                    // for free because nothing is carried forward.
+                    Some(selector) => {
+                        let previous = self.current_claim_value(proposition);
+                        let mut tombstoned = 0usize;
+                        if let Some(entries) = self.evidence_log.get_mut(proposition) {
+                            for entry in entries.iter_mut() {
+                                if !entry.retracted && selector.matches(&entry.source, entry.cycle)
+                                {
+                                    entry.retracted = true;
+                                    tombstoned += 1;
+                                }
+                            }
+                        }
+                        let recomputed = self.recompute_from_ledger(proposition);
+                        self.set_belief_value(proposition, recomputed);
+
+                        actions.push(Action::Log(format!(
+                            "Retracted {} evidence item(s) for '{}' ({}); recomputed {} -> {}",
+                            tombstoned,
+                            proposition,
+                            reason,
+                            previous
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "n/a".to_string()),
+                            recomputed,
+                        )));
+                        action_cycles.push(event.cycle);
+                        // Recommend the action appropriate to the
+                        // recomputed value (Investigate on Unknown, Accept
+                        // on a definite value, Escalate on a standing
+                        // contradiction) — the existing per-claim action
+                        // semantics, now driven by the survivor recompute.
+                        for a in Self::recommend_for_claim(proposition, recomputed) {
+                            actions.push(a);
+                            action_cycles.push(event.cycle);
+                        }
+                        if let Some(prev) = previous {
+                            revisions.push(RevisionDelta {
+                                proposition: proposition.clone(),
+                                previous: prev,
+                                current: recomputed,
+                                cause: RevisionCause::Retraction,
+                                cycle: event.cycle,
+                                superseded_by: None,
+                            });
+                        }
+                    }
+                    // Whole-proposition retraction (no selector). Preserved
+                    // byte-for-byte from the pre-slice handler — this is
+                    // the A/B baseline (reset to Unknown, recommend Retry)
+                    // and the behavior existing fixtures/tests pin. A full
+                    // filter-and-recompute over an *all-retracted* ledger
+                    // yields Unknown too, so the value agrees; the action
+                    // emission is kept identical so recorded reports (e.g.
+                    // fixtures/ix/conflicting_benchmark.json) stay
+                    // byte-equal and no revision delta is emitted.
+                    None => {
+                        if let Some(entries) = self.evidence_log.get_mut(proposition) {
+                            for entry in entries.iter_mut() {
+                                entry.retracted = true;
+                            }
+                        }
+                        if let Some(prop) = self.state.beliefs.get_mut(proposition) {
+                            prop.value = HexValue::Unknown;
+                        } else {
+                            self.state
+                                .beliefs
+                                .add_proposition(proposition, HexValue::Unknown);
+                        }
+                        actions.push(Action::Log(format!(
+                            "Retracted '{}': {}",
+                            proposition, reason
+                        )));
+                        action_cycles.push(event.cycle);
+                        actions.push(Action::Retry {
+                            topic: proposition.clone(),
+                        });
+                        action_cycles.push(event.cycle);
+                    }
                 }
+            }
+            ResearchEventPayload::Supersession {
+                proposition,
+                superseded_by,
+                reason,
+            } => {
+                // Retire the claim: record the directed lineage edge and
+                // freeze the superseded proposition at its last value
+                // (never reset — it stays inspectable as the audit tail).
+                // "No downstream mass" is a no-op in this slice: no
+                // dependency fixture exercises propagation out of a
+                // superseded claim yet (design §10).
+                self.superseded
+                    .insert(proposition.clone(), superseded_by.clone());
+                let frozen = self.current_claim_value(proposition);
                 actions.push(Action::Log(format!(
-                    "Retracted '{}': {}",
-                    proposition, reason
+                    "Superseded '{}' by '{}': {}",
+                    proposition, superseded_by, reason
                 )));
                 action_cycles.push(event.cycle);
-                actions.push(Action::Retry {
-                    topic: proposition.clone(),
-                });
-                action_cycles.push(event.cycle);
+                if let Some(value) = frozen {
+                    revisions.push(RevisionDelta {
+                        proposition: proposition.clone(),
+                        previous: value,
+                        current: value,
+                        cause: RevisionCause::Supersession,
+                        cycle: event.cycle,
+                        superseded_by: Some(superseded_by.clone()),
+                    });
+                }
             }
             ResearchEventPayload::GoalUpdate {
                 key,
@@ -1441,11 +1725,54 @@ impl CognitiveLoop {
             actions: final_actions,
             state_summary: self.state.summary(),
             derivations,
+            revisions,
         }
     }
 
     fn current_claim_value(&self, proposition: &str) -> Option<HexValue> {
         self.state.beliefs.get(proposition).map(|p| p.value)
+    }
+
+    /// The successor claim a proposition was retired in favour of, if it
+    /// has been superseded (issue #16), else `None`. A superseded claim
+    /// keeps its last value (inspectable) but is no longer the live chain
+    /// head — this is how a consumer distinguishes the two.
+    pub fn superseded_by(&self, proposition: &str) -> Option<&str> {
+        self.superseded.get(proposition).map(String::as_str)
+    }
+
+    /// Set (or create) a proposition's belief value directly. Used by
+    /// the belief-revision recompute path (issue #16) after a selective
+    /// retraction, which computes the authoritative value from the
+    /// evidence ledger rather than folding one perception at a time.
+    fn set_belief_value(&mut self, proposition: &str, value: HexValue) {
+        if let Some(prop) = self.state.beliefs.get_mut(proposition) {
+            prop.value = value;
+        } else {
+            self.state.beliefs.add_proposition(proposition, value);
+        }
+    }
+
+    /// Recompute a proposition's authoritative value from the surviving
+    /// (non-retracted) evidence in the ledger (issue #16). This is the
+    /// "evidence-recompute is authoritative" doctrine at the
+    /// `ResearchEvent` boundary: the value is an order-independent
+    /// function of the surviving evidence multiset, via
+    /// [`hari_lattice::HexLattice::combine_evidence_set`] (any standing
+    /// positive+negative pair is `Contradictory`; an empty survivor set
+    /// is `Unknown`). Because the value is derived fresh from survivors
+    /// and nothing is carried, a retraction that removes one side of a
+    /// conflict dissolves the derived contradiction with no cascade
+    /// logic.
+    fn recompute_from_ledger(&self, proposition: &str) -> HexValue {
+        let survivors = self
+            .evidence_log
+            .get(proposition)
+            .into_iter()
+            .flatten()
+            .filter(|e| !e.retracted)
+            .map(|e| e.value);
+        hari_lattice::HexLattice::combine_evidence_set(survivors)
     }
 
     /// Record an `AgentVote` into [`Self::swarm`]. The agent identified
@@ -1505,7 +1832,10 @@ impl ResearchEventPayload {
             Self::BeliefUpdate { proposition, .. }
             | Self::ExperimentResult { proposition, .. }
             | Self::AgentVote { proposition, .. }
-            | Self::Retraction { proposition, .. } => Some(proposition),
+            | Self::Retraction { proposition, .. }
+            // Supersession's primary proposition is the *retired* claim;
+            // the successor is reached via `touched_propositions`.
+            | Self::Supersession { proposition, .. } => Some(proposition),
             // RelationDeclaration touches two propositions; callers
             // that need both should use
             // `ResearchEvent::touched_propositions` instead.
@@ -1785,10 +2115,12 @@ fn compute_metrics(
             }
             // GoalUpdate doesn't touch beliefs; RelationDeclaration may
             // *cause* belief changes via propagation but doesn't itself
-            // emit a (proposition, value) tuple to attribute. Both skip
-            // the per-proposition flip-tracking metric.
+            // emit a (proposition, value) tuple to attribute; Supersession
+            // freezes a claim at its last value (no new value to
+            // flip-track). All skip the per-proposition flip metric.
             ResearchEventPayload::GoalUpdate { .. }
-            | ResearchEventPayload::RelationDeclaration { .. } => continue,
+            | ResearchEventPayload::RelationDeclaration { .. }
+            | ResearchEventPayload::Supersession { .. } => continue,
         };
         *events_per_prop.entry(prop.clone()).or_insert(0) += 1;
         if let Some(prev) = last_value.get(&prop) {
@@ -2113,6 +2445,7 @@ mod tests {
             payload: ResearchEventPayload::Retraction {
                 proposition: "tool-error-is-fixed".to_string(),
                 reason: "run used stale binary".to_string(),
+                retracts: None,
             },
         });
 
