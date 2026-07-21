@@ -52,6 +52,20 @@ correlates inversely with data presence.** March 2026 is a mass grave:
 Demerzel's entire conscience/constitution/cases layer was built
 end-to-end and abandoned in one week (03-17→23).
 
+> **Correction (2026-07-21, verify-before-archive sweep for #29,
+> Demerzel `7e15e05`):** two of this survey's "dead" classifications
+> were false kills. The **conscience layer** is alive — it gates
+> `run_afk_cycle.py` self-merge (weight ≥ 0.8) and feeds
+> demerzel-ideation/autofix — and **state/resilience** feeds
+> `build_manifest`'s health harvest into `governance-health.json`.
+> Both were consumed by code paths the inventory didn't trace. The
+> March-mass-grave items that WERE archived with verdicts: the 9
+> slot-*/visual-* placeholder beliefs, `state/cases`,
+> constitution evolution-history, LOG.md. Lesson for the method: a
+> loop's reader can be a *conditional guard* rather than a data
+> transform, and grep-for-readers misses guards — verify liveness
+> before every kill.
+
 **Artifacts: ~15 compounding, ~18 static-load-bearing, ~13 orphaned,
 ~2 rotted** of 48 sampled. Discriminators, ranked by the archaeology:
 
