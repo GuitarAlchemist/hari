@@ -227,6 +227,8 @@ The Phase 5 negative result against the SL baseline opens a real project-directi
 
 **Follow-up shipped**: Subjective Logic is now a first-class `PriorityModel` variant — `PriorityModel::SubjectiveLogic`. It still runs through the existing `subjective_logic::process_event` pipeline (Opinion fusion, projected probability + uncertainty thresholds), but `process_research_event` now short-circuits to it when the variant is set, bypassing the action-scoring abstraction (which SL doesn't use), perception integration, swarm bridging, and belief-graph propagation. Reachable from JSON via `SessionConfig.priority_model = "SubjectiveLogic"`. Per-event outcomes are byte-equal to the standalone `process_research_trace_subjective_logic` (regression-pinned by `cognitive_loop_subjective_logic_matches_standalone_sl_pipeline`). The default stays `RecencyDecay`; switching to SL is an explicit owner call like the previous substrate decision.
 
+**Guard condition** (from the abandoned 2026-07-19 substrate-role pre-registration, §8): any future claim that structured dynamics (Lie or successor) beats the SL baseline must *additionally* survive a matched-capacity, matched-tuning learned-dynamics control. Beating SL alone is no longer sufficient evidence for the structured-dynamics hypothesis — an unstructured learner with the same parameter budget must also lose before the claim stands.
+
 ## Phase 8: Belief-Graph Reasoning — **implemented**
 
 Goal: let IX declare logical relations between propositions and have Hari derive new beliefs by propagation — classical forward inference over a typed graph.
