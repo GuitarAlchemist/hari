@@ -199,10 +199,15 @@ impl HexDistribution {
         self.masses[merge_rank(v) as usize]
     }
 
-    /// `true` iff `C > ESCALATION_THRESHOLD`. Callers should check
-    /// this immediately after each merge.
+    /// `true` iff `C` exceeds [`ESCALATION_THRESHOLD`] as a share of
+    /// the *informative* mass — `Unknown` is excluded from the
+    /// denominator (spec v1.2, issue #28). Abstention is the absence
+    /// of evidence and must not be able to mute an evidence-based
+    /// alarm; an all-`Unknown` distribution never escalates. Callers
+    /// should check this immediately after each merge.
     pub fn escalation_triggered(&self) -> bool {
-        self.get(HexValue::Contradictory) > ESCALATION_THRESHOLD
+        let informative: f64 = self.masses.iter().sum::<f64>() - self.get(HexValue::Unknown);
+        informative > 0.0 && self.get(HexValue::Contradictory) / informative > ESCALATION_THRESHOLD
     }
 }
 
@@ -871,6 +876,54 @@ mod tests {
         let c_mass = state.distribution.get(HexValue::Contradictory);
         assert!(c_mass > 0.33 - 1e-9);
         assert!(state.distribution.escalation_triggered());
+    }
+
+    /// Spec v1.2 (issue #28): escalation is a share of *informative*
+    /// mass, so abstention cannot mute it. Under v1.1 a single
+    /// Unknown observation here dropped C-mass to 1/4 < 0.3 and
+    /// silenced the alarm.
+    #[test]
+    fn escalation_immune_to_abstention_flooding() {
+        let mut obs_list = vec![
+            obs(
+                "tars",
+                "d",
+                0,
+                0,
+                "ix_git_gc::valuable",
+                HexValue::True,
+                1.0,
+            ),
+            obs("ix", "d", 0, 1, "ix_git_gc::valuable", HexValue::False, 1.0),
+        ];
+        assert!(merge_all(&obs_list).distribution.escalation_triggered());
+        for n in 0..20 {
+            obs_list.push(obs(
+                &format!("bystander-{n}"),
+                "d",
+                0,
+                2 + n,
+                "ix_git_gc::valuable",
+                HexValue::Unknown,
+                1.0,
+            ));
+            assert!(
+                merge_all(&obs_list).distribution.escalation_triggered(),
+                "abstention muted escalation at n={}",
+                n + 1
+            );
+        }
+    }
+
+    /// Spec v1.2 (issue #28): zero informative mass means nothing
+    /// conflicts — all-Unknown input must not escalate.
+    #[test]
+    fn all_unknown_does_not_escalate() {
+        let obs_list = vec![
+            obs("a", "d", 0, 0, "claim", HexValue::Unknown, 1.0),
+            obs("b", "d", 0, 1, "claim", HexValue::Unknown, 1.0),
+        ];
+        assert!(!merge_all(&obs_list).distribution.escalation_triggered());
     }
 
     #[test]

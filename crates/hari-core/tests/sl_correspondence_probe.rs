@@ -296,21 +296,23 @@ fn theorem_consensus_flooding_separates_the_two() {
     assert!(prev_c > ESCALATION_THRESHOLD);
 }
 
-/// THEOREM C′ (the mirror separation, found by probe 2's stray
-/// cells): dilution by ABSTENTIONS runs the other way. Take the same
-/// standing T-vs-F conflict and flood with n Unknown observations
-/// from fresh sources. `Unknown` synthesizes nothing in the Belnap
-/// table but carries full normalization mass, so hex C-mass is
-/// 1/(3+n): ONE Unknown observation mutes the escalation flag
-/// (1/4 = 0.25 < 0.3). SL's embedded Unknown is near-vacuous
-/// evidence ((r,s) = (1/9, 1/9)): the fused conflict b = d → 0.5
-/// from below and the conflict flag NEVER clears.
+/// THEOREM C′ (v1.2 — issue #28 closed the mirror separation this
+/// theorem originally pinned): flood the same standing T-vs-F
+/// conflict with n Unknown observations from fresh sources.
+/// `Unknown` synthesizes nothing in the Belnap table but carries
+/// full normalization mass, so raw hex C-mass is still exactly
+/// 1/(3+n) — under spec v1.1 ONE Unknown muted the escalation flag
+/// (1/4 < 0.3). Spec v1.2 escalates on C's share of *informative*
+/// mass (U excluded), so the share stays 1/3 for every n and the
+/// alarm survives. SL's embedded Unknown is near-vacuous evidence
+/// ((r,s) = (1/9, 1/9)): b = d → 0.5 from below and its conflict
+/// flag never clears either.
 ///
-/// Together with Theorem C: the hexavalent C-channel is anti-dilutive
-/// against corroborating support but fully dilutable by abstentions;
-/// SL conflict is the exact mirror — dilutable by support, immune to
-/// abstentions. Neither system's contradiction detector dominates the
-/// other; they disagree on what counts as washing out a conflict.
+/// Together with Theorem C: hex escalation is now immune to BOTH
+/// flooding directions (corroborating support and abstention), while
+/// SL conflict remains support-mortal. The v1.1 version of this
+/// theorem pinned the opposite hex behavior — the flip is the point
+/// (see the ratification on issue #28).
 #[test]
 fn theorem_unknown_flooding_mirrors_the_separation() {
     let cfg = SubjectiveLogicConfig::default();
@@ -327,11 +329,11 @@ fn theorem_unknown_flooding_mirrors_the_separation() {
         let c = merged.distribution.get(HexValue::Contradictory);
         assert!(
             (c - 1.0 / (3.0 + n as f64)).abs() < 1e-12,
-            "C-mass should be exactly 1/(3+n) at n={n}"
+            "raw C-mass should be exactly 1/(3+n) at n={n}"
         );
         assert!(
-            !merged.distribution.escalation_triggered(),
-            "a single Unknown should already mute hex escalation (n={n})"
+            merged.distribution.escalation_triggered(),
+            "abstention must no longer mute hex escalation (n={n}; spec v1.2)"
         );
         let fused = fuse_mapped(&set);
         assert!(
@@ -489,22 +491,23 @@ fn probe_map_then_fuse_vs_merge_then_map_randomized() {
 }
 
 /// PROBE 2: decision-level confusion matrix — hex `escalation_
-/// triggered` (C-mass > 0.3) vs SL's conflict branch (b > 0.4 AND
-/// d > 0.4) over 2000 random sets (seed 0xE5CA1A7E). Measured cells:
+/// triggered` (spec v1.2: C over informative mass > 0.3) vs SL's
+/// conflict branch (b > 0.4 AND d > 0.4) over 2000 random sets
+/// (seed 0xE5CA1A7E). Measured cells under v1.2:
 ///
-///   hex-esc ∧ SL-conflict:      172   (agree: escalate)
-///   ¬hex-esc ∧ ¬SL-conflict:    923   (agree: no escalation)
-///   hex-esc ∧ ¬SL-conflict:     895   (hex escalates alone)
-///   ¬hex-esc ∧ SL-conflict:      10   (SL conflicts alone)
+///   hex-esc ∧ SL-conflict:      180   (agree: escalate)
+///   ¬hex-esc ∧ ¬SL-conflict:    742   (agree: no escalation)
+///   hex-esc ∧ ¬SL-conflict:    1076   (hex escalates alone)
+///   ¬hex-esc ∧ SL-conflict:       2   (SL conflicts alone)
 ///
-/// Agreement ≈ 54.8% — barely better than a coin flip. The asymmetry
-/// is heavily one-sided: hex escalates alone on ~45% of inputs (its
-/// synthesized-C channel fires on every opposite-polarity pair,
-/// including weak D-vs-P conflicts SL fuses straight through), while
-/// SL conflicts alone on only 0.5% — and those stray cells are
-/// exactly the Unknown-dilution mirror pinned in Theorem C′ (U mass
-/// mutes hex's normalized C share but barely moves SL's fused b/d).
-/// Neither detector simulates the other.
+/// Agreement ≈ 46.1% — below a coin flip. (v1.1 historical cells:
+/// 172/923/895/10, agreement ≈ 54.8%.) The asymmetry got MORE
+/// one-sided with the issue-#28 change: hex now escalates alone on
+/// ~54% of inputs — the U-heavy sets that used to mute it moved from
+/// the agree-no column into hex-only — while SL-alone conflicts
+/// dropped 10 → 2 because most of those stray cells WERE the
+/// Unknown-dilution mirror pinned by Theorem C′, now closed. Neither
+/// detector simulates the other.
 #[test]
 fn probe_escalation_decision_confusion_matrix() {
     let cfg = SubjectiveLogicConfig::default();
@@ -532,16 +535,16 @@ fn probe_escalation_decision_confusion_matrix() {
     );
 
     // Shape of the asymmetry is the finding: hex-alone escalations are
-    // massive (measured 895/2000), SL-alone conflicts are rare but
-    // real (measured 10/2000 — the Theorem C′ mirror), and total
-    // agreement is barely above chance.
+    // massive (measured 1076/2000 under v1.2), SL-alone conflicts are
+    // near-extinct (measured 2/2000 — the Theorem C′ mirror is closed
+    // by v1.2), and total agreement is below chance.
     assert!(
         hex_only > trials / 5,
-        "hex-only escalations collapsed (measured 895/2000), got {hex_only}"
+        "hex-only escalations collapsed (measured 1076/2000), got {hex_only}"
     );
     assert!(
-        sl_only > 0 && sl_only < trials / 50,
-        "SL-only conflicts should be rare but nonzero (measured 10/2000), got {sl_only}"
+        sl_only < trials / 50,
+        "SL-only conflicts should be near-zero under v1.2 (measured 2/2000), got {sl_only}"
     );
     assert!(both > 0 && neither > 0, "degenerate matrix");
     let agreement = (both + neither) as f64 / trials as f64;
