@@ -1,0 +1,64 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "demerzel-belief-refresh",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "persona-count-is-14",
+        "value": "True",
+        "evidence": {
+          "as_of": "2026-03-17",
+          "note": "14 original personas at framework inception"
+        }
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "demerzel-belief-refresh",
+      "payload": {
+        "type": "supersession",
+        "proposition": "persona-count-is-14",
+        "superseded_by": "persona-count-is-20",
+        "reason": "framework expanded beyond the original 14 personas"
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "demerzel-belief-refresh",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "persona-count-is-20",
+        "value": "True",
+        "evidence": {
+          "as_of": "2026-03-23",
+          "note": "13 Streeling departments + 7 originals reconciled to 20"
+        }
+      }
+    },
+    {
+      "cycle": 4,
+      "source": "demerzel-belief-refresh",
+      "payload": {
+        "type": "supersession",
+        "proposition": "persona-count-is-20",
+        "superseded_by": "persona-count-is-27",
+        "reason": "further expansion: 13 departments + 7 ga agents + 7 originals"
+      }
+    },
+    {
+      "cycle": 5,
+      "source": "demerzel-belief-refresh",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "persona-count-is-27",
+        "value": "True",
+        "evidence": {
+          "as_of": "2026-07-20",
+          "note": "current live head of the supersession chain"
+        }
+      }
+    }
+  ]
+}

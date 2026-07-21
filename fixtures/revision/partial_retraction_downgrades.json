@@ -1,0 +1,43 @@
+{
+  "dimension": 4,
+  "events": [
+    {
+      "cycle": 1,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "model-v3-beats-baseline",
+        "value": "True",
+        "evidence": {
+          "eval": "held-out-A",
+          "delta": "+3.1pt",
+          "note": "corroborating source 1"
+        }
+      }
+    },
+    {
+      "cycle": 2,
+      "source": "ix-runner",
+      "payload": {
+        "type": "belief_update",
+        "proposition": "model-v3-beats-baseline",
+        "value": "True",
+        "evidence": {
+          "eval": "held-out-B",
+          "delta": "+2.7pt",
+          "note": "corroborating source 2 — two independent sources make it True"
+        }
+      }
+    },
+    {
+      "cycle": 3,
+      "source": "ix-agent-evaluator",
+      "payload": {
+        "type": "retraction",
+        "proposition": "model-v3-beats-baseline",
+        "reason": "held-out-A logs corrupted; result can no longer be verified",
+        "retracts": { "source": "ix-agent-evaluator", "cycle": 1 }
+      }
+    }
+  ]
+}
