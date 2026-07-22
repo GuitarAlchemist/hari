@@ -1,12 +1,12 @@
 # Multi-AI collaboration: Claude Code ↔ Codex / Gemini / local models (2026-07-22)
 
 **Method.** Deep-research workflow (Fable 5 subagents): 5 angles → 22 sources (10
-primary) → 109 claims → top 25 sent to 3-vote adversarial verification. **The monthly
-spend limit killed 70/104 agents mid-verify and the synthesizer**, so: 2 claims weakly
-confirmed (1-1 votes), 23 unverified-by-limits, **0 refuted**. This synthesis was done in
-the main loop. Verification status is marked per claim: ✓ = survived at least one
-adversarial vote with none against; ⚠ = extracted from the source but adversarially
-unverified. Treat ⚠ as source-attributed, not fact-checked.
+primary) → 109 claims → top 25 sent to 3-vote adversarial verification. The original run
+was crippled by spend limits (70/104 verifier agents killed); a cached resume then
+verified most, and the last 8 (official-vendor-docs claims) were cross-checked directly
+against the source docs. **Final status (2026-07-22): 21 confirmed, 4 refuted, 0
+unverified — see §7.** Per-claim markers: ✓ = confirmed; ✗ = refuted on adversarial
+re-check; no ⚠ (unverified) claims remain.
 
 ## 1. The headline result: cross-vendor review is asymmetric
 
@@ -97,14 +97,24 @@ only, no history).
 
 ## 5. What the vendors officially support (the lingua-franca surfaces)
 
-- ⚠ **OpenAI/Codex**: PR comments are the coordination channel (`@codex review`
+- ✓ **OpenAI/Codex**: PR comments are the coordination channel (`@codex review`
   trigger, or auto-review on PR open); behavior is steered by **AGENTS.md** files with a
-  `## Code Review Rules` section, root-level + nested per-service
-  [[developers.openai.com](https://developers.openai.com/codex/integrations/github)].
-- ⚠ **Anthropic**: Writer/Reviewer via **separate fresh-context sessions** (reviewer
+  `## Code Review Rules` section, root-level + nested per-service. Confirmed verbatim
+  against the official doc (2026-07-22): *"mention `@codex review`"* / *"turn on
+  **Automatic reviews**"*; *"Codex searches your repository for `AGENTS.md` files and
+  follows the applicable code review rules"*; *"Add a `## Code Review Rules` section to
+  the file closest to the code the rules govern"*; *"Put repository-wide rules in the
+  root `AGENTS.md` and service-specific rules in a nested file"*
+  [[learn.chatgpt.com](https://learn.chatgpt.com/docs/third-party/github)] (was
+  developers.openai.com; 308-redirected).
+- ✓ **Anthropic**: Writer/Reviewer via **separate fresh-context sessions** (reviewer
   independence through context isolation, not necessarily a different vendor); **git
   worktrees** for parallel agents on one repo; **headless mode with JSON/stream-JSON
-  output** as the official interface for external pipelines and other orchestrators
+  output** as the official interface for external pipelines and other orchestrators. All
+  three confirmed verbatim (2026-07-22): the Writer/Reviewer session table (*"A fresh
+  context improves code review since Claude won't be biased toward code it just wrote"*),
+  *"Worktrees: run separate CLI sessions in isolated git checkouts"*, and `claude -p …
+  --output-format json` / `stream-json`
   [[code.claude.com/docs](https://code.claude.com/docs/en/best-practices)].
 - (Fetched but low-claim-yield: A2A protocol adoption remains platform-level, not a
   coding-agent handoff standard in practice; MCP is the shared *tool* layer, not an
@@ -126,18 +136,24 @@ only, no history).
 |---|---|---|---|
 | 1 | Strip author-model metadata + add position-swap to cross-model-review CI and tribunals | Low | ⚠ 2604.16790 (bias flips on framing/labels) |
 | 2 | Grade the Codex→Claude review gate's precision via pr-grades; demote to advisory if low | Low | ✓/⚠ 407032793 (direction asymmetry) |
-| 3 | Add `## Code Review Rules` to ga's AGENTS.md | Trivial | ⚠ official Codex docs |
+| 3 | Add `## Code Review Rules` to ga's AGENTS.md (root + nest per-service) | Trivial | ✓ official Codex docs (confirmed verbatim) — **shipped** ga `39159837` |
 | 4 | Keep deterministic gates primary; treat any judge panel as ~2 effective votes | Doctrine | ⚠ 2605.29800 |
 | 5 | Claims ledger: keep JSONL; upgrade path = git atomic-ref CAS (TASKS.md pattern) if collisions appear; consider versioning the ledger | Low | ⚠ tasksmd |
 | 6 | Hand off artifacts (JSON contracts), never summaries; single agent until context degrades | Doctrine | ⚠ DPI/Stanford |
 | 7 | ~~Local-model PoLL panels for cheap triage~~ **RETRACTED** — supporting claims refuted 0-3 on re-verification (see §7); tars qwen gates stay valid as deterministic gates only | — | ✗ 2502.18018 refuted |
 
-## 7. Verification debt — partially paid (2026-07-22 resume)
+## 7. Verification debt — PAID (2026-07-22)
 
 Original run: 23 of 25 claims ⚠ (spend limit killed the verifiers). The cached resume
-re-ran verification: **13 confirmed 3-0, 4 REFUTED 0-3, 8 still unverified** (limit hit
-again mid-run; the 8 are the Codex-docs and Anthropic-guidance claims, which come
-directly from official vendor documentation).
+re-ran adversarial verification: **13 confirmed 3-0, 4 REFUTED 0-3, 8 left unverified**
+(limit hit again mid-run). Those last 8 — the Codex-docs and Anthropic-guidance claims —
+were then verified **directly against the official docs** (low-budget path: two targeted
+doc fetches, no workflow fan-out) on 2026-07-22 and all 8 came back **CONFIRMED verbatim**
+(see §5, now ✓). Final tally: **21 confirmed, 4 refuted, 0 unverified.** No ⚠ claims
+remain in this report.
+
+One redirect of note: `developers.openai.com/codex/integrations/github` now 308-redirects
+to `learn.chatgpt.com/docs/third-party/github` — citations updated.
 
 **Upgraded to confirmed (selection):** the 9-judge-panel ≈ 2.18 effective votes result;
 cross-vendor correlation — with harder numbers than the original extract: **Claude×Gemini
@@ -174,4 +190,6 @@ explicitly complementary to MCP. Still no confirmed evidence of *coding-agent ha
 usage specifically, but "platform-level only, low traction" undersold it — worth
 re-checking in 6 months for coding-agent tooling.
 
-Remaining 8 ⚠ claims: cache-cheap to re-verify (`resumeFromRunId: wf_18c02537-fbe`).
+Remaining 8 ⚠ claims: **now verified** — see the confirmation block at the top of §7.
+The resume path (`resumeFromRunId: wf_18c02537-fbe`) is preserved for provenance but is no
+longer needed; the official-docs cross-check settled all eight without another workflow run.
