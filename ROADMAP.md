@@ -1,5 +1,33 @@
 # Hari Roadmap
 
+## Enhancement Summary (deepened 2026-07-21)
+
+Six parallel research/review agents deepened the OPEN items (completed phases untouched):
+calibration prior-art, eval design, cognition-reframe axes, cross-repo conformance,
+architecture review, simplicity/YAGNI review. Insights appear as `> Research insights`
+blocks under each open section, with citations. Key findings:
+
+1. **Stale item found**: Phase 4's deferred "source reliability over repeated scenarios"
+   was shipped by issue #14 — closed below, with the swarm-integration remainder noted.
+2. **Live drift found**: hari's `fixtures/hex-merge/` copy has byte-drifted from the
+   canonical `Demerzel/fixtures/hex-merge/` corpus (CRLF/LF); ix already consumes the
+   canonical corpus via submodule. The "deferred" fixture suite mostly exists — hari is
+   the last consumer on a copy.
+3. **Architectural liability named**: the SubjectiveLogic short-circuit is a parallel
+   substrate, not a priority model — it silently degrades Phase 8 relations and #16
+   corrections, and gates the "promote SL to default" option.
+4. **Reframe axes adjudicated** (with the matched-capacity control specified):
+   continuity/stability KEEP (cheap, falsifiable), interpretability KEEP-conditional
+   (probe-AUC vs control on held-out labels), structure-constant analysis CUT.
+5. **Eval protocol designed** for the Near-Term Milestone: paired counterfactual replay
+   over recorded traces (the existing shadow loop is the engine), should-act/should-abstain
+   paired tasks, trace-clustered bootstrap, pre-registered decision rule.
+6. **Both open calibration questions** resolve to "empirical claim with a pinned
+   falsifier" — concrete defaults proposed under Open Questions.
+
+Agent disagreements are flagged inline as **[flagged]** — they are owner calls, not
+settled conclusions.
+
 ## Strategic Frame
 
 Hari is a research-state substrate for autoresearch systems. Its job is not to be the researcher, optimizer, or paper reader. Its job is to track uncertain claims, preserve contradictory evidence, coordinate agent beliefs, and recommend what needs more investigation.
@@ -169,8 +197,13 @@ Exit criteria status:
 - ✅ Agent roles change outcomes in measurable ways. The headline swarm-side test `role_weighted_consensus_diverges_from_equal_when_trust_is_lopsided` shows a 1-high-trust + 3-low-trust dissent fixture moving from `Doubtful` (Equal) to `Contradictory` (RoleWeighted). The bridge-side test `role_weighted_changes_outcomes_vs_equal_with_declared_initial_agents` shows the same effect propagating into the cognitive loop's action stream on `swarm_dissent.json`.
 - ✅ Reports can explain why one source was trusted more than another. The `InboxStats::filtered` count surfaces dropped low-trust messages; `consensus_with(RoleWeighted)` makes the weighting itself the explanation (it's a one-knob policy, not a black box).
 - ✅ Bridge into the IX research-event boundary. `AgentVote` events now actually drive a swarm; `TrustModel` is reachable from the streaming protocol via `SessionConfig.trust_model`.
-- ⏸ Track source reliability over repeated scenarios. Still deferred — needs cross-session reliability tracking that the current single-session loop doesn't own. Not blocked technically; just out of scope for this slice.
+- ✅→ **Closed as owned-by-#14** (2026-07-21 deepening): "Track source reliability over repeated scenarios" was superseded by the issue-#14 source-reliability ledger (per-source precision, pooled baseline, entrenchment ordering) — `AgentVote` sources and `ResearchEvent.source` are the same identity space. Building agent-level history inside hari-swarm would duplicate that store and violate its session-scoped, library-only design. The live remainder: future trust calibration should *read* the #14 ledger in hari-core and feed swarm roles through the existing `SessionConfig.initial_agents` seam — surfaced, never auto-applied, awaiting owner review.
 - ⏸ Distinguish consensus *strength* from raw agreement on the report side. The current `ConsensusResult.agreement` is intentionally a head count under both models (pinned by `agreement_ratio_remains_a_head_count_under_role_weighted`); a separate `weight_share` field is a small follow-up if it turns out to be useful.
+
+> **Research insights (2026-07-21).** `weight_share`: simplicity review says CUT (no
+> consumer; an afternoon's work if a real IX run ever needs it), architecture review says
+> harmless-additive-whenever. **[flagged]** Default: don't build until a RoleWeighted
+> decision needs explaining in a real report.
 
 ## Phase 5: Cognition Integration — **complete (negative result)**
 
@@ -215,6 +248,48 @@ What's NOT yet implemented as part of Phase 6:
 - A real IX-side autoresearch loop driving `hari-core serve` end-to-end against actual benchmarks (vs. fixtures). The reference client in `clients/ix_reference/` proves the wire works; producing data that informs the Cognition Substrate Choice still needs IX itself.
 - Authenticated / multi-tenant deployment (explicitly out of scope per the design doc).
 
+> **Research insights (2026-07-21) — eval design for the remainders.**
+>
+> - **The shadow loop is the counterfactual-replay engine.** 2024–2026 practice for
+>   A/B-ing decision support inside agent loops is record-once, replay-under-N-policies
+>   ([Record & Replay](https://arxiv.org/html/2505.17716v1), [Causal Agent
+>   Replay](https://arxiv.org/html/2606.08275v1)). Run baseline and Hari policies as
+>   shadows over ONE recorded IX trace — never two live runs (nondeterminism destroys
+>   pairing). `replay --compare3` already does this.
+> - **Paired tasks give ground truth by construction.** Adopt the
+>   [AgentAbstain](https://arxiv.org/html/2607.10059) design: each eval task ships as a
+>   should-act variant + a should-abstain variant differing by one injected trigger, so
+>   every decision is gradeable and no always-Accept/always-Wait policy clears 50%.
+>   Metrics: Act Accuracy, Abstain Accuracy, Paired Accuracy, Conditioned Abstention Rate.
+>   This closes the `phase5-results.md` §2 "which action was right?" gap and the
+>   Wait-shaming problem (§6: report `false_rejection_count` alongside
+>   `false_acceptance_count` — a win by emitting more Waits must show non-inferior
+>   false-rejection or it's disqualified).
+> - **Two metric bugs to fix before any eval**: (1) `forecast.rs` (J2) already computes
+>   per-belief Brier + calibration buckets and *nothing consumes it* — wiring the
+>   forecast ledger into the report is the highest-leverage, lowest-cost addition;
+>   (2) `consensus_stability` and `goal_completion_rate` read event payloads upstream of
+>   the policy layer, so they're tied by construction on all six fixtures — fix the
+>   derivation or exclude them from primary comparison.
+> - **Statistics for small n**: analyze per-decision (not per-trace: ~20 decisions ×
+>   5–10 traces ≈ 100–200 paired decisions), aggregate with a paired bootstrap
+>   *clustered by trace* (B=10,000), and use the dual rule: improvement counts only if
+>   the 95% CI excludes zero AND p<0.05
+>   ([2511.19794](https://www.arxiv.org/pdf/2511.19794)). Pre-register the primary
+>   metric, baselines {IX-unassisted, RecencyDecay, SubjectiveLogic}, decision rule, and
+>   MDE in a git-committed doc BEFORE running (the §6 fixture-selection critique applies
+>   to us too).
+> - **First IX task**: flaky-vs-real benchmark discrimination — IX runs a
+>   micro-benchmark N times with injected perturbations (some real regressions, some
+>   variance); Hari recommends Accept/Wait/Escalate; ground truth is mechanical. Real-data
+>   analogue of `slow_evidence` + `heavy_contradiction`, and it slots directly into the
+>   paired-task design. Second: contradictory results across configs (release/debug).
+>   NOT a good first task: open-ended "is this direction promising".
+> - **Kill/keep rule for the milestone**: Hari-assisted must beat IX-unassisted on the
+>   pre-registered primary metric under the dual rule, and must not LOSE to
+>   `SubjectiveLogic` on calibration — else the honest conclusion is that ~600 lines of
+>   SL delivers the benefit (the §7.5 lesson, pointed at ourselves).
+
 ## Open: Cognition Substrate Choice
 
 The Phase 5 negative result against the SL baseline opens a real project-direction question. Three honest paths:
@@ -228,6 +303,62 @@ The Phase 5 negative result against the SL baseline opens a real project-directi
 **Follow-up shipped**: Subjective Logic is now a first-class `PriorityModel` variant — `PriorityModel::SubjectiveLogic`. It still runs through the existing `subjective_logic::process_event` pipeline (Opinion fusion, projected probability + uncertainty thresholds), but `process_research_event` now short-circuits to it when the variant is set, bypassing the action-scoring abstraction (which SL doesn't use), perception integration, swarm bridging, and belief-graph propagation. Reachable from JSON via `SessionConfig.priority_model = "SubjectiveLogic"`. Per-event outcomes are byte-equal to the standalone `process_research_trace_subjective_logic` (regression-pinned by `cognitive_loop_subjective_logic_matches_standalone_sl_pipeline`). The default stays `RecencyDecay`; switching to SL is an explicit owner call like the previous substrate decision.
 
 **Guard condition** (from the abandoned 2026-07-19 substrate-role pre-registration, §8): any future claim that structured dynamics (Lie or successor) beats the SL baseline must *additionally* survive a matched-capacity, matched-tuning learned-dynamics control. Beating SL alone is no longer sufficient evidence for the structured-dynamics hypothesis — an unstructured learner with the same parameter budget must also lose before the claim stands.
+
+> **Research insights (2026-07-21) — the reframe axes, adjudicated.**
+>
+> Structural fact shaping all verdicts: hari's generators are hand-seeded and FIXED —
+> nothing is learned. Nearly all "Lie structure pays off" literature is about *learned*
+> generators constraining a hypothesis space hari doesn't have.
+>
+> - **Axis (b) continuity/stability — KEEP** (cheapest, most falsifiable). Metrics:
+>   spectral radius of `exp(Σ hᵢGᵢ·dt)` per cycle (assert ≤ 1+ε); state drift under
+>   ε-perturbed evidence; terminal norm over 50+ events. Honest framing:
+>   "norm-preserving generators give boundedness with ZERO tuning" — NOT "Lie beats
+>   unstructured on stability," because spectrally-capped unstructured maps get the same
+>   guarantee ([DeepKoopFormer](https://www.nature.com/articles/s44387-026-00085-3),
+>   [LyaNet](https://proceedings.mlr.press/v162/rodriguez22a/rodriguez22a.pdf)). Expect a
+>   tie on raw drift vs a capped control; report both.
+> - **Axis (a) interpretability — KEEP only conditionally.** Hand-named axes "aligning"
+>   with the goals they were seeded for is circular. The non-circular test: linear-probe
+>   AUC / mutual information from the attention vector to *held-out* labeled event
+>   classes, vs the control's latent trajectory on the same labels
+>   ([TRACE](https://arxiv.org/pdf/2607.06184)). If a plain learned linear map probes
+>   equally well, cut this axis too — that result is worth having.
+> - **Axis (c) structure-constant/commutativity analysis — CUT.** Commutator analysis is
+>   actionable only for controllability decisions (robotics) or as a closure regularizer
+>   when *learning* generators ([2309.07860](https://arxiv.org/pdf/2309.07860)). hari has
+>   neither: `structure_constants()` returns a compute-once constant nothing branches on.
+>   Keep the function + antisymmetry test as a correctness artifact; drop it as a value
+>   claim. Revive only if the project pivots to learning generators from replay traces.
+> - **The matched-capacity control, concretely**: `ψ ← exp(A(perception)·dt)·ψ` with A a
+>   free D×D matrix (16 dof at D=4) driven by the same perception inputs — same state
+>   dim, same integrator, no structure. Since hari's 5 fixed generators are the *smaller*
+>   model, any hari win is unambiguously structure, not capacity (satisfies the harder
+>   ablation direction for free; per
+>   [symmetry–data exchange-rate methodology](https://arxiv.org/pdf/2606.01090)). Add a
+>   spectrally-capped variant of A for the axis-(b) comparison.
+> - **[flagged]** Simplicity review goes further: freeze hari-cognition entirely (no
+>   reframe instrumentation) — the crate stays because cutting it breaks
+>   `PriorityModel::Lie` and the reproducibility of the flagship negative result (592 of
+>   ~19,200 workspace lines, nalgebra-only dep, hari-swarm depends on it), but reframe is
+>   closed unless someone arrives with a pre-registered axis AND the control. The
+>   architecture review adds: pre-register per-axis comparator values BEFORE
+>   instrumenting, else the reframe becomes the roadmap's first A/B-doctrine violation
+>   (axes only Lie can score on are unfalsifiable by construction). Owner call: freeze
+>   hard, or fund exactly axes (b) then (a) under the control.
+>
+> **Architectural liability (2026-07-21, must precede any SL-default decision):** the
+> SL short-circuit at the top of `process_research_event` is a parallel substrate wearing
+> a `PriorityModel` variant — it bypasses the evidence ledger, perception, swarm
+> bridging, belief-graph propagation, provenance, and #16 revision, and has already
+> accumulated degradation branches (RelationDeclaration/Withdrawal ignored; Correction
+> downgraded to reset-to-vacuous). Every new payload variant is now implemented twice or
+> degraded once. "Promote SL to default" as currently framed would silently drop Phase 8
+> reasoning, Phase 4 consensus, and provenance. Before ANY such decision: either re-seam
+> SL as an evidence-fusion strategy inside the shared event shell (graph/revision/swarm
+> stay common), or explicitly relabel `PriorityModel::SubjectiveLogic` as a
+> comparison-baseline-only, closing the promote branch. This is the one open item that
+> gets WORSE on its own as unrelated event types land.
 
 ## Phase 8: Belief-Graph Reasoning — **implemented**
 
@@ -275,6 +406,53 @@ Out of scope for this slice (deliberate):
 - `TrustedHexObservation` extension. The PRD lists this as a graduation candidate from Hari → ix-fuzzy; not implemented here because the layering question (does trust live in the merge layer or above it?) is a cross-repo design conversation, not a refactor.
 - Wiring `merge` into `hari-core::CognitiveLoop`. Hari's existing `ResearchEventPayload::AgentVote` → swarm-consensus path is a different shape from G-Set merge over `claim_key`. Bridging the two is a future design call.
 
+> **Research insights (2026-07-21) — all three follow-ups investigated.**
+>
+> - **Fixture suite: mostly already exists, and hari has ALREADY drifted.** The canonical
+>   corpus is `Demerzel/fixtures/hex-merge/` (12 fixtures + README — not 7); ix-fuzzy
+>   already consumes it via its `governance/demerzel` submodule. hari's local copy has
+>   byte-drifted (fixtures 01–07: CRLF vs LF, `cmp` fails) — semantically equal, not
+>   byte-equal, no CI parity guard. Exactly the failure the 2026-05-02 cross-repo report
+>   predicted. Fix (one small PR): add Demerzel as a submodule, repoint
+>   `hex_merge_conformance.rs::fixture_dir()`, delete the local copy — the JSON Schema
+>   Test Suite pattern. Byte-equality becomes true by construction; the submodule SHA is
+>   the version pin. Demerzel's no-runtime-code invariant is preserved (fixtures are pure
+>   data; each consumer owns its runner). Bonus standalone slice: a JSON Schema for the
+>   fixture format in Demerzel (today it's README prose). **[flagged]** Simplicity review
+>   said "defer until first divergence" — the discovered drift IS the first divergence,
+>   so the defer condition has fired.
+> - **TrustedHexObservation: trust stays ABOVE the merge — forced by CRDT correctness,
+>   not preference.** Per-source trust folded into merge makes merged state depend on the
+>   observer's trust table — exactly what a CRDT must not do (cf. [Kleppmann's BFT-CRDT
+>   approach](https://martin.kleppmann.com/papers/bft-crdt-papoc22.pdf): reject before
+>   merge, never weight inside it; Matrix state resolution: merge trust-blind, auth pass
+>   after). Load-bearing subtlety: trust attaches ONLY at the distribution-derivation
+>   step — it scales contribution mass but must NOT change whether a contradiction is
+>   detected or escalated (else a low-trust source silently mutes a T/F conflict — the
+>   v1.2 abstention-muting hole in a new guise). Smallest slice:
+>   `project_trusted(state, trust_fn)` downstream of an untouched `merge`; pin
+>   `project_trusted(state, |_| 1.0) == state.distribution` (uniform trust = identity)
+>   plus a test that a low-trust source's C still appears and still escalates. That test
+>   IS the layering decision, executable. All 9 proof obligations survive by
+>   construction.
+> - **Merge↔CognitiveLoop: partially wired already; the shapes answer different
+>   questions.** The #16 revision path already calls `merge_with_tombstones` +
+>   `project_belief`; only the live `AgentVote` path routes exclusively to swarm
+>   consensus. Consensus collapses to a point value (trust-aware,
+>   contradiction-collapsing); merge yields a distribution + synthesized C + escalation
+>   (contradiction-preserving). Falsifiable hypothesis: the swarm path hides escalations
+>   merge would raise — `swarm_dissent.json` reaches Contradictory only under lopsided
+>   RoleWeighted trust, but Belnap `T+F→C` is trust-blind. Smallest A/B (routing change,
+>   all building blocks in-tree): `PerceptionModel::{SwarmConsensus, GSetMerge}` on
+>   `SessionConfig`, default preserving behavior bit-for-bit; divergence test asserting
+>   GSetMerge escalates under `Equal` where SwarmConsensus yields Doubtful. If it can't
+>   diverge, that's also an answer. **[flagged]** Simplicity review says CUT (second
+>   consensus surface, zero demonstrated decision delta); architecture review says never
+>   wire merge as a *parallel* hari-core path but consider re-basing swarm consensus ON
+>   merge behind `consensus_with`. Sequencing consensus: fixture suite first (lock
+>   conformance before merge is touched), then the layering slice, then — only if an
+>   owner wants the question answered — the PerceptionModel A/B.
+
 ## Near-Term Milestone
 
 **Original** (pre-SL data): Hari can run a 50-cycle JSON research scenario in baseline and experimental modes, produce a metrics report, and show whether Lie-inspired state evolution changes research decisions compared with a simple priority baseline. — *Delivered.*
@@ -288,3 +466,66 @@ Out of scope for this slice (deliberate):
 - Should consensus optimize for correctness, caution, or investigation value?
 - Which IX research tasks are most suitable for first evaluation?
 - What role should GA play: scenario generator, domain oracle, or external evaluator?
+
+> **Research insights (2026-07-21) — the five questions, adjudicated.**
+>
+> **Q1 (thresholds): make them empirical claims with pinned falsifiers, not parameters.**
+> The numbers already exist (hex↔SL embedding + Accept b>0.7 / Escalate C-mass>0.3 in
+> `2026-07-20-hexmerge-sl-correspondence.md`) but were chosen for the correspondence
+> study, never calibrated against outcomes. Proposed default: threshold ONE scalar — SL
+> projected probability `P = b + a·u` (Jøsang) — with pre-registered bands
+> (P≥0.85→T, 0.6–0.85→Probable, 0.4–0.6→Unknown, mirrored for D/F); route to
+> `Contradictory` only via a two-sided rule (b>τc AND d>τc — C stays off-chain, never
+> from a mid-range projection); hard uncertainty gate `u≥0.6→Unknown` (autonomy never
+> fires from Unknown). Judge any band set by threshold-weighted Brier reliability
+> (Murphy decomposition) over the replay corpus with incumbent bands as the A/B
+> baseline; derive Accept cutoffs cost-weighted on a calibration split, then FREEZE
+> (AUC-GUIDE). Per-source recalibration only once the #14 ledger has data, and only if
+> it beats `pooled` — mirrors the entrenchment doctrine. Falsifier: a reliability-diagram
+> bound pinned as a `probe_*` regression. Don't tune against fixtures; wait for real IX
+> data (Phase 6 remainder forces this question at the right time).
+>
+> **Q2 (contradiction lifecycle): CLOSE AS DECIDED — the design already answers it.**
+> Contradictions neither decay nor persist unconditionally: they persist exactly while
+> their evidence is live and unresolved. Derived C dissolves with its support (JTMS
+> foundationalism, already ratified in `belief-revision-and-retraction.md` §5); standing
+> C persists anti-dilutively while both sides are in the K-window; explicit resolution
+> only via #16 events (Correction/Supersession/Retraction); entrenchment (AGM ordering
+> via #14) may WEIGHT a conflict but never collapse it — take AGM's ordering, refuse
+> AGM's consistency-restoration. The single falsifiable commitment: **no code path
+> reduces C-mass without a change in the live evidence set** — pin as
+> `contradiction_has_no_independent_decay` and `entrenchment_orders_but_does_not_collapse`.
+> The only defensible time term is the existing K-window on evidence liveness, never a
+> half-life on C.
+>
+> **Q3 (consensus objective): CUT as a question** — unanswerable in the abstract; the
+> false-acceptance/false-escalation metric pair already operationalizes the trade-off,
+> and the answer falls out of milestone data.
+>
+> **Q4 (first IX task): ANSWERED by the eval research** — flaky-vs-real benchmark
+> discrimination (mechanical ground truth via injected perturbations), then
+> contradictory-across-configs. This is the critical-path item: the one genuinely
+> blocking decision is the owner picking the task.
+>
+> **Q5 (GA's role): DEFER** — irrelevant until the milestone produces data; no GA
+> involvement is needed to hit it.
+
+## Sequencing (2026-07-21 synthesis)
+
+Critical path to the Updated Near-Term Milestone (everything else is off-path):
+
+1. Owner picks the first IX task (Q4 — recommend flaky-vs-real benchmark discrimination).
+2. Pre-register metrics/baselines/decision rule/MDE (git-committed doc; wire the unused
+   `forecast.rs` calibration ledger into the report; fix or exclude the two
+   tied-by-construction metrics).
+3. Extend `clients/ix_reference` into the paired-task driver (Hari-on vs Hari-off over
+   recorded traces via the shadow loop).
+4. Run, bootstrap, apply the pre-registered rule, write ONE report in `docs/research/`.
+
+Rework-minimizing order for the rest (architecture review): (a) decide the
+fusion-substrate question — the SL short-circuit liability and the merge/consensus
+question are one decision about how many evidence-combination pipelines hari-core owns;
+(b) land the Demerzel-submodule fixture switch (locks conformance before merge is
+touched); (c) close stale roadmap bullets (done in this pass); (d) TrustedHexObservation
+layering slice after (a); (e) reframe instrumentation only after the Phase 6 report
+format exists, so the axes are born falsifiable.
