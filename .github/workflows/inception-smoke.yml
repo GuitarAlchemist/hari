@@ -1,0 +1,59 @@
+name: Inception Mercury Smoke (Hari)
+
+# Validates hari-extractor's NL → ResearchEvent path against real Mercury 2.
+# The provider is optional: builds/unit tests always run, while the live smoke
+# executes only when INCEPTION_API_KEY is available to the workflow.
+#
+# Triggered on:
+#   - PR to main that touches hari-extractor or this workflow
+#   - manual workflow_dispatch
+#   - weekly Monday 6 AM UTC schedule (vendor-side API drift canary)
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'crates/hari-extractor/**'
+      - '.github/workflows/inception-smoke.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  smoke:
+    name: hari-extractor live smoke
+    runs-on: ubuntu-latest
+    env:
+      INCEPTION_API_KEY: ${{ secrets.INCEPTION_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-hari-extractor
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build
+        run: cargo build -p hari-extractor --release
+
+      - name: Unit tests
+        run: cargo test -p hari-extractor --lib --release
+
+      - name: Live smoke against Mercury
+        if: env.INCEPTION_API_KEY != ''
+        run: cargo test -p hari-extractor --test live_smoke --release -- --nocapture
+
+      - name: Explain skipped live smoke
+        if: env.INCEPTION_API_KEY == ''
+        run: echo "INCEPTION_API_KEY is unavailable in this workflow context; live Mercury smoke skipped. Build and unit tests remain authoritative for this run."
