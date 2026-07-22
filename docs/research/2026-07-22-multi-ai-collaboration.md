@@ -130,12 +130,48 @@ only, no history).
 | 4 | Keep deterministic gates primary; treat any judge panel as ~2 effective votes | Doctrine | ⚠ 2605.29800 |
 | 5 | Claims ledger: keep JSONL; upgrade path = git atomic-ref CAS (TASKS.md pattern) if collisions appear; consider versioning the ledger | Low | ⚠ tasksmd |
 | 6 | Hand off artifacts (JSON contracts), never summaries; single agent until context degrades | Doctrine | ⚠ DPI/Stanford |
-| 7 | Local-model PoLL panels for cheap triage (tars qwen gates generalize) | Med | ⚠ 2502.18018 |
+| 7 | ~~Local-model PoLL panels for cheap triage~~ **RETRACTED** — supporting claims refuted 0-3 on re-verification (see §7); tars qwen gates stay valid as deterministic gates only | — | ✗ 2502.18018 refuted |
 
-## 7. Verification debt
+## 7. Verification debt — partially paid (2026-07-22 resume)
 
-23 of 25 claims carry ⚠ solely because verifier agents hit the spend limit — none were
-refuted. Re-running verification is cache-cheap once limits reset
-(`resumeFromRunId: wf_18c02537-fbe`); the fetch/extract work replays from cache and only
-the failed votes re-run. Until then, treat every ⚠ number as provisional and every
-recommendation above as "measure before enforcing" — consistent with the A/B doctrine.
+Original run: 23 of 25 claims ⚠ (spend limit killed the verifiers). The cached resume
+re-ran verification: **13 confirmed 3-0, 4 REFUTED 0-3, 8 still unverified** (limit hit
+again mid-run; the 8 are the Codex-docs and Anthropic-guidance claims, which come
+directly from official vendor documentation).
+
+**Upgraded to confirmed (selection):** the 9-judge-panel ≈ 2.18 effective votes result;
+cross-vendor correlation — with harder numbers than the original extract: **Claude×Gemini
+φ=0.603 and GPT-4o×Claude φ=0.588 are among the MOST correlated judge pairs**, so vendor
+mixing buys even less independence than §2 stated; prompt-framing bias on code judges,
+plus its prescribed guardrails (treat repeated-run disagreement, A/B-swap disagreement,
+or bias-vs-no-bias shifts as escalation triggers; prefer presentation-invariant evidence
+— compilation, tests, static analysis — over forcing an LLM verdict); GPT-4's 0.520
+self-preference bias score; perplexity-aware vote down-weighting + multi-model ensembles
+as mitigations; both TASKS.md claims (6-vendor support; git ref compare-and-swap
+backend); MAST (14 failure modes / 3 categories, 1600+ annotated traces).
+
+**REFUTED (0-3) — corrections to this report:**
+1. *"Small-judge ensembles rival a single frontier reviewer"* and *"modular judge
+   pipelines make small judges competitive with much larger ones"* (both from
+   arXiv:2502.18018 as extracted) did not survive adversarial checking. **Recommendation
+   #6/#7 (local-model PoLL panels for triage) is hereby RETRACTED** — tars's local qwen
+   gates remain sound, but as *deterministic hermetic gates*, not as LLM judge panels;
+   don't build local judge ensembles expecting frontier-reviewer substitution.
+2. *"Adding judges gives negligible-or-negative returns vs the best single judge"* — the
+   specific SNLI/MNLI numbers as extracted were also refuted; the confirmed, weaker form
+   is the effective-sample-size result (panels ≈ 2 independent votes), which still
+   supports "don't multiply judges," just without the stronger single-judge-dominance
+   claim.
+3. *"Self-preference transfers within a model family (same-family models favor each
+   other)"* — refuted as stated; the confirmed core is judges over-rating low-perplexity
+   text. Same-vendor review is still suspect (GPT-4's 0.520 self-bias is confirmed) but
+   the family-transfer mechanism is NOT established.
+
+**A2A correction to §5:** stronger than originally stated — confirmed 3-0: 150+
+supporting orgs (AWS, Microsoft, IBM, Salesforce among them), stable 1.0 spec
+(multi-tenancy, security flows, migration path), Linux Foundation governance,
+explicitly complementary to MCP. Still no confirmed evidence of *coding-agent handoff*
+usage specifically, but "platform-level only, low traction" undersold it — worth
+re-checking in 6 months for coding-agent tooling.
+
+Remaining 8 ⚠ claims: cache-cheap to re-verify (`resumeFromRunId: wf_18c02537-fbe`).

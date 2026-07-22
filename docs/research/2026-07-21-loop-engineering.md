@@ -8,6 +8,21 @@ not false. The synthesize agent also hit the limit, so this synthesis was done i
 loop. Repo review: 3 parallel survey subagents over the 13 ecosystem repos
 (inventory: session scratchpad `repo-loop-inventory.md`, summarized in §4).
 
+**Verification debt PAID (2026-07-22 resume, run wf_d962431b-d06):** the workflow was
+re-run from cache once limits reset — 103/103 agents completed, **all 25 claims
+confirmed 3-0, 0 refuted, 0 unverified**, synthesized into 11 high-confidence findings.
+Every ⚠ below is now confirmed; they are left in place as a record of the original run.
+One provenance correction from verification: Steinberger's tweet (2026-06-07, 6.5M+
+views) never uses the term "loop engineering" — **Addy Osmani named it** days later,
+Boris Cherny ("I don't prompt Claude anymore. I write loops") co-popularized it, and
+Anthropic formally adopted it in the 2026-06-30 *Getting started with loops* post
+(which opens by acknowledging the community discourse). The four-type loop taxonomy
+(turn-based / goal-based / time-based / proactive), the SKILL.md-encoded verification
+practice, the CLAUDE.md-bloat warning ("Bloated CLAUDE.md files cause Claude to ignore
+your actual instructions!" — convert must-hold rules to hooks), the Ralph-loop
+attribution, and the initializer/coding-agent split with a failing-feature list are all
+now verified verbatim against primary sources.
+
 ## 1. What "loop engineering" is, and where it came from
 
 **Definition (converged across sources):** stop being the person who prompts the agent;
