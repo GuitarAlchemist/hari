@@ -1,0 +1,17 @@
+{
+  "previous_count": 4,
+  "current_count": 13,
+  "added": {
+    "auto-mode-classifier-blocks-shell-commands-with-literal-api-key-strings": "True",
+    "gaapi-cannot-boot-standalone": "True",
+    "hari-can-serve-as-aggregation-substrate-for-ga-qa-architect-tribunal": "Contradictory",
+    "hari-from-ix-autoresearch-binary-maps-autoresearch-iterations-to-researchevents-without-coupling-either-crate": "True",
+    "hari-session-notes-converts-free-text-to-belief-snapshot": "True",
+    "icv-dual-format-parser-merged-not-wired-into-encode": "True",
+    "icv-format-mismatch-corrupts-subset-cosine-retrieval": "True",
+    "mercury-2-outperforms-haiku-4-5-on-musical-query-extraction-benchmark": "True",
+    "shared-working-tree-collisions-cause-branch-loss": "True"
+  },
+  "changed": {},
+  "unchanged": 4
+}

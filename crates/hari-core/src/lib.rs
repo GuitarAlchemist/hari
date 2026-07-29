@@ -846,6 +846,17 @@ pub struct CognitiveLoop {
     /// value but is marked here so a consumer can tell the live chain
     /// head from the audit tail.
     superseded: BTreeMap<String, String>,
+    /// Optional per-source evidence weights (issue #14 *consumer experiment*).
+    /// `None` (the default) means every belief-bearing event is ledgered at
+    /// the uniform `weight = 1.0` the merge-weight slice hard-codes, so a
+    /// replay is byte-identical to pre-experiment behaviour. When `Some`, the
+    /// evidence-ledger entry for a source uses `map[source]` (falling back to
+    /// `1.0` for an unlisted source), letting a counterfactual replay weight
+    /// base evidence by a source's *earned* reliability — the entrenchment
+    /// ordering from [`source_reliability`]. Read-only science: this is set
+    /// only by the entrenchment-counterfactual harness, never by any default
+    /// path, and it is surfaced for A/B, not wired into consensus.
+    source_weights: Option<BTreeMap<String, f64>>,
 }
 
 /// One recorded piece of evidence in the belief-revision ledger
@@ -906,6 +917,32 @@ impl CognitiveLoop {
             sl_state: None,
             evidence_log: BTreeMap::new(),
             superseded: BTreeMap::new(),
+            source_weights: None,
+        }
+    }
+
+    /// Install a per-source evidence-weight table for the issue #14
+    /// entrenchment-counterfactual replay (arm R). Each belief-bearing event
+    /// is then ledgered at `weights[source]` instead of the uniform `1.0`
+    /// (an unlisted source keeps `1.0`), so a selective retraction / correction
+    /// recomputes the belief from evidence weighted by earned reliability. This
+    /// is the smallest additive, opt-in hook the counterfactual needs; calling
+    /// it is the *only* way to leave the byte-identical default, and it wires
+    /// nothing into the accept/escalate scoring path — weight reaches a belief
+    /// value solely through the merge's Contradictory-escalation share during a
+    /// ledger recompute. Not part of any owner-blessed consumer; read-only
+    /// science surfaced for A/B (design §7).
+    pub fn set_source_weights(&mut self, weights: BTreeMap<String, f64>) {
+        self.source_weights = Some(weights);
+    }
+
+    /// The evidence weight to ledger for `source`: `1.0` when no table is
+    /// installed (byte-identical default), else the table's entry for the
+    /// source (`1.0` if unlisted).
+    fn evidence_weight(&self, source: &str) -> f64 {
+        match &self.source_weights {
+            None => 1.0,
+            Some(map) => map.get(source).copied().unwrap_or(1.0),
         }
     }
 
@@ -1478,6 +1515,16 @@ impl CognitiveLoop {
             proposition, value, ..
         } = &event.payload
         {
+            // Uniform confidence at the boundary by default (no per-source
+            // reliability is declared here — that is #14, earned not declared).
+            // `evidence_weight` returns `1.0` unless the #14 entrenchment-
+            // counterfactual harness has installed a reliability-weight table
+            // (arm R), in which case base evidence is weighted by earned
+            // reliability for the read-only A/B. The recompute routes these
+            // through the weighted merge; a corroboration cap over distinct
+            // sources — not weight magnitude — is what downgrades a single
+            // uncorroborated source (see `recompute_belief`).
+            let weight = self.evidence_weight(&event.source);
             self.evidence_log
                 .entry(proposition.clone())
                 .or_default()
@@ -1485,13 +1532,7 @@ impl CognitiveLoop {
                     source: event.source.clone(),
                     cycle: event.cycle,
                     value: *value,
-                    // Uniform confidence at the boundary: no per-source
-                    // reliability exists here yet (that is #14, earned not
-                    // declared). The recompute routes these through the
-                    // weighted merge; a corroboration cap over distinct
-                    // sources — not weight magnitude — is what downgrades a
-                    // single uncorroborated source (see `recompute_belief`).
-                    weight: 1.0,
+                    weight,
                     retracted: false,
                 });
         }
@@ -1762,6 +1803,7 @@ impl CognitiveLoop {
                 // own `(source, cycle)`, so the tombstoned original and its
                 // replacement coexist in the ledger — the audit link between
                 // "what was wrong" and "what replaced it".
+                let weight = self.evidence_weight(&event.source);
                 self.evidence_log
                     .entry(proposition.clone())
                     .or_default()
@@ -1769,7 +1811,7 @@ impl CognitiveLoop {
                         source: event.source.clone(),
                         cycle: event.cycle,
                         value: *value,
-                        weight: 1.0,
+                        weight,
                         retracted: false,
                     });
                 let recomputed = self.recompute_from_ledger(proposition);
@@ -3056,5 +3098,26 @@ mod tests {
             report.final_beliefs.get("benchmark-x-is-reliable"),
             Some(&HexValue::Contradictory)
         );
+    }
+
+    /// #14 entrenchment-counterfactual hook: `evidence_weight` is `1.0` for
+    /// every source until a table is installed, and after install it reads the
+    /// table (falling back to `1.0` for an unlisted source). This pins the
+    /// byte-identical default (arm U) the counterfactual measures against.
+    #[test]
+    fn source_weights_default_uniform_then_read_from_table() {
+        let mut cl = CognitiveLoop::new(4);
+        // No table installed → every source weighted 1.0 (arm U / today).
+        assert_eq!(cl.evidence_weight("anyone"), 1.0);
+        assert!(cl.source_weights.is_none());
+
+        let mut table = BTreeMap::new();
+        table.insert("reliable".to_string(), 0.9);
+        table.insert("noisy".to_string(), 0.1);
+        cl.set_source_weights(table);
+        assert_eq!(cl.evidence_weight("reliable"), 0.9);
+        assert_eq!(cl.evidence_weight("noisy"), 0.1);
+        // Unlisted source falls back to the neutral 1.0.
+        assert_eq!(cl.evidence_weight("stranger"), 1.0);
     }
 }
