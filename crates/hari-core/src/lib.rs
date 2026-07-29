@@ -666,6 +666,13 @@ pub struct ReplayMetrics {
     /// Number of `Action::Accept` recommendations that were later retracted
     /// or contradicted by a subsequent event.
     pub false_acceptance_count: u32,
+    /// Number of `Action::Wait` recommendations on a claim that went on to
+    /// *stand* — caution that cost the trace a correct acceptance (#35 §5.3).
+    ///
+    /// The mirror of `false_acceptance_count`, and the price of abstention.
+    /// Without it a policy can win an accuracy comparison by emitting more
+    /// `Wait`s and never paying for the ones that were unnecessary.
+    pub false_rejection_count: u32,
     /// Fraction of goals whose final status is `True` or `Probable`.
     pub goal_completion_rate: f64,
     /// `1 - (flips / events)` averaged over touched propositions.
@@ -2468,6 +2475,50 @@ pub(crate) fn accept_was_invalidated(
     later_retracted || became_contradictory || flipped_polarity
 }
 
+/// Did a `Wait` on `proposition` turn out to be unnecessary caution?
+///
+/// The mirror of [`accept_was_invalidated`]: an `Accept` is wrong when the
+/// claim later falls over, so a `Wait` is wrong when the claim later *stands*.
+/// True when the proposition settles to `True`/`Probable` and is never
+/// retracted or corrected after the wait.
+///
+/// Deliberately conservative in two ways. A proposition that ends
+/// `Contradictory` is not counted — waiting on irreconcilable evidence is the
+/// correct call, not a false rejection, which is the epistemic-humility
+/// invariant showing up in the metric. And a later retraction or correction
+/// clears the wait even if the claim is eventually re-asserted, because the
+/// caution was justified at the time. Both make this an undercount; since the
+/// metric is only ever read as a comparison *between* policies measured the
+/// same way (#35 §5.3), a uniform undercount costs nothing and reduces noise.
+///
+/// Only `Action::Wait` is scored. `Escalate` is also abstention, but it
+/// carries a `reason` rather than a proposition — there is no sound
+/// attribution — and escalating a genuine contradiction is correct behavior.
+pub(crate) fn wait_was_unnecessary(
+    proposition: &str,
+    wait_cycle: u64,
+    outcomes: &[ResearchEventOutcome],
+    final_beliefs: &BTreeMap<String, HexValue>,
+) -> bool {
+    let claim_stands = matches!(
+        final_beliefs.get(proposition).copied(),
+        Some(HexValue::True | HexValue::Probable)
+    );
+    if !claim_stands {
+        return false;
+    }
+    let later_withdrawn = outcomes.iter().any(|later| {
+        later.event.cycle > wait_cycle
+            && matches!(
+                &later.event.payload,
+                ResearchEventPayload::Retraction { proposition: p, .. }
+                    | ResearchEventPayload::Correction { proposition: p, .. }
+                if p == proposition
+            )
+    });
+    !later_withdrawn
+}
+
 /// Compute the aggregate metrics over a finished replay.
 fn compute_metrics(
     outcomes: &[ResearchEventOutcome],
@@ -2585,6 +2636,25 @@ fn compute_metrics(
         }
     }
 
+    // --- false_rejection_count ---
+    // The mirror of the block above. `Action::Wait` is a unit variant, so the
+    // wait is attributed to the proposition its own event asserted; an event
+    // with no single proposition (relation edges, goal updates) is skipped
+    // rather than guessed at.
+    let mut false_rejections: u32 = 0;
+    for o in outcomes {
+        let Some(prop) = o.event.payload.proposition() else {
+            continue;
+        };
+        for a in &o.actions {
+            if matches!(a, Action::Wait)
+                && wait_was_unnecessary(prop, o.event.cycle, outcomes, final_beliefs)
+            {
+                false_rejections += 1;
+            }
+        }
+    }
+
     // --- goal_completion_rate ---
     let goal_completion_rate = if final_goals.is_empty() {
         0.0
@@ -2668,6 +2738,7 @@ fn compute_metrics(
     ReplayMetrics {
         contradiction_recovery_cycles: recovery,
         false_acceptance_count: false_accepts,
+        false_rejection_count: false_rejections,
         goal_completion_rate,
         consensus_stability,
         attention_norm_max,
@@ -3199,6 +3270,131 @@ mod tests {
         assert_eq!(cl.evidence_weight("noisy"), 0.1);
         // Unlisted source falls back to the neutral 1.0.
         assert_eq!(cl.evidence_weight("stranger"), 1.0);
+    }
+
+    // --- false_rejection_count (#35 §5.3) ---------------------------------
+
+    fn belief_update(cycle: u64, prop: &str, value: HexValue) -> ResearchEvent {
+        ResearchEvent {
+            cycle,
+            source: "ix-agent-a".to_string(),
+            payload: ResearchEventPayload::BeliefUpdate {
+                proposition: prop.to_string(),
+                value,
+                evidence: Evidence::new(),
+            },
+        }
+    }
+
+    /// Replay `events` with abstention forced on: `theta_wait` above every
+    /// achievable priority suppresses each event's action list to a single
+    /// `Wait`. The existing fixture corpus never abstains on a *claim* (every
+    /// Wait in it lands on a `goal_update` or `relation_declaration`, which
+    /// carry no proposition), so forcing it is the only way to exercise this
+    /// metric until #35's paired should-act/should-abstain fixtures exist.
+    fn replay_always_waiting(events: Vec<ResearchEvent>) -> ResearchReplayReport {
+        let mut cognitive_loop = CognitiveLoop::new(4);
+        cognitive_loop.theta_wait = f64::INFINITY;
+        cognitive_loop.process_research_trace(ResearchTrace {
+            dimension: 4,
+            events,
+        })
+    }
+
+    #[test]
+    fn wait_on_a_claim_that_goes_on_to_stand_is_a_false_rejection() {
+        let report = replay_always_waiting(vec![
+            belief_update(1, "benchmark-x-is-reliable", HexValue::Probable),
+            belief_update(2, "benchmark-x-is-reliable", HexValue::True),
+        ]);
+
+        // The claim stands, so every wait on it was unnecessary caution.
+        assert_eq!(
+            report.final_beliefs.get("benchmark-x-is-reliable"),
+            Some(&HexValue::True)
+        );
+        assert_eq!(report.metrics.false_rejection_count, 2);
+        // The mirror metric must not fire — nothing was accepted.
+        assert_eq!(report.metrics.false_acceptance_count, 0);
+    }
+
+    #[test]
+    fn wait_on_a_claim_that_ends_contradictory_is_not_a_false_rejection() {
+        let report = replay_always_waiting(vec![
+            belief_update(1, "benchmark-x-is-reliable", HexValue::True),
+            belief_update(2, "benchmark-x-is-reliable", HexValue::False),
+        ]);
+
+        // Waiting on irreconcilable evidence is the correct call, not a
+        // false rejection — the epistemic-humility invariant, in the metric.
+        assert_eq!(
+            report.final_beliefs.get("benchmark-x-is-reliable"),
+            Some(&HexValue::Contradictory)
+        );
+        assert_eq!(report.metrics.false_rejection_count, 0);
+    }
+
+    #[test]
+    fn wait_cleared_by_a_later_retraction_is_not_a_false_rejection() {
+        // The claim ends True, but it was withdrawn *after* the first wait,
+        // so that wait was justified at the time it was made. A wait made
+        // after the withdrawal is not excused.
+        let report = replay_always_waiting(vec![
+            belief_update(1, "benchmark-x-is-reliable", HexValue::True),
+            ResearchEvent {
+                cycle: 2,
+                source: "ix-agent-b".to_string(),
+                payload: ResearchEventPayload::Retraction {
+                    proposition: "benchmark-x-is-reliable".to_string(),
+                    reason: "instrument fault".to_string(),
+                    retracts: None,
+                },
+            },
+            belief_update(3, "benchmark-x-is-reliable", HexValue::True),
+        ]);
+
+        assert_eq!(
+            report.final_beliefs.get("benchmark-x-is-reliable"),
+            Some(&HexValue::True)
+        );
+        assert!(
+            wait_was_unnecessary(
+                "benchmark-x-is-reliable",
+                3,
+                &report.outcomes,
+                &report.final_beliefs
+            ),
+            "a wait after the retraction has nothing excusing it"
+        );
+        assert!(
+            !wait_was_unnecessary(
+                "benchmark-x-is-reliable",
+                1,
+                &report.outcomes,
+                &report.final_beliefs
+            ),
+            "the retraction at cycle 2 excuses the wait at cycle 1"
+        );
+    }
+
+    #[test]
+    fn a_wait_with_no_proposition_to_attribute_is_never_a_false_rejection() {
+        // Every Wait in today's fixture corpus is of this shape. Goal and
+        // relation events carry no single proposition, so a wait on one is
+        // skipped rather than guessed at.
+        let report = replay_always_waiting(vec![ResearchEvent {
+            cycle: 1,
+            source: "ix-agent-a".to_string(),
+            payload: ResearchEventPayload::GoalUpdate {
+                key: "characterise-benchmark-x".to_string(),
+                description: "characterise benchmark x".to_string(),
+                priority: 0.9,
+                status: Some(HexValue::Probable),
+            },
+        }]);
+
+        assert!(report.metrics.action_counts_by_kind.contains_key("Wait"));
+        assert_eq!(report.metrics.false_rejection_count, 0);
     }
 
     // --- Forecast calibration in the replay report (#35 §9.2) -------------

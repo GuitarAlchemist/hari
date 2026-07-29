@@ -192,26 +192,43 @@ once already.
 
 ## 9. Prerequisites — the eval cannot run until these land
 
-Verified against `main` @ `859b29c` on 2026-07-28:
+Verified against `main` @ `859b29c` on 2026-07-28. **Amendment (§10): items 1
+and 2 are satisfied by the branch carrying this edit; 3 and 4 remain open.**
+Nothing in §5–§8 changed — this records prerequisite status only, and no eval
+outcome has been inspected.
 
-1. **`false_rejection_count` does not exist.** `ReplayMetrics`
-   (`crates/hari-core/src/lib.rs:584`) has `false_acceptance_count`,
-   `goal_completion_rate`, `consensus_stability`, `attention_norm_max`,
-   `contradiction_recovery_cycles`, `action_counts_by_kind` — and no false-rejection
-   counterpart. §5.3 is unenforceable until it is added.
-2. **Calibration is orphaned.** `forecast::calibration()`
-   (`crates/hari-core/src/forecast.rs:318`) returns
-   `BTreeMap<String, BeliefCalibration { scored, void, pending, mean_brier }>`
-   and **nothing consumes it**. `ResearchReplayReport` has no calibration field.
-   Half of the §8 kill/keep rule cannot be evaluated until it is wired in.
+Item 1 surfaced a finding that matters for §5.3 and for the Conditioned
+Abstention Rate secondary: **no Wait in the existing eight-fixture corpus is an
+abstention on a claim.** Every one lands on a `goal_update` or
+`relation_declaration`, which carry no proposition, so `false_rejection_count`
+is a correct `0` corpus-wide and both abstention measures are unexercised until
+the §9.3 paired fixtures exist. The metric is pinned by forced-abstention tests
+instead.
+
+1. ~~`false_rejection_count` does not exist.~~ **LANDED.** `ReplayMetrics` now
+   carries `false_rejection_count` beside `false_acceptance_count`, counting
+   `Action::Wait` on a claim that went on to stand. Conservative by design: a
+   claim ending `Contradictory` is not counted (waiting on irreconcilable
+   evidence is correct), and a later retraction excuses the wait. `Escalate` is
+   not scored — it carries a reason, not a proposition, so there is no sound
+   attribution. §5.3 is now enforceable.
+2. ~~Calibration is orphaned.~~ **LANDED.** `ResearchReplayReport.calibration`
+   is an opt-in `Option<ReplayCalibration>` (per-belief Brier from
+   `forecast::calibration()` plus a scored-count-weighted pooled roll-up),
+   attached via `with_calibration` and reachable as `replay --calibration`.
+   Replay itself stays I/O-free. The §8 calibration half is now evaluable for a
+   single arm — **but not yet across arms**: `--compare3` emits a three-arm
+   wrapper with nowhere to hang the block, and cross-arm calibration is exactly
+   what the kill/keep rule compares. That gap is now the blocking one.
 3. **Paired fixtures do not exist.** No should-act/should-abstain pair is present
    under `fixtures/ix/`.
 4. **The driver does not exist.** `clients/ix_reference` currently holds
    `hari_client.py` and `run_session.py`; the paired Hari-on/Hari-off driver is
    unwritten.
 
-Items 1 and 2 are the cheapest and are prerequisites for the decision rule
-itself — they should land first.
+Items 1 and 2 were the cheapest and were prerequisites for the decision rule
+itself; they landed first. The remaining blockers are 3, 4, and per-arm
+calibration under `--compare3`.
 
 ## 10. Amendment policy
 
