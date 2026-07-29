@@ -20,9 +20,12 @@ fn main() {
         //   replay <trace.json>              (batch trace, dimension+events)
         //   replay --compare <trace.json>    (batch trace through both models)
         //   replay --session <session.jsonl> (Phase 6 recorded session file)
+        //   replay --calibration <trace.json>
+        //       (attach the forecast ledger's calibration block to the report)
         let mut compare = false;
         let mut compare3 = false;
         let mut session_mode = false;
+        let mut calibration = false;
         let mut path: Option<&str> = None;
         let mut i = 2;
         while i < args.len() {
@@ -31,6 +34,7 @@ fn main() {
                 "--compare" => compare = true,
                 "--compare3" => compare3 = true,
                 "--session" => session_mode = true,
+                "--calibration" => calibration = true,
                 other if !other.starts_with("--") => path = Some(other),
                 other => {
                     eprintln!("hari-core replay: unknown flag {other}");
@@ -49,12 +53,23 @@ fn main() {
             );
             process::exit(2);
         }
+        // `--compare3` emits a three-arm wrapper object rather than a single
+        // `ResearchReplayReport`, so it has nowhere to hang a calibration
+        // block yet. Reject the combination loudly instead of silently
+        // dropping the flag — attaching per-arm calibration is the next
+        // slice (#35 §9.2 expand step).
+        if calibration && (compare3 || session_mode) {
+            eprintln!(
+                "hari-core replay: --calibration is not yet supported with --compare3 or --session"
+            );
+            process::exit(2);
+        }
         let result = if session_mode {
             replay_session(path)
         } else if compare3 {
             replay_trace_three_way(path)
         } else {
-            replay_trace(path, compare)
+            replay_trace(path, compare, calibration)
         };
         if let Err(err) = result {
             eprintln!("hari-core replay failed: {err}");
@@ -729,8 +744,12 @@ fn run_substrate_decision_demo() {
     info!("external — Hari is the substrate, not the autoresearch system.");
 }
 
-fn replay_trace(path: Option<&str>, compare: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let path = path.ok_or("usage: hari-core replay [--compare] <trace.json>")?;
+fn replay_trace(
+    path: Option<&str>,
+    compare: bool,
+    calibration: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let path = path.ok_or("usage: hari-core replay [--compare] [--calibration] <trace.json>")?;
     let trace_json = fs::read_to_string(path)?;
     let trace = parse_trace(&trace_json)?;
 
@@ -739,6 +758,19 @@ fn replay_trace(path: Option<&str>, compare: bool) -> Result<(), Box<dyn std::er
     } else {
         let mut cognitive_loop = CognitiveLoop::new(trace.dimension);
         cognitive_loop.process_research_trace(trace)
+    };
+    // The ledger read lives here, at the CLI edge, so the replay path itself
+    // stays pure and deterministic (#35 §9.2). A missing ledger dir is not an
+    // error — an empty record set yields an all-zero calibration block, which
+    // is the honest answer for "nothing has been forecast yet".
+    let report = if calibration {
+        let (records, skipped) = forecast::load(&forecast::ledger_dir())?;
+        if skipped > 0 {
+            warn!("forecast ledger: skipped {skipped} unparsable record(s)");
+        }
+        report.with_calibration(&records)
+    } else {
+        report
     };
     serde_json::to_writer_pretty(std::io::stdout(), &report)?;
     println!();

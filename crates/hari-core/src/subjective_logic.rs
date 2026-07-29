@@ -484,6 +484,7 @@ pub fn process_research_trace_subjective_logic(
         // to vacuous rather than recomputing from tombstoned evidence, so
         // it emits no `RevisionDelta`s (issue #16 is a hexavalent-path slice).
         revisions: Vec::new(),
+        calibration: None,
     }
 }
 

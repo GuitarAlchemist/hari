@@ -282,6 +282,7 @@ impl StreamingSession {
             metrics,
             comparison,
             revisions,
+            calibration: None,
         }
     }
 
@@ -397,6 +398,7 @@ impl StreamingSession {
             metrics,
             comparison,
             revisions,
+            calibration: None,
         }
     }
 

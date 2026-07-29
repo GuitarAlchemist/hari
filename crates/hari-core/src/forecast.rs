@@ -306,12 +306,15 @@ pub fn overdue_unresolved<'a>(records: &'a [ForecastRecord], now: &str) -> Vec<&
 // (contract open question 4, mean + count accepted).
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+// `Deserialize` is required because `ResearchReplayReport` embeds this type
+// and that report round-trips through JSON at the IX boundary; `default` on
+// `mean_brier` keeps the skipped-when-`None` form readable back.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BeliefCalibration {
     pub scored: usize,
     pub void: usize,
     pub pending: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mean_brier: Option<f64>,
 }
 

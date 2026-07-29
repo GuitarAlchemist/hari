@@ -577,6 +577,83 @@ pub struct ResearchReplayReport {
     /// or supersession, so pre-slice reports stay byte-equal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub revisions: Vec<RevisionDelta>,
+    /// Forecast calibration for the beliefs this trace touched (#35 §9.2),
+    /// attached explicitly by [`ResearchReplayReport::with_calibration`].
+    /// `None` (and skipped from JSON) unless a caller supplies forecast
+    /// records, so every existing replay stays byte-equal — replay itself
+    /// reads no ledger and performs no I/O.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calibration: Option<ReplayCalibration>,
+}
+
+/// Calibration block attached to a replay report: the per-belief Brier means
+/// from [`forecast::calibration`] plus a pooled roll-up.
+///
+/// The pooled entry is the A/B baseline the per-belief numbers must be read
+/// against (the same role `pooled` plays in `reliability` and
+/// `source_reliability`) — a policy that improves one belief's calibration
+/// while degrading the pool has not improved calibration.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ReplayCalibration {
+    /// Per-belief calibration, keyed by `belief_id`.
+    pub per_belief: BTreeMap<String, forecast::BeliefCalibration>,
+    /// Resolved-and-scored forecasts across all beliefs.
+    pub scored: usize,
+    /// Forecasts resolved as `Void` (observable never materialised).
+    pub void: usize,
+    /// Forecasts still awaiting resolution.
+    pub pending: usize,
+    /// Brier mean over every scored forecast, pooled across beliefs.
+    /// `None` when nothing is scored — an unscored ledger has no calibration,
+    /// which is distinct from a calibration of 0.0 (perfect).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pooled_mean_brier: Option<f64>,
+}
+
+impl ReplayCalibration {
+    /// Fold forecast records into a calibration block.
+    ///
+    /// Pure: takes records the caller already loaded rather than reading the
+    /// ledger itself, so replay stays I/O-free and deterministic.
+    pub fn from_records(records: &[forecast::ForecastRecord]) -> Self {
+        let per_belief = forecast::calibration(records);
+        let mut scored = 0usize;
+        let mut void = 0usize;
+        let mut pending = 0usize;
+        // Brier sum recovered as `mean_b * scored_b` per belief. Counts add
+        // exactly, so this is the true pooled mean over all scored forecasts —
+        // NOT the mean of per-belief means, which would weight a belief with
+        // one forecast the same as one with fifty.
+        let mut brier_sum = 0.0f64;
+        for cal in per_belief.values() {
+            scored += cal.scored;
+            void += cal.void;
+            pending += cal.pending;
+            if let Some(mean) = cal.mean_brier {
+                brier_sum += mean * cal.scored as f64;
+            }
+        }
+        Self {
+            per_belief,
+            scored,
+            void,
+            pending,
+            pooled_mean_brier: (scored > 0).then(|| brier_sum / scored as f64),
+        }
+    }
+}
+
+impl ResearchReplayReport {
+    /// Attach forecast calibration to this report (#35 §9.2).
+    ///
+    /// Opt-in by construction: a report only carries calibration when a caller
+    /// hands it records, which is what keeps every existing replay byte-equal.
+    /// Records are supplied by the caller (`forecast::load`), never read here.
+    #[must_use]
+    pub fn with_calibration(mut self, records: &[forecast::ForecastRecord]) -> Self {
+        self.calibration = Some(ReplayCalibration::from_records(records));
+        self
+    }
 }
 
 /// Aggregate metrics computed once per replay.
@@ -1462,6 +1539,9 @@ impl CognitiveLoop {
             metrics,
             comparison: None,
             revisions,
+            // Replay performs no I/O; a caller that wants calibration loads
+            // the ledger and calls `with_calibration`.
+            calibration: None,
         }
     }
 
@@ -3119,5 +3199,122 @@ mod tests {
         assert_eq!(cl.evidence_weight("noisy"), 0.1);
         // Unlisted source falls back to the neutral 1.0.
         assert_eq!(cl.evidence_weight("stranger"), 1.0);
+    }
+
+    // --- Forecast calibration in the replay report (#35 §9.2) -------------
+
+    /// A scored forecast for `belief` with a hand-set Brier score, so the
+    /// pooling arithmetic is tested independently of `resolve`.
+    fn scored_forecast(belief: &str, id: &str, brier: f64) -> forecast::ForecastRecord {
+        forecast::ForecastRecord {
+            schema: "hari-forecast-record-v0.1".to_string(),
+            forecast_id: id.to_string(),
+            belief_id: belief.to_string(),
+            emitted_at: "2026-07-28T00:00:00Z".to_string(),
+            observable: forecast::Observable {
+                source: "ga:state/fleet/presence.json".to_string(),
+                field: "/status".to_string(),
+                predicate: "== green".to_string(),
+            },
+            prediction: forecast::Prediction {
+                probability: 0.5,
+                rationale: None,
+            },
+            horizon: "2026-07-29T00:00:00Z".to_string(),
+            resolution: Some(forecast::Resolution {
+                resolved_at: "2026-07-29T00:00:00Z".to_string(),
+                outcome: forecast::Outcome::True,
+                observed_value: Some("green".to_string()),
+                brier: Some(brier),
+            }),
+            links: None,
+        }
+    }
+
+    #[test]
+    fn replay_carries_no_calibration_by_default_and_omits_it_from_json() {
+        let mut cognitive_loop = CognitiveLoop::new(4);
+        let report = cognitive_loop.process_research_trace(ResearchTrace {
+            dimension: 4,
+            events: vec![ResearchEvent {
+                cycle: 1,
+                source: "ix-agent-a".to_string(),
+                payload: ResearchEventPayload::BeliefUpdate {
+                    proposition: "benchmark-x-is-reliable".to_string(),
+                    value: HexValue::Probable,
+                    evidence: Evidence::new(),
+                },
+            }],
+        });
+
+        // Replay reads no ledger: the block is absent, and absent from JSON,
+        // so every pre-slice report stays byte-equal.
+        assert!(report.calibration.is_none());
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(!json.contains("calibration"), "unexpected key in {json}");
+    }
+
+    #[test]
+    fn pooled_brier_weights_by_scored_count_not_mean_of_means() {
+        // belief-a: three forecasts, all perfect (mean 0.0)
+        // belief-b: one forecast, badly wrong (mean 0.8)
+        let records = vec![
+            scored_forecast("belief-a", "f1", 0.0),
+            scored_forecast("belief-a", "f2", 0.0),
+            scored_forecast("belief-a", "f3", 0.0),
+            scored_forecast("belief-b", "f4", 0.8),
+        ];
+        let cal = ReplayCalibration::from_records(&records);
+
+        assert_eq!(cal.scored, 4);
+        assert_eq!((cal.void, cal.pending), (0, 0));
+        assert_eq!(cal.per_belief.len(), 2);
+
+        // True pooled mean over all four scored forecasts: 0.8 / 4 = 0.2.
+        let pooled = cal.pooled_mean_brier.unwrap();
+        assert!((pooled - 0.2).abs() < 1e-12, "pooled was {pooled}");
+        // NOT the mean of the two per-belief means ((0.0 + 0.8) / 2 = 0.4),
+        // which would let a belief with one forecast outvote one with three.
+        assert!(
+            (pooled - 0.4).abs() > 1e-9,
+            "pooled collapsed to the mean of per-belief means"
+        );
+    }
+
+    #[test]
+    fn pooled_brier_is_none_when_nothing_scored() {
+        // An unscored ledger has no calibration — distinct from a calibration
+        // of 0.0, which would read as perfect.
+        let cal = ReplayCalibration::from_records(&[]);
+        assert_eq!((cal.scored, cal.void, cal.pending), (0, 0, 0));
+        assert!(cal.pooled_mean_brier.is_none());
+    }
+
+    #[test]
+    fn attached_calibration_round_trips_through_the_json_boundary() {
+        let mut cognitive_loop = CognitiveLoop::new(4);
+        let report = cognitive_loop
+            .process_research_trace(ResearchTrace {
+                dimension: 4,
+                events: vec![ResearchEvent {
+                    cycle: 1,
+                    source: "ix-agent-a".to_string(),
+                    payload: ResearchEventPayload::BeliefUpdate {
+                        proposition: "benchmark-x-is-reliable".to_string(),
+                        value: HexValue::Probable,
+                        evidence: Evidence::new(),
+                    },
+                }],
+            })
+            .with_calibration(&[scored_forecast("belief-a", "f1", 0.25)]);
+
+        let json = serde_json::to_string(&report).unwrap();
+        let back: ResearchReplayReport = serde_json::from_str(&json).unwrap();
+        let cal = back
+            .calibration
+            .expect("calibration survives the round trip");
+        assert_eq!(cal.scored, 1);
+        assert!((cal.pooled_mean_brier.unwrap() - 0.25).abs() < 1e-12);
+        assert_eq!(cal.per_belief["belief-a"].scored, 1);
     }
 }
