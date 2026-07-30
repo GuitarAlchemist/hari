@@ -165,6 +165,34 @@ Reporting an artifactual tie as evidence of equivalence would be dishonest.
 They may be reinstated only if their derivation is fixed to read
 post-policy state, and only by a committed amendment under §10.
 
+**Amendment (2026-07-29): the tie was asserted, not measured — and it holds for
+only one of the two.** Now checked by
+`metric_liveness.rs::the_section_5_4_exclusions_hold_only_where_measured`:
+
+* `consensus_stability` — **genuinely tied** across all three arms on all eight
+  fixtures. The exclusion stands, now for a measured reason.
+* `goal_completion_rate` — **not tied.** It is identical between `RecencyDecay`
+  and `Lie`, but `SubjectiveLogic` moves it on **5 of 8** fixtures
+  (`cognition_divergence` 0.5→0.0, `heavy_contradiction` 0.333→1.0,
+  `long_recovery` 0.667→1.0, `racing_goals` 0.4→0.2, `swarm_dissent`
+  0.667→0.333). The mechanism is explicit:
+  `process_research_trace_subjective_logic` assigns
+  `goal.status = hex_value_for_opinion(op, &config)` — goal status derived from
+  SL's posterior, which **is** post-policy state, the exact condition this
+  section names for reinstatement.
+
+So the exclusion was sound for the two-arm Phase 5 comparison it was authored
+against, and became wrong when SL was added as a third arm. The reasoning stayed
+in place while the premise stopped being true.
+
+`goal_completion_rate` is therefore **eligible for reinstatement as a §5.2
+secondary** — it discriminates between arms. Reinstating it is an owner call
+and does not happen in this amendment; a metric that has been excluded through
+the period when arms were compared cannot be quietly promoted afterwards. It
+stays out of the **primary** comparison regardless: §5.1 admits exactly one
+metric. Nothing here changes the primary or the decision rule, and no eval
+outcome has been inspected.
+
 ## 6. Statistics
 
 - **Aggregation:** paired bootstrap **clustered by trace**, resampling traces
