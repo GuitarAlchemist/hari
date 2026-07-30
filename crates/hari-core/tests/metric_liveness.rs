@@ -76,6 +76,152 @@ fn declared() -> Vec<(&'static str, Liveness)> {
     ]
 }
 
+/// Payload fields that name a proposition. Goal `key` is included: the goal
+/// keys are matched against propositions to derive `goal_completion_rate`, so a
+/// rename that missed them would silently change the metric for the wrong
+/// reason and make the invariance test pass vacuously.
+const PROPOSITION_FIELDS: [&str; 5] = ["proposition", "key", "from", "to", "superseded_by"];
+
+/// Round-trip the trace through JSON, applying `f` to the event array.
+///
+/// Deliberately structural rather than an exhaustive `match` on
+/// `ResearchEventPayload`: a new payload variant carrying a `proposition` is
+/// picked up automatically. An exhaustive match would compile fine while
+/// quietly leaving the new variant untransformed, which is how a metamorphic
+/// test rots into a test that transforms nothing.
+fn transform_events(
+    trace: &ResearchTrace,
+    f: impl Fn(&mut Vec<serde_json::Value>),
+) -> ResearchTrace {
+    let mut value = serde_json::to_value(trace).expect("trace serializes");
+    let events = value
+        .get_mut("events")
+        .and_then(|e| e.as_array_mut())
+        .expect("trace has an events array");
+    let mut owned = std::mem::take(events);
+    f(&mut owned);
+    *events = owned;
+    serde_json::from_value(value).expect("transformed trace deserializes")
+}
+
+/// Rename every proposition so lexicographic order is **inverted**. Metrics are
+/// aggregated through `BTreeMap`s, so if any of them leaked iteration order
+/// into its result this is what would expose it.
+fn invert_proposition_order(trace: &ResearchTrace) -> ResearchTrace {
+    transform_events(trace, |events| {
+        let mut names: BTreeSet<String> = BTreeSet::new();
+        for event in events.iter() {
+            let Some(payload) = event.get("payload") else {
+                continue;
+            };
+            for field in PROPOSITION_FIELDS {
+                if let Some(name) = payload.get(field).and_then(|v| v.as_str()) {
+                    names.insert(name.to_string());
+                }
+            }
+        }
+        let total = names.len();
+        let mapping: std::collections::BTreeMap<String, String> = names
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| (name, format!("p{:03}", total - 1 - i)))
+            .collect();
+
+        for event in events.iter_mut() {
+            let Some(payload) = event.get_mut("payload") else {
+                continue;
+            };
+            for field in PROPOSITION_FIELDS {
+                let renamed = payload
+                    .get(field)
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| mapping.get(s))
+                    .cloned();
+                if let Some(renamed) = renamed {
+                    payload[field] = serde_json::Value::String(renamed);
+                }
+            }
+        }
+    })
+}
+
+/// Rename every `source`, also inverting order.
+fn invert_source_order(trace: &ResearchTrace) -> ResearchTrace {
+    transform_events(trace, |events| {
+        let sources: BTreeSet<String> = events
+            .iter()
+            .filter_map(|e| e.get("source").and_then(|v| v.as_str()))
+            .map(str::to_string)
+            .collect();
+        let total = sources.len();
+        let mapping: std::collections::BTreeMap<String, String> = sources
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| (s, format!("agent-{:03}", total - 1 - i)))
+            .collect();
+        for event in events.iter_mut() {
+            let renamed = event
+                .get("source")
+                .and_then(|v| v.as_str())
+                .and_then(|s| mapping.get(s))
+                .cloned();
+            if let Some(renamed) = renamed {
+                event["source"] = serde_json::Value::String(renamed);
+            }
+        }
+    })
+}
+
+/// Remove every route by which an `Accept` can be invalidated: drop retractions
+/// and corrections, and make every remaining assertion agree on `Probable`, so
+/// nothing is downgraded to `Doubtful`/`False` or driven `Contradictory`.
+fn remove_every_invalidation_route(trace: &ResearchTrace) -> ResearchTrace {
+    transform_events(trace, |events| {
+        events.retain(|e| {
+            !matches!(
+                e.get("payload")
+                    .and_then(|p| p.get("type"))
+                    .and_then(|t| t.as_str()),
+                Some("retraction") | Some("correction")
+            )
+        });
+        for event in events.iter_mut() {
+            if let Some(payload) = event.get_mut("payload") {
+                if payload.get("value").is_some() {
+                    payload["value"] = serde_json::Value::String("Probable".to_string());
+                }
+            }
+        }
+    })
+}
+
+fn scalar_metrics(trace: ResearchTrace) -> serde_json::Value {
+    let report = CognitiveLoop::new(trace.dimension).process_research_trace(trace);
+    let mut value = serde_json::to_value(&report.metrics).expect("metrics serialize");
+    // Action counts are a per-kind map; the scalar metrics are what §5 reads.
+    value
+        .as_object_mut()
+        .expect("metrics object")
+        .remove("action_counts_by_kind");
+    value
+}
+
+fn corpus_paths() -> Vec<std::path::PathBuf> {
+    let dir = std::path::Path::new("../../fixtures/ix");
+    let mut paths: Vec<_> = std::fs::read_dir(dir)
+        .expect("fixtures/ix must exist")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json"))
+        .collect();
+    paths.sort();
+    assert!(
+        paths.len() >= 8,
+        "expected the eight-fixture corpus, found {}",
+        paths.len()
+    );
+    paths
+}
+
 fn load_trace(path: &str) -> ResearchTrace {
     let raw = fs::read_to_string(path).expect("fixture must be readable");
     match serde_json::from_str::<ResearchTrace>(&raw) {
@@ -181,6 +327,182 @@ fn every_metric_is_either_live_or_declared_constant_with_a_reason() {
             ),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Metamorphic properties — the half the liveness check cannot reach.
+//
+// Liveness catches a *dead* metric (constant where it should move) and a *stale*
+// declaration. It cannot catch a metric that varies for the wrong reason: Paired
+// Accuracy varies, it just varies with trace position rather than with evidence.
+// Closing that needs the two directions below — a metric must move when the thing
+// it measures moves, and must NOT move when anything else does.
+// ---------------------------------------------------------------------------
+
+/// The transforms must actually transform.
+///
+/// An invariance test whose transform is a no-op passes forever while checking
+/// nothing — the exact shape of the three failures this file exists to prevent,
+/// applied to the file itself. So each transform is required to visibly change
+/// the trace before its invariance is allowed to mean anything.
+#[test]
+fn the_metamorphic_transforms_are_not_no_ops() {
+    for path in corpus_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let trace = load_trace(&path.to_string_lossy());
+        let original = serde_json::to_value(&trace).expect("serializes");
+
+        for (label, transformed) in [
+            ("invert_proposition_order", invert_proposition_order(&trace)),
+            ("invert_source_order", invert_source_order(&trace)),
+            (
+                "remove_every_invalidation_route",
+                remove_every_invalidation_route(&trace),
+            ),
+        ] {
+            let after = serde_json::to_value(&transformed).expect("serializes");
+            assert_ne!(
+                original, after,
+                "{name}: {label} left the trace byte-identical, so the property it guards is \
+                 being asserted about an untransformed input and cannot fail"
+            );
+        }
+
+        // Positive control. `no_metric_depends_on_what_propositions_are_named`
+        // is only meaningful if the rename actually perturbs `BTreeMap`
+        // iteration order. This canary is *deliberately* order-dependent — it
+        // reads the first key in sorted order — so it must change. If it ever
+        // stops changing, the rename has stopped inverting order and the
+        // invariance test above has quietly become a tautology.
+        let canary = |t: &ResearchTrace| -> Option<String> {
+            let report = CognitiveLoop::new(t.dimension).process_research_trace(t.clone());
+            report.final_beliefs.keys().next().cloned()
+        };
+        let before = canary(&trace);
+        let after = canary(&invert_proposition_order(&trace));
+        assert!(
+            before.is_some() && after.is_some(),
+            "{name}: canary found no beliefs, so it cannot detect an ordering change"
+        );
+        assert_ne!(
+            before, after,
+            "{name}: the first belief in sorted order is unchanged after an order-inverting \
+             rename, so the rename is not perturbing BTreeMap order and the invariance test \
+             above proves nothing"
+        );
+
+        // Renaming must also preserve the *shape* of the trace — same event
+        // count and same number of distinct propositions. A rename that
+        // collapsed two propositions into one would change metrics for a
+        // reason that has nothing to do with ordering.
+        let renamed = invert_proposition_order(&trace);
+        assert_eq!(
+            trace.events.len(),
+            renamed.events.len(),
+            "{name}: renaming changed the event count"
+        );
+        let distinct = |t: &ResearchTrace| -> usize {
+            t.events
+                .iter()
+                .flat_map(|e| e.touched_propositions())
+                .collect::<BTreeSet<_>>()
+                .len()
+        };
+        assert_eq!(
+            distinct(&trace),
+            distinct(&renamed),
+            "{name}: renaming collapsed distinct propositions together"
+        );
+    }
+}
+
+/// **Invariance.** Metrics are aggregated through `BTreeMap`s keyed by
+/// proposition, so their iteration order is the propositions' lexicographic
+/// order. Renaming propositions to invert that order must leave every metric
+/// untouched; if it does not, a metric is reading key order as if it were data.
+#[test]
+fn no_metric_depends_on_what_propositions_are_named() {
+    for path in corpus_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let trace = load_trace(&path.to_string_lossy());
+        let before = scalar_metrics(trace.clone());
+        let after = scalar_metrics(invert_proposition_order(&trace));
+
+        assert_eq!(
+            before, after,
+            "{name}: metrics changed when propositions were renamed to invert their \
+             lexicographic order. Some metric is reading BTreeMap iteration order as data."
+        );
+    }
+}
+
+/// **Invariance.** The default trust model is `Equal` and per-source evidence
+/// weights are off, so under the default configuration no metric may depend on
+/// *who* said something. This is the guard that would fail if a future
+/// source-weighting change leaked into the default path — the property #14's
+/// `evidence_weight` work is explicitly designed to preserve.
+#[test]
+fn no_metric_depends_on_which_agent_spoke_under_the_default_trust_model() {
+    for path in corpus_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let trace = load_trace(&path.to_string_lossy());
+        let before = scalar_metrics(trace.clone());
+        let after = scalar_metrics(invert_source_order(&trace));
+
+        assert_eq!(
+            before, after,
+            "{name}: metrics changed when event sources were renamed. Under TrustModel::Equal \
+             with no source weights installed, identity must not move a metric."
+        );
+    }
+}
+
+/// **Sensitivity.** `false_acceptance_count` claims to count `Accept`s later
+/// retracted, downgraded, or driven `Contradictory`; `contradiction_recovery_cycles`
+/// claims to measure recovery from contradiction. Remove every route to either
+/// — drop retractions and corrections, make all assertions agree on `Probable`
+/// — and both must collapse. A metric that survives the removal of the thing it
+/// counts is not counting that thing.
+///
+/// This is the direction that was missing when three metrics passed their unit
+/// tests while measuring something other than their documentation.
+#[test]
+fn invalidation_metrics_collapse_when_nothing_can_be_invalidated() {
+    let mut nonzero_before = 0usize;
+
+    for path in corpus_paths() {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let trace = load_trace(&path.to_string_lossy());
+        let before = scalar_metrics(trace.clone());
+        let after = scalar_metrics(remove_every_invalidation_route(&trace));
+
+        if before["false_acceptance_count"].as_u64().unwrap_or(0) > 0 {
+            nonzero_before += 1;
+        }
+
+        assert_eq!(
+            after["false_acceptance_count"], 0,
+            "{name}: false_acceptance_count is {} with every invalidation route removed. \
+             Nothing is retracted, nothing is downgraded, nothing goes Contradictory — so \
+             whatever it is counting, it is not invalidated acceptances.",
+            after["false_acceptance_count"]
+        );
+        assert!(
+            after["contradiction_recovery_cycles"].is_null(),
+            "{name}: contradiction_recovery_cycles is {} in a trace where every assertion \
+             agrees, so no proposition can ever have been Contradictory.",
+            after["contradiction_recovery_cycles"]
+        );
+    }
+
+    // Guard against the test passing because the corpus never invalidated
+    // anything in the first place — then 0 -> 0 would prove nothing.
+    assert!(
+        nonzero_before >= 5,
+        "only {nonzero_before} fixture(s) had a non-zero false_acceptance_count to begin with; \
+         the sensitivity check needs a corpus that actually exercises invalidation, or it is \
+         asserting 0 == 0"
+    );
 }
 
 /// The §5.4 exclusions rest on a factual claim: that `consensus_stability` and
