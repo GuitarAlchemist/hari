@@ -984,6 +984,15 @@ fn has_tied_goal_priorities(trace: &ResearchTrace) -> bool {
 /// same priority**, so this is invisible to the whole existing suite while being
 /// trivially reachable in production — IX emitting two goals at 0.9 is ordinary.
 ///
+/// **The tie is the symptom, not the disease** (adversarial review, 2026-07-30).
+/// The underlying defect is that the THINK block evaluates `top_goal` alone, so
+/// a goal that is not top when its evidence lands is never read — see
+/// `known_violation_a_goal_below_the_top_is_never_evaluated`, which is in the
+/// shipped corpus and needs no tie. A tie merely changes *which* goal gets
+/// starved. Note also that the cheap fix is a no-op: switching to
+/// first-alphabetical flips the sign of the difference and leaves the metric
+/// just as name-dependent. Evaluating all goals is what dissolves this.
+///
 /// Pinned rather than fixed: which goal wins a priority tie is substrate
 /// behaviour, and `goal_completion_rate` is a metric §5.4 rules on. Changing it
 /// is an owner call, not a test-driven refactor. A principled fix would make the
@@ -1032,5 +1041,134 @@ fn known_violation_top_goal_ties_are_broken_by_goal_name() {
          ({before} both ways). If top_goal's tie-break was made name-free, delete this \
          known_violation test and remove the tie exemption from \
          theorem_metrics_are_name_invariant_over_generated_traces."
+    );
+}
+
+/// Read a fixture's per-goal final status alongside the belief for the same key.
+fn goal_status_vs_belief(path: &str) -> Vec<(String, String, String)> {
+    let trace = load_trace(path);
+    let report = CognitiveLoop::new(trace.dimension).process_research_trace(trace);
+    let value = serde_json::to_value(&report).expect("report serializes");
+    let goals = value
+        .get("final_goals")
+        .and_then(|g| g.as_object())
+        .expect("report carries final_goals");
+    let beliefs = value
+        .get("final_beliefs")
+        .and_then(|b| b.as_object())
+        .expect("report carries final_beliefs");
+
+    goals
+        .iter()
+        .map(|(key, goal)| {
+            (
+                key.clone(),
+                goal.get("status")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("?")
+                    .to_string(),
+                beliefs
+                    .get(key)
+                    .and_then(|b| b.as_str())
+                    .unwrap_or("<none>")
+                    .to_string(),
+            )
+        })
+        .collect()
+}
+
+/// **Known violation — goal starvation.** `CognitiveState::top_goal`
+/// (`lib.rs:848-853`) filters out only goals whose status is already `True`, so
+/// *any* goal that never reaches `True` holds the top slot indefinitely. The
+/// THINK block updates the status of `top_goal` alone, so every lower-priority
+/// goal is blocked for as long as that lasts — its evidence can arrive, be
+/// perceived, and move its belief, while its goal status is never read.
+///
+/// This is the defect that `known_violation_top_goal_ties_are_broken_by_goal_name`
+/// merely *exposes*: a priority tie changes which goal gets starved, but a tie is
+/// not required, and no fixture in the corpus has one. This instance is in the
+/// shipped corpus and involves no tie at all.
+///
+/// `long_recovery`: `gamma-method-correct` ends with belief `Probable` and goal
+/// status `Unknown`. All three goals end True-or-Probable in belief, yet
+/// `goal_completion_rate` reports 0.667 rather than 1.0.
+///
+/// Pinned, not fixed: evaluating all goals rather than only `top_goal` is a
+/// substrate behaviour change and an owner call — see §5.4 of the
+/// pre-registration. This test fails once that lands, which is the intent.
+#[test]
+fn known_violation_a_goal_below_the_top_is_never_evaluated() {
+    let rows = goal_status_vs_belief("../../fixtures/ix/long_recovery.json");
+
+    let (_, status, belief) = rows
+        .iter()
+        .find(|(key, _, _)| key == "gamma-method-correct")
+        .expect("long_recovery declares gamma-method-correct");
+
+    assert_eq!(
+        (status.as_str(), belief.as_str()),
+        ("Unknown", "Probable"),
+        "gamma-method-correct is no longer starved (status {status}, belief {belief}). If \
+         all goals are now evaluated, delete this known_violation and update §5.4."
+    );
+
+    // Every goal's belief is True or Probable, so an honest completion rate is
+    // 1.0. The reported rate is lower purely because starved goals keep their
+    // initial Unknown status.
+    assert!(
+        rows.iter()
+            .all(|(_, _, belief)| belief == "True" || belief == "Probable"),
+        "fixture changed: not every long_recovery goal ends True/Probable"
+    );
+    let trace = load_trace("../../fixtures/ix/long_recovery.json");
+    let rate = scalar_metrics(trace)["goal_completion_rate"]
+        .as_f64()
+        .expect("numeric");
+    assert!(
+        (rate - 2.0 / 3.0).abs() < 1e-12,
+        "goal_completion_rate is {rate}; expected 0.667 while gamma is starved (1.0 once fixed)"
+    );
+}
+
+/// **Known violation — stale goal status.** The THINK block
+/// (`lib.rs:1384-1404`) writes `goal.status` *only* in the `True | Probable`
+/// arm. `Contradictory` escalates without touching status, `Unknown`
+/// investigates, and `Doubtful`/`False` fall through to `_ => {}`. Status is
+/// therefore never revised **downward**: a goal credited as achieved keeps that
+/// credit after its own evidence collapses.
+///
+/// `cognition_divergence`: `alpha-prompt-helps` is written `Probable` early, its
+/// belief goes `Contradictory`, and the status is never revised — so the default
+/// arm reports `goal_completion_rate` 0.5 while `SubjectiveLogic`, whose write is
+/// unconditional and two-sided, reports 0.0 on the same trace.
+///
+/// This is the second of the two artifacts behind §5.4's decision not to
+/// reinstate `goal_completion_rate`, and it pushes in the opposite direction to
+/// starvation: staleness inflates the hexavalent arms, starvation deflates them.
+#[test]
+fn known_violation_goal_status_is_never_revised_downward() {
+    let rows = goal_status_vs_belief("../../fixtures/ix/cognition_divergence.json");
+
+    let (_, status, belief) = rows
+        .iter()
+        .find(|(key, _, _)| key == "alpha-prompt-helps")
+        .expect("cognition_divergence declares alpha-prompt-helps");
+
+    assert_eq!(
+        (status.as_str(), belief.as_str()),
+        ("Probable", "Contradictory"),
+        "alpha-prompt-helps no longer keeps stale credit (status {status}, belief {belief}). \
+         If the THINK block now revises status downward, delete this known_violation and \
+         update §5.4 — the goal_completion_rate decomposition there depends on it."
+    );
+
+    // The metric counts it as achieved despite the arm's own belief contradicting it.
+    let trace = load_trace("../../fixtures/ix/cognition_divergence.json");
+    let rate = scalar_metrics(trace)["goal_completion_rate"]
+        .as_f64()
+        .expect("numeric");
+    assert!(
+        (rate - 0.5).abs() < 1e-12,
+        "goal_completion_rate is {rate}; expected 0.5, half of it stale credit"
     );
 }

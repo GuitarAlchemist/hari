@@ -185,11 +185,64 @@ So the exclusion was sound for the two-arm Phase 5 comparison it was authored
 against, and became wrong when SL was added as a third arm. The reasoning stayed
 in place while the premise stopped being true.
 
-`goal_completion_rate` is therefore **eligible for reinstatement as a §5.2
-secondary** — it discriminates between arms. Reinstating it is an owner call
-and does not happen in this amendment; a metric that has been excluded through
-the period when arms were compared cannot be quietly promoted afterwards. It
-stays out of the **primary** comparison regardless: §5.1 admits exactly one
+`goal_completion_rate` therefore looked **eligible for reinstatement as a §5.2
+secondary** — it discriminates between arms.
+
+**Second amendment (2026-07-30, adversarial review): do not reinstate.** The
+discrimination is real and is almost entirely artifact. Decomposed per fixture:
+
+| fixture | decay | SL | mechanism |
+|---|---|---|---|
+| cognition_divergence | 0.500 | 0.000 | **staleness** — decay credits `alpha-prompt-helps` as `Probable` while its own belief is `Contradictory` |
+| swarm_dissent | 0.667 | 0.333 | staleness (`omicron-router-better`) |
+| racing_goals | 0.400 | 0.200 | staleness, author-supplied (`lambda-tool-correct`); decay changes **no** goal status on this fixture |
+| long_recovery | 0.667 | 1.000 | **starvation** — `gamma-method-correct` holds `top_goal` zero times in 22 events |
+| heavy_contradiction | 0.333 | 1.000 | genuine posterior difference |
+
+Two distinct substrate defects drive four of the five, and they push in
+**opposite directions**:
+
+* **Staleness.** The hexavalent write (`lib.rs:1384-1404`) is *upgrade-only* — it
+  assigns `goal.status` only in the `True | Probable` arm; `Contradictory`
+  escalates without touching status. So a goal keeps credit after its own
+  evidence collapses. SL's write is unconditional and tracks the posterior down.
+* **Starvation.** `top_goal` (`lib.rs:848-853`) filters out only goals whose
+  status is already `True`, so *any* goal that never reaches `True` — including
+  one stuck at `Unknown` — holds the slot indefinitely and blocks every
+  lower-priority goal. The hex arms set status for `top_goal` alone; SL sets it
+  for every goal with an opinion.
+
+The comment at `subjective_logic.rs:450-451` claiming SL "mirrors the
+Lie/RecencyDecay treatment ... so the metric is comparable" is false on
+coverage, on directionality, and on timing.
+
+The one residual, `heavy_contradiction`, is not a goal-completion capability
+either: SL fuses `Contradictory → Probable` where `hari-lattice` deliberately
+preserves irreconcilable evidence. Scoring that collapse as achievement, with no
+ground truth on whether `Probable` is right, penalises the project's core
+epistemic commitment and rewards credulity.
+
+**Aggregate, and the trap.** Corpus means are decay **0.4458** vs SL **0.4417** —
+SL is marginally *worse*, so excluding it costs SL nothing today and reinstating
+it would not flatter SL. But all three of SL's losses are decay's stale credit.
+**Fixing the derivation and then reinstating — the exit this section
+pre-authorises — is precisely the move that would make SL look better.** Recorded
+here, before anyone fixes it, so that sequence cannot later read as neutral.
+
+Treatment: single-arm diagnostics, documented as not comparable across arms —
+the same disposition §5.3 gave `ReplayMetrics::false_rejection_count`.
+Reinstatement requires all four of: the same write rule and coverage across arms;
+`top_goal`'s tie-break made name-free; the starvation defect fixed; and
+"achieved" graded against authored ground truth rather than the arm's own
+posterior. The last is the §9 item 2 blocker and is not reachable before §9.3.
+
+Stated plainly rather than dressed as eligibility: this is exclusion for the
+foreseeable term. The honest counter-argument is that each round produces a
+fresh reason to exclude the one secondary that discriminates, which is hard to
+distinguish from suppression — the mitigation is that these reasons are
+measured, and the exit conditions above are concrete and falsifiable.
+
+It stays out of the **primary** comparison regardless: §5.1 admits exactly one
 metric. Nothing here changes the primary or the decision rule, and no eval
 outcome has been inspected.
 
@@ -400,9 +453,52 @@ instead.
    The shipped fixture therefore uses the only pair authorable today: commit to
    a corroborated claim (act) versus a `goal_update`, which carries no
    proposition and so offers nothing to commit to (abstain). It is deliberately
-   weak and labelled as such in the fixture itself. **An evidence-insufficiency
-   pair is not authorable, and §9.3 cannot be completed at eval scale until the
-   decision below is made.**
+   weak and labelled as such in the fixture itself.
+
+   **Correction (2026-07-30, adversarial review).** The conclusion drawn above —
+   "an evidence-insufficiency pair is not authorable" — is **false**, and the
+   §5.1 taxonomy stands unamended. The scoped claim holds: `RecencyDecay` and
+   `Lie` are evidence-blind on the act/abstain decision. Generalising it to *the
+   metric* was the error. `SubjectiveLogic` abstains on evidence:
+   `recommend_from_opinion` falls through to `Action::Wait`
+   (`crates/hari-core/src/subjective_logic.rs:345`) when belief and disbelief are
+   both sub-threshold and uncertainty is below the investigate threshold — no
+   cycle arithmetic anywhere in it, and SL short-circuits before
+   `score_actions_with_cycles` entirely. Measured on `swarm_dissent`:
+
+   | arm | waits | on a proposition |
+   |---|---|---|
+   | RecencyDecay | 3 | **0** |
+   | Lie | 7 | 4 |
+   | SubjectiveLogic | 16 | **16** |
+
+   So this is not a defect in the primary metric. It is a **result**, of the same
+   class as the Phase-5 Lie verdict: *abstention is evidence-driven under
+   Subjective Logic and evidence-blind under the hexavalent arms.* §9.3 fixtures
+   are authorable and gradeable — for SL — and should be authored
+   `swarm_dissent`-shaped with `cycle` stamps tracking position so decay never
+   fires.
+
+   **The alternative taxonomy (§5.1) is rejected**, on three measured grounds
+   rather than on preference. (a) It does not fix the observation offered as its
+   reason: `recommend_for_claim` maps `True | Probable | Doubtful | False` all to
+   `Accept` (`lib.rs:2362`), so the four probe claims spanning "1 unreplicated
+   anecdote at `Doubtful`" to "500 runs at `True`" **still all act** under it.
+   (b) It re-imports the defect the §5.3 amendment just removed: abstaining via
+   `Escalate` is uncharged, and `Lie` emits 13 `Escalate`s on
+   `heavy_contradiction` — 13 free abstentions — while SL's claim-`Wait`s stay
+   chargeable. (c) Under it, `act` reduces to `belief ∉ {Unknown, Contradictory}`,
+   a `final_beliefs` readout promoted to primary. Switching a construct because
+   it makes the instrument respond is instrument-driven redefinition, which §10
+   does not license — §10 guards against *outcome*-driven amendment, which is a
+   different and later failure.
+
+   Two mechanism corrections while here, neither changing a verdict. The corpus
+   `Wait`s under `RecencyDecay` are **not** decay-driven: a `goal_update` emits
+   only a `Log`, `Log` scores a flat `0.05`, and `0.05 < θ_wait = 0.1` suppresses
+   the list to `[Wait]` at age 0. And decay-driven abstention needs every event
+   stamped `cycle: 1`, which no natural trace does — it is a fixture an author
+   must deliberately construct, not something the substrate forces.
 4. **The driver does not exist.** `clients/ix_reference` currently holds
    `hari_client.py` and `run_session.py`; the paired Hari-on/Hari-off driver is
    unwritten.
