@@ -197,6 +197,17 @@ and 2 are satisfied by the branch carrying this edit; 3 and 4 remain open.**
 Nothing in §5–§8 changed — this records prerequisite status only, and no eval
 outcome has been inspected.
 
+**Second amendment (2026-07-29, `main` @ `f34d60c`).** Item 2's calibration
+block shipped ledger-global: it folded in every record in
+`HARI_STATE_DIR/forecasts/` regardless of whether the replayed trace mentioned
+the belief, while documenting itself as "calibration for the beliefs this trace
+touched". Replaying `conflicting_benchmark.json` therefore reported
+`pooled_mean_brier: 0.68125` over four GA/Demerzel beliefs, none of which the
+fixture names — a number that reads as if the trace's own claim had been scored.
+`with_calibration` is now scoped to touched beliefs and the regression is
+pinned by `calibration_excludes_forecasts_about_beliefs_the_trace_never_touched`.
+Two consequences for §8, both recorded below. Still no eval outcome inspected.
+
 Item 1 surfaced a finding that matters for §5.3 and for the Conditioned
 Abstention Rate secondary: **no Wait in the existing eight-fixture corpus is an
 abstention on a claim.** Every one lands on a `goal_update` or
@@ -216,10 +227,35 @@ instead.
    is an opt-in `Option<ReplayCalibration>` (per-belief Brier from
    `forecast::calibration()` plus a scored-count-weighted pooled roll-up),
    attached via `with_calibration` and reachable as `replay --calibration`.
-   Replay itself stays I/O-free. The §8 calibration half is now evaluable for a
-   single arm — **but not yet across arms**: `--compare3` emits a three-arm
-   wrapper with nowhere to hang the block, and cross-arm calibration is exactly
-   what the kill/keep rule compares. That gap is now the blocking one.
+   Replay itself stays I/O-free, and the block is scoped to the beliefs the
+   trace touched (see the second amendment).
+
+   **The §8 calibration half is unexercised, and per-arm calibration is not a
+   plumbing gap.** Two findings from the scoping fix:
+
+   *Corpus.* Once scoped, **no fixture in the eight-fixture corpus has a single
+   forecast about any belief it touches** — all eight report `0 beliefs, 0
+   scored`. The ledger's four beliefs are `demerzel-belief-lint-reduces-warns`
+   and three `ga-*` claims; fixture propositions are `benchmark-x-is-reliable`
+   and kin. Zero overlap. So the calibration half of §8 is as unexercised as the
+   abstention measures, and for the same reason: the corpus was never built to
+   drive it. §9.3's paired fixtures must ship **with forecasts emitted about
+   their propositions**, or the calibration criterion stays undefined.
+
+   *Per-arm.* The earlier claim that `--compare3` "has nowhere to hang the
+   block" was wrong — each arm's `ResearchReplayReport` already carries the
+   `Option<ReplayCalibration>` field. The real obstacle is that it would hang
+   three *identical* blocks. The touched-belief set derives from the trace's
+   events, which are the same for every arm; measured on
+   `cognition_divergence`, `heavy_contradiction`, and `swarm_dissent`, all
+   three arms end with identical belief sets even where their action sequences
+   diverge. A shared ledger scoped by a shared belief set cannot separate arms.
+   Cross-arm calibration requires **each arm to emit its own forecasts from its
+   own posterior** — a forecast-emission hook in replay, which is a new
+   capability and a design question (what does an arm predict, and against
+   which observable?), not wiring. Reclassified from "next blocking item" to a
+   design prerequisite ranked behind 3 and 4, since paired fixtures are what
+   would give an emission hook anything to predict about.
 3. **Paired fixtures do not exist.** No should-act/should-abstain pair is present
    under `fixtures/ix/`.
 4. **The driver does not exist.** `clients/ix_reference` currently holds
@@ -227,8 +263,12 @@ instead.
    unwritten.
 
 Items 1 and 2 were the cheapest and were prerequisites for the decision rule
-itself; they landed first. The remaining blockers are 3, 4, and per-arm
-calibration under `--compare3`.
+itself; they landed first. **The remaining blockers are 3 and 4, in that
+order** — per-arm calibration is now ranked behind them, because both the
+abstention measures (item 1's finding) and the calibration criterion (item 2's)
+turned out to be unexercised by the existing corpus. Two of §8's inputs are
+instruments with nothing yet to measure; §9.3 is what supplies the signal, and
+it must carry emitted forecasts as well as paired traces.
 
 ## 10. Amendment policy
 

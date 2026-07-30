@@ -30,7 +30,7 @@ use hari_lattice::{BeliefNetwork, HexValue};
 use hari_swarm::Message;
 use nalgebra::{DMatrix, DVector};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 // ---------------------------------------------------------------------------
@@ -595,9 +595,10 @@ pub struct ResearchReplayReport {
 /// while degrading the pool has not improved calibration.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ReplayCalibration {
-    /// Per-belief calibration, keyed by `belief_id`.
+    /// Per-belief calibration, keyed by `belief_id`. Scoped to the beliefs the
+    /// replayed trace touched — see [`ResearchReplayReport::with_calibration`].
     pub per_belief: BTreeMap<String, forecast::BeliefCalibration>,
-    /// Resolved-and-scored forecasts across all beliefs.
+    /// Resolved-and-scored forecasts across the in-scope beliefs.
     pub scored: usize,
     /// Forecasts resolved as `Void` (observable never materialised).
     pub void: usize,
@@ -644,14 +645,42 @@ impl ReplayCalibration {
 }
 
 impl ResearchReplayReport {
+    /// Every belief this replay touched: the propositions named by its events,
+    /// plus whatever survives in `final_beliefs`. Union rather than either
+    /// alone — a retracted claim can leave `final_beliefs` while still having
+    /// been reasoned about, and propagation can enter `final_beliefs` without
+    /// any event naming it.
+    fn touched_beliefs(&self) -> BTreeSet<String> {
+        let mut touched: BTreeSet<String> = self.final_beliefs.keys().cloned().collect();
+        for outcome in &self.outcomes {
+            touched.extend(outcome.event.touched_propositions());
+        }
+        touched
+    }
+
     /// Attach forecast calibration to this report (#35 §9.2).
     ///
     /// Opt-in by construction: a report only carries calibration when a caller
     /// hands it records, which is what keeps every existing replay byte-equal.
     /// Records are supplied by the caller (`forecast::load`), never read here.
+    ///
+    /// **Scoped to this trace.** The ledger is ecosystem-wide — it carries
+    /// forecasts about GA and Demerzel beliefs that a hari fixture never
+    /// mentions — so records whose `belief_id` is not among the beliefs this
+    /// replay touched are dropped. Without that filter the block reports the
+    /// calibration of unrelated forecasts, which reads as if the trace's own
+    /// claims had been scored. Zero in-scope records yields an all-zero block
+    /// with `pooled_mean_brier: None`: the honest "nothing has been forecast
+    /// about these beliefs yet".
     #[must_use]
     pub fn with_calibration(mut self, records: &[forecast::ForecastRecord]) -> Self {
-        self.calibration = Some(ReplayCalibration::from_records(records));
+        let touched = self.touched_beliefs();
+        let in_scope: Vec<forecast::ForecastRecord> = records
+            .iter()
+            .filter(|r| touched.contains(&r.belief_id))
+            .cloned()
+            .collect();
+        self.calibration = Some(ReplayCalibration::from_records(&in_scope));
         self
     }
 }
@@ -3486,6 +3515,64 @@ mod tests {
         assert!(cal.pooled_mean_brier.is_none());
     }
 
+    /// Regression: the first cut of `with_calibration` folded in the *whole*
+    /// ledger, so replaying a hari fixture reported the calibration of
+    /// unrelated GA/Demerzel forecasts — a number that reads as if the trace's
+    /// own claims had been scored. Records must be scoped to touched beliefs.
+    #[test]
+    fn calibration_excludes_forecasts_about_beliefs_the_trace_never_touched() {
+        let mut cognitive_loop = CognitiveLoop::new(4);
+        let report = cognitive_loop
+            .process_research_trace(ResearchTrace {
+                dimension: 4,
+                events: vec![belief_update(
+                    1,
+                    "benchmark-x-is-reliable",
+                    HexValue::Probable,
+                )],
+            })
+            .with_calibration(&[
+                // In scope: the trace reasoned about this claim.
+                scored_forecast("benchmark-x-is-reliable", "f-in", 0.10),
+                // Out of scope: real ledger entries from sibling repos.
+                scored_forecast("ga-chatbot-sonnet5-no-regression", "f-out-1", 0.64),
+                scored_forecast("demerzel-belief-lint-reduces-warns", "f-out-2", 0.90),
+            ]);
+
+        let cal = report.calibration.expect("calibration was attached");
+        assert_eq!(
+            cal.per_belief.keys().collect::<Vec<_>>(),
+            vec!["benchmark-x-is-reliable"],
+            "out-of-scope beliefs leaked into the block"
+        );
+        assert_eq!(cal.scored, 1);
+        // 0.10, not the three-record pooled mean (0.5467) it used to report.
+        let pooled = cal.pooled_mean_brier.unwrap();
+        assert!((pooled - 0.10).abs() < 1e-12, "pooled was {pooled}");
+    }
+
+    #[test]
+    fn calibration_is_all_zero_when_no_forecast_concerns_this_trace() {
+        // The honest answer for "nothing has been forecast about these beliefs"
+        // — not a borrowed score from an unrelated belief.
+        let mut cognitive_loop = CognitiveLoop::new(4);
+        let report = cognitive_loop
+            .process_research_trace(ResearchTrace {
+                dimension: 4,
+                events: vec![belief_update(
+                    1,
+                    "benchmark-x-is-reliable",
+                    HexValue::Probable,
+                )],
+            })
+            .with_calibration(&[scored_forecast("some-other-repos-belief", "f1", 0.25)]);
+
+        let cal = report.calibration.expect("calibration was attached");
+        assert!(cal.per_belief.is_empty());
+        assert_eq!((cal.scored, cal.void, cal.pending), (0, 0, 0));
+        assert!(cal.pooled_mean_brier.is_none());
+    }
+
     #[test]
     fn attached_calibration_round_trips_through_the_json_boundary() {
         let mut cognitive_loop = CognitiveLoop::new(4);
@@ -3502,7 +3589,9 @@ mod tests {
                     },
                 }],
             })
-            .with_calibration(&[scored_forecast("belief-a", "f1", 0.25)]);
+            // In scope: the same claim the trace above reasons about, so the
+            // record survives `with_calibration`'s trace-scoping filter.
+            .with_calibration(&[scored_forecast("benchmark-x-is-reliable", "f1", 0.25)]);
 
         let json = serde_json::to_string(&report).unwrap();
         let back: ResearchReplayReport = serde_json::from_str(&json).unwrap();
@@ -3511,6 +3600,6 @@ mod tests {
             .expect("calibration survives the round trip");
         assert_eq!(cal.scored, 1);
         assert!((cal.pooled_mean_brier.unwrap() - 0.25).abs() < 1e-12);
-        assert_eq!(cal.per_belief["belief-a"].scored, 1);
+        assert_eq!(cal.per_belief["benchmark-x-is-reliable"].scored, 1);
     }
 }
