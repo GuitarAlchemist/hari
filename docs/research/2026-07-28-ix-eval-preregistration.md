@@ -189,7 +189,9 @@ in place while the premise stopped being true.
 secondary** — it discriminates between arms.
 
 **Second amendment (2026-07-30, adversarial review): do not reinstate.** The
-discrimination is real and is almost entirely artifact. Decomposed per fixture:
+discrimination is real and is almost entirely artifact. Decomposed per fixture
+**as measured before the starvation fix landed** (see the third amendment below,
+which supersedes the `long_recovery` row and the aggregate):
 
 | fixture | decay | SL | mechanism |
 |---|---|---|---|
@@ -245,6 +247,47 @@ measured, and the exit conditions above are concrete and falsifiable.
 It stays out of the **primary** comparison regardless: §5.1 admits exactly one
 metric. Nothing here changes the primary or the decision rule, and no eval
 outcome has been inspected.
+
+**Third amendment (2026-07-30): the starvation defect is fixed; the verdict is
+unchanged.** Goal status is now refreshed for every goal each cycle rather than
+for `top_goal` alone. Action emission stays top-goal-only — one attention target
+per cycle — and the emitted action sequences are unchanged, verified against
+per-fixture action counts recorded before the change.
+
+What moved:
+
+* `long_recovery` 0.667 → **1.000** for the hexavalent arms, so it is now **tied**
+  with SL and drops out of the discriminating set. Arms differ on **4 of 8**, not
+  5: three from staleness, one from the `heavy_contradiction` posterior difference.
+* Corpus means are now decay **0.4875** vs SL **0.4417** — decay went from a
+  statistical wash to *ahead*, because the starved goals it was being denied
+  credit for are now counted.
+* Reinstatement condition 3 ("the starvation defect fixed") is satisfied. The
+  other three are not.
+* `known_violation_top_goal_ties_are_broken_by_goal_name` is **dissolved** and
+  replaced by a theorem: which goal wins a priority tie no longer determines what
+  gets evaluated, so `goal_completion_rate` is name-invariant under a tie. The
+  tie-break itself is untouched, which was the point — it was the symptom.
+
+**Correction to the trap recorded above.** The second amendment warned that
+"fixing the derivation and then reinstating is precisely the move that would
+flatter SL." That is true of the **staleness** fix, not of the starvation fix —
+the starvation fix moved the metric in *decay's* favour. Both defects were
+lumped together as "the derivation" and they push in opposite directions. The
+warning stands, and now applies specifically: the remaining unfixed defect is the
+upgrade-only write, and fixing *it* is what would move this metric toward SL.
+That defect stays pinned by
+`known_violation_goal_status_is_never_revised_downward`, and it is deliberately
+not fixed here — revising status downward would change what "achieved" means,
+which is a §5.2 semantics decision rather than a starvation bug.
+
+Also landed: `CognitiveState::add_goal` no longer resets `status` to `Unknown`
+when a goal is re-declared, so a priority-revising `goal_update` can no longer
+silently discard a completion the policy had established. An authored `status` in
+the `goal_update` payload still wins, since it is applied after — that is an
+explicit assertion by IX, not an accident.
+
+No eval outcome has been inspected.
 
 ## 6. Statistics
 

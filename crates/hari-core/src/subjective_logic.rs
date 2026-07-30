@@ -446,9 +446,22 @@ pub fn process_research_trace_subjective_logic(
         })
         .collect();
 
-    // Push opinion-derived final status onto goals where the goal key
-    // matches a touched proposition. Mirrors the Lie/RecencyDecay
-    // treatment of goal status so the metric is comparable.
+    // Push opinion-derived final status onto goals where the goal key matches a
+    // touched proposition.
+    //
+    // This does **not** mirror the Lie/RecencyDecay treatment, and
+    // `goal_completion_rate` is correspondingly **not comparable across arms** —
+    // the previous comment claimed the opposite and was false on three counts.
+    // The hexavalent arms write status once per cycle (for whichever goal holds
+    // the top slot) and only upgrade, in the `True | Probable` arm. This write is
+    // a single end-of-trace pass, covers every goal with an opinion, and is
+    // two-sided: it tracks the posterior downward as well as up. Measured
+    // consequence — `cognition_divergence` reports 0.500 under RecencyDecay
+    // against 0.000 here, entirely because the hex arms keep stale credit for
+    // `alpha-prompt-helps` while their own belief is `Contradictory`.
+    //
+    // See §5.4 of `docs/research/2026-07-28-ix-eval-preregistration.md`, which
+    // excludes the metric on exactly these grounds.
     for (key, goal) in state.goals.iter_mut() {
         if let Some(op) = state.opinions.get(key) {
             goal.status = hex_value_for_opinion(op, &config);

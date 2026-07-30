@@ -834,14 +834,24 @@ impl CognitiveState {
         description: impl Into<String>,
         priority: f64,
     ) {
-        self.goals.insert(
-            key.into(),
-            Goal {
-                description: description.into(),
+        // Re-declaring a goal revises its description and priority; it does not
+        // un-achieve it. A blanket `insert` reset `status` to `Unknown`, so a
+        // priority-revising `goal_update` silently discarded a completion the
+        // policy had already established — observed on
+        // `fixtures/ix/long_recovery.json`, whose cycle-30 `goal_update` reset
+        // `alpha-prompt-helps` from `True` back to `Probable`.
+        let description = description.into();
+        self.goals
+            .entry(key.into())
+            .and_modify(|goal| {
+                goal.description = description.clone();
+                goal.priority = priority;
+            })
+            .or_insert(Goal {
+                description,
                 priority,
                 status: HexValue::Unknown,
-            },
-        );
+            });
     }
 
     /// Get the highest priority active goal.
@@ -1374,7 +1384,23 @@ impl CognitiveLoop {
             }
         }
 
-        // Evaluate goals
+        // Evaluate goals.
+        //
+        // Action emission stays focused on the **top** goal — one attention
+        // target per cycle — but goal *status* is refreshed for every goal below,
+        // because status was previously only ever written for whichever goal held
+        // the top slot. `top_goal` evicts a goal only once its status reaches
+        // `True`, so any goal stuck short of that held the slot indefinitely and
+        // starved the rest: on `fixtures/ix/long_recovery.json`,
+        // `gamma-method-correct` held it zero times across 22 events and ended
+        // `Unknown` while its belief was `Probable`.
+        //
+        // Ordering is deliberate. `top_goal` is resolved here, against the
+        // statuses as they stood at the start of this cycle, and the bulk refresh
+        // runs afterwards. Refreshing first would evict a goal in the same cycle
+        // it completes rather than the next, changing which goal draws an action
+        // — so this ordering keeps the emitted action sequence byte-identical and
+        // confines the change to goal status.
         if let Some((key, goal)) = self.state.top_goal() {
             let key = key.clone();
             let goal_desc = goal.description.clone();
@@ -1384,9 +1410,6 @@ impl CognitiveLoop {
             if let Some(belief) = self.state.beliefs.get(&key) {
                 match belief.value {
                     HexValue::True | HexValue::Probable => {
-                        if let Some(g) = self.state.goals.get_mut(&key) {
-                            g.status = belief.value;
-                        }
                         actions.push(Action::Log(format!("Goal '{}' achieved!", goal_desc)));
                         action_cycles.push(cycle_stamp);
                     }
@@ -1403,6 +1426,34 @@ impl CognitiveLoop {
                     }
                     _ => {}
                 }
+            }
+        }
+
+        // Bulk status refresh — every goal, not just the one that drew an action.
+        // Collected first because the write borrows `self.state.goals` mutably
+        // while the read borrows `self.state.beliefs`.
+        //
+        // Still upgrade-only (`True | Probable`), matching the emission arms
+        // above: a goal whose evidence later collapses keeps its credit. That
+        // staleness is a *separate* defect, pinned by
+        // `known_violation_goal_status_is_never_revised_downward`, and changing it
+        // would alter what "achieved" means rather than which goals get looked
+        // at. Deliberately out of scope here.
+        let goal_beliefs: Vec<(String, HexValue)> = self
+            .state
+            .goals
+            .keys()
+            .filter_map(|key| {
+                self.state
+                    .beliefs
+                    .get(key)
+                    .filter(|belief| matches!(belief.value, HexValue::True | HexValue::Probable))
+                    .map(|belief| (key.clone(), belief.value))
+            })
+            .collect();
+        for (key, value) in goal_beliefs {
+            if let Some(goal) = self.state.goals.get_mut(&key) {
+                goal.status = value;
             }
         }
 

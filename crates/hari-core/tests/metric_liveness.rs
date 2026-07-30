@@ -593,14 +593,20 @@ fn the_section_5_4_exclusions_hold_only_where_measured() {
     assert!(
         !goal_moved_by_sl.is_empty(),
         "goal_completion_rate no longer differs between RecencyDecay and SubjectiveLogic on any \
-         fixture. It used to differ on 5 of 8, which is why §5.4's \"no policy can move them\" \
-         does not hold for this metric. If SL has stopped deriving goal.status from its \
-         posterior, the §5.4 amendment recording this needs revisiting."
+         fixture, so §5.4's \"no policy can move them\" would hold again. If SL has stopped \
+         deriving goal.status from its posterior, the §5.4 amendment needs revisiting."
     );
-    assert!(
-        goal_moved_by_sl.len() >= 5,
-        "SL moved goal_completion_rate on only {} fixture(s); the recorded finding is 5 of 8: \
-         {goal_moved_by_sl:#?}",
+    // Was 5 of 8. The goal-starvation fix removed `long_recovery` from the list —
+    // both arms now reach 1.0 there — leaving 4: three driven by the hexavalent
+    // write being upgrade-only (staleness) and one by a genuine posterior
+    // difference on `heavy_contradiction`. If this drops to 3, check whether the
+    // staleness defect was fixed, because §5.4 records that doing so is what
+    // would move this metric in SL's favour.
+    assert_eq!(
+        goal_moved_by_sl.len(),
+        4,
+        "SL moves goal_completion_rate on {} fixture(s); the recorded finding is 4 of 8 after \
+         the starvation fix: {goal_moved_by_sl:#?}",
         goal_moved_by_sl.len()
     );
 }
@@ -759,21 +765,18 @@ fn theorem_metrics_are_name_invariant_over_generated_traces() {
         let trace = generate_trace(&mut rng, &pool);
         let renamed = invert_proposition_order(&trace);
 
-        let mut before = scalar_metrics(trace.clone());
-        let mut after = scalar_metrics(renamed.clone());
+        let before = scalar_metrics(trace.clone());
+        let after = scalar_metrics(renamed.clone());
 
-        // Narrow exemption, not a blanket one: `goal_completion_rate` is
-        // name-dependent *only* when two goals share the top priority, because
-        // `top_goal` breaks ties by key order. Outside a tie it must still match
-        // exactly. See known_violation_top_goal_ties_are_broken_by_goal_name.
+        // The `goal_completion_rate` exemption that used to live here is gone.
+        // It was needed while goal status was written for `top_goal` only, which
+        // made the metric depend on which goal won a priority tie. Now that every
+        // goal's status is refreshed each cycle, name invariance holds even under
+        // a tie — asserted directly by
+        // `theorem_goal_completion_rate_is_name_invariant_under_a_priority_tie`.
+        // Ties are still counted, to confirm generation reaches them at all.
         if has_tied_goal_priorities(&trace) {
             tie_traces += 1;
-            for metrics in [&mut before, &mut after] {
-                metrics
-                    .as_object_mut()
-                    .expect("metrics object")
-                    .remove("goal_completion_rate");
-            }
         }
 
         tolerated.extend(assert_equivalent_under_reordering(
@@ -803,15 +806,15 @@ fn theorem_metrics_are_name_invariant_over_generated_traces() {
     // if every trial had a tie, `goal_completion_rate` would never be checked;
     // if none did, the known violation has stopped being reachable and its
     // exemption should go.
+    // Generation must still reach priority ties, because a tie is the condition
+    // under which `goal_completion_rate` used to become name-dependent. No
+    // exemption is applied any more — these trials are held to exact equality
+    // like the rest — but if generation stopped producing ties we would lose the
+    // coverage that proves the starvation fix holds under one.
     assert!(
         tie_traces > 0,
-        "no generated trace declared two goals at the same priority, so the \
-         goal_completion_rate exemption is dead code — drop it, or widen generation"
-    );
-    assert!(
-        tie_traces * 2 < TRIALS,
-        "{tie_traces}/{TRIALS} trials were exempted for a goal-priority tie; \
-         goal_completion_rate is barely being checked for name invariance at all"
+        "no generated trace declared two goals at the same priority, so nothing here exercises \
+         the tie case the goal-starvation fix was measured against — widen generation"
     );
 
     // The tolerance list is an allowance, not a prediction: if a listed metric
@@ -972,36 +975,26 @@ fn has_tied_goal_priorities(trace: &ResearchTrace) -> bool {
     false
 }
 
-/// **Known violation.** `CognitiveState::top_goal` selects with
-/// `max_by(priority)` over a `BTreeMap`, and `Iterator::max_by` returns the
-/// *last* maximum. So when two goals share the top priority the winner is
-/// whichever key sorts later alphabetically — and since the THINK block updates
-/// the status of `top_goal` alone, `goal_completion_rate` becomes a function of
-/// what the goals are **named**.
+/// **Was a known violation; now a theorem.** `CognitiveState::top_goal` still
+/// resolves ties by `BTreeMap` order — `Iterator::max_by` returns the *last*
+/// maximum, so the alphabetically-later key wins. That is unchanged and
+/// deliberately so: the tie-break was the **symptom**. The disease was that goal
+/// *status* was written only for whichever goal held the top slot, so the
+/// tie-break decided which goals were ever evaluated at all.
 ///
-/// Found by `theorem_metrics_are_name_invariant_over_generated_traces` on
-/// recombined traces. **No fixture in `fixtures/ix/` declares two goals at the
-/// same priority**, so this is invisible to the whole existing suite while being
-/// trivially reachable in production — IX emitting two goals at 0.9 is ordinary.
+/// Now that status is refreshed for every goal each cycle
+/// (`crates/hari-core/src/lib.rs`, the bulk refresh after the top-goal action
+/// block), which goal happens to win a tie no longer determines what gets
+/// looked at, and `goal_completion_rate` is name-invariant under a tie. This
+/// test previously asserted the inequality and was expected to fail on fix; it
+/// now asserts the equality.
 ///
-/// **The tie is the symptom, not the disease** (adversarial review, 2026-07-30).
-/// The underlying defect is that the THINK block evaluates `top_goal` alone, so
-/// a goal that is not top when its evidence lands is never read — see
-/// `known_violation_a_goal_below_the_top_is_never_evaluated`, which is in the
-/// shipped corpus and needs no tie. A tie merely changes *which* goal gets
-/// starved. Note also that the cheap fix is a no-op: switching to
-/// first-alphabetical flips the sign of the difference and leaves the metric
-/// just as name-dependent. Evaluating all goals is what dissolves this.
-///
-/// Pinned rather than fixed: which goal wins a priority tie is substrate
-/// behaviour, and `goal_completion_rate` is a metric §5.4 rules on. Changing it
-/// is an owner call, not a test-driven refactor. A principled fix would make the
-/// tie-break explicit and name-free rather than incidental to key ordering.
-///
-/// This test fails if the behaviour is *fixed*, which is the point — the fix
-/// should delete this test and tighten the theorem, deliberately.
+/// Worth recording why the *obvious* fix was not taken: switching `max_by` to
+/// first-alphabetical merely flips the sign of the difference (0.5 -> 1.0
+/// becomes 1.0 -> 0.5) and leaves the metric just as name-dependent. Evaluating
+/// every goal is what actually dissolved it.
 #[test]
-fn known_violation_top_goal_ties_are_broken_by_goal_name() {
+fn theorem_goal_completion_rate_is_name_invariant_under_a_priority_tie() {
     // Two goals, identical priority, statuses driven by identically-shaped
     // evidence. Only the names differ in sort order.
     let trace: ResearchTrace = serde_json::from_value(serde_json::json!({
@@ -1035,12 +1028,18 @@ fn known_violation_top_goal_ties_are_broken_by_goal_name() {
         .as_f64()
         .expect("numeric");
 
-    assert_ne!(
+    assert_eq!(
         before, after,
-        "goal_completion_rate no longer depends on goal names under a priority tie \
-         ({before} both ways). If top_goal's tie-break was made name-free, delete this \
-         known_violation test and remove the tie exemption from \
-         theorem_metrics_are_name_invariant_over_generated_traces."
+        "goal_completion_rate depends on goal names again under a priority tie \
+         ({before} vs {after}). The bulk goal-status refresh is what makes the tie-break \
+         harmless — if status has gone back to being written for top_goal only, this \
+         regresses to the known violation it replaced."
+    );
+    // Both goals reach belief True, so both must be credited regardless of which
+    // one won the tie. A rate below 1.0 means a goal was starved.
+    assert!(
+        (before - 1.0).abs() < 1e-12,
+        "expected both tied goals credited (1.0), got {before} — a goal is still being starved"
     );
 }
 
@@ -1077,27 +1076,26 @@ fn goal_status_vs_belief(path: &str) -> Vec<(String, String, String)> {
         .collect()
 }
 
-/// **Known violation — goal starvation.** `CognitiveState::top_goal`
-/// (`lib.rs:848-853`) filters out only goals whose status is already `True`, so
-/// *any* goal that never reaches `True` holds the top slot indefinitely. The
-/// THINK block updates the status of `top_goal` alone, so every lower-priority
-/// goal is blocked for as long as that lasts — its evidence can arrive, be
-/// perceived, and move its belief, while its goal status is never read.
+/// **Was a known violation; now a theorem — goal starvation is fixed.**
 ///
-/// This is the defect that `known_violation_top_goal_ties_are_broken_by_goal_name`
-/// merely *exposes*: a priority tie changes which goal gets starved, but a tie is
-/// not required, and no fixture in the corpus has one. This instance is in the
-/// shipped corpus and involves no tie at all.
+/// `CognitiveState::top_goal` filters out only goals whose status is already
+/// `True`, so *any* goal that never reaches `True` holds the top slot
+/// indefinitely. Status used to be written for `top_goal` alone, so every
+/// lower-priority goal was blocked for as long as that lasted — its evidence
+/// could arrive, be perceived, and move its belief while its goal status was
+/// never read. On `long_recovery`, `gamma-method-correct` held the top slot zero
+/// times across 22 events and ended `Unknown` with belief `Probable`; the metric
+/// reported 0.667 where every goal's belief was True-or-Probable.
 ///
-/// `long_recovery`: `gamma-method-correct` ends with belief `Probable` and goal
-/// status `Unknown`. All three goals end True-or-Probable in belief, yet
-/// `goal_completion_rate` reports 0.667 rather than 1.0.
+/// The bulk status refresh evaluates every goal each cycle, so the rate is now
+/// 1.0. Action emission is still top-goal-only — one attention target per cycle —
+/// which is why the emitted action sequence is unchanged.
 ///
-/// Pinned, not fixed: evaluating all goals rather than only `top_goal` is a
-/// substrate behaviour change and an owner call — see §5.4 of the
-/// pre-registration. This test fails once that lands, which is the intent.
+/// Note this fix is *not* what makes the metric comparable across arms. See
+/// `known_violation_goal_status_is_never_revised_downward`, still live: the write
+/// remains upgrade-only, so staleness survives and §5.4 still excludes the metric.
 #[test]
-fn known_violation_a_goal_below_the_top_is_never_evaluated() {
+fn theorem_every_goal_is_evaluated_not_only_the_top() {
     let rows = goal_status_vs_belief("../../fixtures/ix/long_recovery.json");
 
     let (_, status, belief) = rows
@@ -1107,14 +1105,12 @@ fn known_violation_a_goal_below_the_top_is_never_evaluated() {
 
     assert_eq!(
         (status.as_str(), belief.as_str()),
-        ("Unknown", "Probable"),
-        "gamma-method-correct is no longer starved (status {status}, belief {belief}). If \
-         all goals are now evaluated, delete this known_violation and update §5.4."
+        ("Probable", "Probable"),
+        "gamma-method-correct is starved again (status {status}, belief {belief}) — goal status \
+         is being written for top_goal only, regressing the fix this theorem replaced."
     );
 
-    // Every goal's belief is True or Probable, so an honest completion rate is
-    // 1.0. The reported rate is lower purely because starved goals keep their
-    // initial Unknown status.
+    // Every goal's belief is True or Probable, so an honest completion rate is 1.0.
     assert!(
         rows.iter()
             .all(|(_, _, belief)| belief == "True" || belief == "Probable"),
@@ -1125,8 +1121,9 @@ fn known_violation_a_goal_below_the_top_is_never_evaluated() {
         .as_f64()
         .expect("numeric");
     assert!(
-        (rate - 2.0 / 3.0).abs() < 1e-12,
-        "goal_completion_rate is {rate}; expected 0.667 while gamma is starved (1.0 once fixed)"
+        (rate - 1.0).abs() < 1e-12,
+        "goal_completion_rate is {rate}; expected 1.0 now that every goal is evaluated (it read \
+         0.667 while gamma-method-correct was starved)"
     );
 }
 
