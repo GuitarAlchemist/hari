@@ -1,0 +1,63 @@
+{
+  "_comment": [
+    "#35 §9.3 paired fixture — ONE pair, the tracer-bullet slice.",
+    "",
+    "The pair contrasts a decision that warrants committing to a claim (event 0:",
+    "a corroborated belief_update, correct answer ACT) with one that warrants no",
+    "commitment at all (event 1: a goal_update, which carries no proposition, so",
+    "there is nothing to accept — correct answer ABSTAIN).",
+    "",
+    "This is a deliberately weak pair. It is the strongest pair that can be",
+    "authored honestly today, because under the default RecencyDecay model the",
+    "act/abstain decision is a function of cycle-stamp age alone and is",
+    "independent of evidence strength — see §9 item 3 of the pre-registration.",
+    "An evidence-insufficiency pair (strong evidence -> act, thin evidence ->",
+    "withhold) is NOT yet authorable: a thin, unreplicated Doubtful claim draws",
+    "the same Accept as a 500-run True claim. Do not read this fixture as",
+    "evidence that Paired Accuracy is measurable at eval scale."
+  ],
+  "trace": {
+    "dimension": 4,
+    "events": [
+      {
+        "cycle": 1,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "tool-lambda-meets-latency-budget",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "latency-p99",
+            "runs": 24,
+            "p99_ms": 174,
+            "budget_ms": 200,
+            "note": "two independent runners agree lambda clears the budget"
+          }
+        }
+      },
+      {
+        "cycle": 2,
+        "source": "ix-runner-orchestrator",
+        "payload": {
+          "type": "goal_update",
+          "key": "characterise-tool-lambda",
+          "description": "Characterise tool lambda across regions",
+          "priority": 0.9,
+          "status": "Unknown"
+        }
+      }
+    ]
+  },
+  "labels": [
+    {
+      "event_index": 0,
+      "pair": "lambda-latency",
+      "expect": "act"
+    },
+    {
+      "event_index": 1,
+      "pair": "lambda-latency",
+      "expect": "abstain"
+    }
+  ]
+}

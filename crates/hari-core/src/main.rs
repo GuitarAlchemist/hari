@@ -22,10 +22,13 @@ fn main() {
         //   replay --session <session.jsonl> (Phase 6 recorded session file)
         //   replay --calibration <trace.json>
         //       (attach the forecast ledger's calibration block to the report)
+        //   replay --paired <paired-fixture.json>
+        //       (score the #35 §5.1 primary metric against bundled ground truth)
         let mut compare = false;
         let mut compare3 = false;
         let mut session_mode = false;
         let mut calibration = false;
+        let mut paired = false;
         let mut path: Option<&str> = None;
         let mut i = 2;
         while i < args.len() {
@@ -35,6 +38,7 @@ fn main() {
                 "--compare3" => compare3 = true,
                 "--session" => session_mode = true,
                 "--calibration" => calibration = true,
+                "--paired" => paired = true,
                 other if !other.starts_with("--") => path = Some(other),
                 other => {
                     eprintln!("hari-core replay: unknown flag {other}");
@@ -43,13 +47,14 @@ fn main() {
             }
             i += 1;
         }
-        let exclusive_count = [compare, compare3, session_mode]
+        let exclusive_count = [compare, compare3, session_mode, paired]
             .iter()
             .filter(|x| **x)
             .count();
         if exclusive_count > 1 {
             eprintln!(
-                "hari-core replay: --compare, --compare3, and --session are mutually exclusive"
+                "hari-core replay: --compare, --compare3, --session, and --paired are mutually \
+                 exclusive"
             );
             process::exit(2);
         }
@@ -68,6 +73,8 @@ fn main() {
             replay_session(path)
         } else if compare3 {
             replay_trace_three_way(path)
+        } else if paired {
+            replay_paired(path)
         } else {
             replay_trace(path, compare, calibration)
         };
@@ -775,6 +782,37 @@ fn replay_trace(
     serde_json::to_writer_pretty(std::io::stdout(), &report)?;
     println!();
 
+    Ok(())
+}
+
+/// `replay --paired` — replay a [`PairedFixture`] and score the #35 §5.1
+/// primary metric against the ground truth bundled with it.
+///
+/// Emits `{ "report": …, "paired": … }` so the graded report stays inspectable
+/// beside its score. Scoring is pure: the labels travel in the fixture, so no
+/// ledger or state directory is read.
+fn replay_paired(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let path = path.ok_or("usage: hari-core replay --paired <paired-fixture.json>")?;
+    let fixture: hari_core::PairedFixture = serde_json::from_str(&fs::read_to_string(path)?)?;
+
+    let mut cognitive_loop = CognitiveLoop::new(fixture.trace.dimension);
+    let report = cognitive_loop.process_research_trace(fixture.trace);
+    let paired = hari_core::score_paired(&report, &fixture.labels);
+
+    // Defects are the reason a pair went ungraded. Surfacing them on stderr
+    // means a fixture that silently grades 3 of 10 pairs cannot pass unnoticed.
+    for defect in &paired.defects {
+        warn!("paired fixture defect: {defect:?}");
+    }
+    if paired.is_ungraded() {
+        warn!("no pair was gradeable — paired_accuracy is absent, which is not a score of 0.0");
+    }
+
+    serde_json::to_writer_pretty(
+        std::io::stdout(),
+        &serde_json::json!({ "report": report, "paired": paired }),
+    )?;
+    println!();
     Ok(())
 }
 

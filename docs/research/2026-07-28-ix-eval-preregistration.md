@@ -81,6 +81,23 @@ the data a future default change would need; it is not itself that change.
 **Paired Accuracy**: the fraction of should-act/should-abstain *pairs* where the
 policy gets **both** halves right.
 
+**Act/abstain taxonomy — declared 2026-07-29, before any outcome inspected.**
+An outcome *acts* when it contains at least one substantive action; `Log` is
+side-channel and ignored, as are the bookkeeping `UpdateBelief` /
+`SendMessage`. So `Accept`, `Escalate`, `Investigate`, and `Retry` are acting;
+`Wait` is abstaining. Two cases that occur nowhere in `fixtures/ix/` are pinned
+anyway: an outcome with no substantive action at all abstains, and an outcome
+mixing `Wait` with a substantive action acts. **`Escalate` counts as acting** —
+handing a decision upward is doing something rather than withholding.
+
+This choice moves every number, and §9 item 3 shows it also decides whether the
+metric is measurable at all: an alternative taxonomy — *act* = commit to the
+claim (`Accept`), *abstain* = withhold commitment (`Wait`, `Investigate`,
+`Escalate`) — would make act/abstain a function of `HexValue`, and therefore of
+evidence, which the current taxonomy is not. **That alternative is not adopted
+here.** Adopting it is an owner call and requires a §10 amendment made before
+outcomes are inspected.
+
 One primary metric, declared here, and only this one carries the decision rule.
 The PRD listed four metrics as a "primary set"; promoting all four would create
 a multiplicity problem that silently inflates the false-positive rate — with
@@ -256,11 +273,63 @@ instead.
    which observable?), not wiring. Reclassified from "next blocking item" to a
    design prerequisite ranked behind 3 and 4, since paired fixtures are what
    would give an emission hook anything to predict about.
-3. **Paired fixtures do not exist.** No should-act/should-abstain pair is present
-   under `fixtures/ix/`.
+3. ~~Paired fixtures do not exist.~~ **PARTIALLY LANDED — and it surfaced a
+   construct-validity problem that outranks the rest of this list.**
+
+   Landed: `paired_eval` scores Paired Accuracy (`score_paired`), ground truth
+   lives in a sidecar `PairedFixture` rather than on `ResearchEvent` (IX never
+   transmits the right answer, so the protocol boundary carries no eval
+   scaffolding), and `replay --paired` runs it end-to-end.
+   `fixtures/ix/paired/propositionless_abstention.json` grades 1.0 on one pair.
+   Ungradeable pairs — missing half, duplicated half, index past the replay —
+   are reported as named `PairDefect`s, never silently dropped, and an ungraded
+   run yields `paired_accuracy: null` rather than `0.0`.
+
+   **The problem.** Under the default `RecencyDecay` model, whether Hari acts or
+   abstains on a claim is a pure function of `state.cycle - event.cycle` and is
+   *independent of the claim's evidence*. Two probes, both on
+   `main` @ `e0bd425`:
+
+   * 16 `belief_update`s with **identical** value (`Probable`) and identical
+     evidence, differing only in trace position: `Accept` for the first 12,
+     `Wait` for the rest. The boundary is exactly age 12, as
+     `exp(-0.2 · 12) = 0.0907 < θ_wait = 0.1` predicts.
+   * Four claims at the **same** position spanning the full evidence range —
+     from `{"runs": 1, "note": "single anecdote, unreplicated"}` at `Doubtful`
+     to `{"runs": 500, "p": 0.001}` at `True` — all act.
+
+   `HexValue` selects *which* action (`Accept` / `Investigate` / `Escalate`);
+   it never decides *whether* to act. Only cycle-age does. So a paired
+   fixture's abstain half would encode "this claim arrives ≥12 claim-events
+   after its stamp", not "this claim is insufficiently supported" — and Paired
+   Accuracy would measure whether a policy's decay schedule matches the fixture
+   author's cycle arithmetic. That is a tautology, and it is the mirror image
+   of the §5.4 exclusions: those metrics are *tied* by construction, this one
+   would be *driven* by construction.
+
+   Corollary, which also explains item 1's finding: decay-driven abstention on
+   a claim that goes on to stand is precisely a **false rejection**. The 16-claim
+   probe scores `false_rejection_count: 4`, the first non-zero this metric has
+   ever produced. §5.3 correctly reads decay-driven caution as a tax rather
+   than a virtue — so labelling such an abstention "correct" would put §5.1 and
+   §5.3 in direct contradiction.
+
+   The shipped fixture therefore uses the only pair authorable today: commit to
+   a corroborated claim (act) versus a `goal_update`, which carries no
+   proposition and so offers nothing to commit to (abstain). It is deliberately
+   weak and labelled as such in the fixture itself. **An evidence-insufficiency
+   pair is not authorable, and §9.3 cannot be completed at eval scale until the
+   decision below is made.**
 4. **The driver does not exist.** `clients/ix_reference` currently holds
    `hari_client.py` and `run_session.py`; the paired Hari-on/Hari-off driver is
    unwritten.
+
+**Ranking after the item 3 finding.** The blocking question is no longer which
+artifact to build next but whether §5.1 measures a capability at all. Until the
+act/abstain taxonomy question in §5.1 is settled, authoring 5–10 traces × ~20
+pairs would produce a corpus whose abstain halves encode cycle arithmetic — 200
+labels that cannot be reused if the taxonomy changes. **Settle the taxonomy,
+then finish 3, then 4.**
 
 Items 1 and 2 were the cheapest and were prerequisites for the decision rule
 itself; they landed first. **The remaining blockers are 3 and 4, in that

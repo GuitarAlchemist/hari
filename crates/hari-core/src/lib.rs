@@ -108,6 +108,17 @@ pub mod lineage;
 pub use lineage::{LineageBundle, LineageEdge, LineageNode, LineageRun};
 
 // ---------------------------------------------------------------------------
+// Paired-decision scoring — the #35 §5.1 primary metric. Ground truth lives in
+// a sidecar rather than on ResearchEvent, so the Hari↔IX boundary carries no
+// eval scaffolding and every existing trace replays byte-identically.
+// ---------------------------------------------------------------------------
+pub mod paired_eval;
+
+pub use paired_eval::{
+    score_paired, DecisionLabel, ExpectedDecision, PairDefect, PairedFixture, PairedScore,
+};
+
+// ---------------------------------------------------------------------------
 // PriorityModel — strategy enum used by score_actions
 // ---------------------------------------------------------------------------
 
