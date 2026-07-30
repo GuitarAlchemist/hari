@@ -798,6 +798,7 @@ fn replay_paired(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let mut cognitive_loop = CognitiveLoop::new(fixture.trace.dimension);
     let report = cognitive_loop.process_research_trace(fixture.trace);
     let paired = hari_core::score_paired(&report, &fixture.labels);
+    let false_rejections = hari_core::score_false_rejections(&report, &fixture.claims);
 
     // Defects are the reason a pair went ungraded. Surfacing them on stderr
     // means a fixture that silently grades 3 of 10 pairs cannot pass unnoticed.
@@ -807,10 +808,22 @@ fn replay_paired(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     if paired.is_ungraded() {
         warn!("no pair was gradeable — paired_accuracy is absent, which is not a score of 0.0");
     }
+    if !false_rejections.unlabeled.is_empty() {
+        warn!(
+            "waits on unlabeled claims (no ground truth, NOT excused): {:?}",
+            false_rejections.unlabeled
+        );
+    }
 
     serde_json::to_writer_pretty(
         std::io::stdout(),
-        &serde_json::json!({ "report": report, "paired": paired }),
+        &serde_json::json!({
+            "report": report,
+            "paired": paired,
+            // Arm-independent (§5.3). `report.metrics.false_rejection_count` is
+            // the intrinsic, self-resolved counter — not comparable across arms.
+            "false_rejections": false_rejections,
+        }),
     )?;
     println!();
     Ok(())

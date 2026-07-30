@@ -115,7 +115,8 @@ pub use lineage::{LineageBundle, LineageEdge, LineageNode, LineageRun};
 pub mod paired_eval;
 
 pub use paired_eval::{
-    score_paired, DecisionLabel, ExpectedDecision, PairDefect, PairedFixture, PairedScore,
+    score_false_rejections, score_paired, ClaimLabel, ClaimOutcome, DecisionLabel,
+    ExpectedDecision, FalseRejectionScore, PairDefect, PairedFixture, PairedScore,
 };
 
 // ---------------------------------------------------------------------------
@@ -712,6 +713,17 @@ pub struct ReplayMetrics {
     /// The mirror of `false_acceptance_count`, and the price of abstention.
     /// Without it a policy can win an accuracy comparison by emitting more
     /// `Wait`s and never paying for the ones that were unnecessary.
+    ///
+    /// **Single-arm diagnostics only — do not compare this across arms.** It
+    /// resolves each wait against *this replay's own* `final_beliefs`, and
+    /// excuses a wait whose claim ended `Contradictory`. Whether a claim ends
+    /// `Contradictory` is an arm's output, not a fact, so the excusal lands
+    /// unevenly: on `heavy_contradiction`, `Lie` waits on two claims and is
+    /// charged for neither (it leaves both `Contradictory`) while
+    /// `SubjectiveLogic` waits on six and is charged five (it resolves them to
+    /// `Probable`). The counter rewards staying stuck. For cross-arm work use
+    /// [`paired_eval::score_false_rejections`], which grades against authored
+    /// ground truth and cannot depend on the arm being graded.
     pub false_rejection_count: u32,
     /// Fraction of goals whose final status is `True` or `Probable`.
     pub goal_completion_rate: f64,

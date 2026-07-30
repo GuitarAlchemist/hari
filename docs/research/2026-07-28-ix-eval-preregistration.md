@@ -122,6 +122,40 @@ is not free, and without this rule a maximally cautious policy could bank the
 abstain half of every pair. `false_rejection_count` does not exist in
 `ReplayMetrics` today — see §9.
 
+**Amendment (2026-07-29): the disqualifier must be scored arm-independently.**
+`ReplayMetrics::false_rejection_count`, added earlier the same day, resolves
+each `Wait` against *the replay's own* `final_beliefs` and excuses a wait whose
+claim ended `Contradictory` ("withholding on irreconcilable evidence is
+correct"). Whether a claim ends `Contradictory` is an arm's **output**, not a
+fact about the world, so the excusal lands unevenly. Measured on
+`heavy_contradiction`:
+
+| arm | waits | waits on a claim | charged |
+|---|---|---|---|
+| RecencyDecay | 3 | 0 | 0 |
+| Lie | 5 | **2** | **0** |
+| SubjectiveLogic | 6 | 6 | **5** |
+
+RecencyDecay's zero is honest — it never withheld on a claim. Lie's is the
+artifact: it withheld on `epsilon-cot-helps` and `zeta-self-consistency` and was
+charged for neither, because it left both `Contradictory`. Subjective Logic
+withheld on the same claims and *resolved* them to `Probable`, so its waits were
+charged. Same trace, same evidence: **the intrinsic counter rewards staying
+stuck and penalises reaching a conclusion.**
+
+Because §5.3 can disqualify a policy that *won* the primary metric, this would
+have disqualified the arm the existing data already favours — SL beats Lie on
+`false_acceptance_count` on 3/6 fixtures and never loses.
+
+The disqualifier is therefore scored by `paired_eval::score_false_rejections`,
+which grades `Wait`s against authored `ClaimLabel` ground truth and is pinned
+arm-independent by `the_verdict_does_not_depend_on_the_arms_own_beliefs`.
+Waits on claims with no label are **reported, never excused** — missing ground
+truth is a fixture defect, not a free pass. `ReplayMetrics::false_rejection_count`
+survives as single-arm diagnostics and is documented as not comparable across
+arms. No eval outcome was inspected; the artifact was found while exploring
+whether replay could emit its own forecasts (§9 item 2).
+
 ### 5.4 Excluded, with cause
 
 `consensus_stability` and `goal_completion_rate` are **excluded from the primary
@@ -273,6 +307,27 @@ instead.
    which observable?), not wiring. Reclassified from "next blocking item" to a
    design prerequisite ranked behind 3 and 4, since paired fixtures are what
    would give an emission hook anything to predict about.
+
+   *Feasibility of the emission hook, explored 2026-07-29.* The machinery
+   exists: `Opinion::projected_probability()` (`P = b + u·a`) is implemented,
+   the SL pipeline keeps live `Opinion`s and only quantises to `HexValue` when
+   building `final_beliefs`, and `Opinion::from_hex` supplies an already-committed
+   HexValue→probability ladder (0.90 / 0.70 / 0.50 / 0.30 / 0.10, with
+   `Contradictory` → 0.50), so the mapping would not be freshly invented.
+
+   Two constraints found, both of which must be settled before building it:
+
+   * **Resolution must not be self-referential.** The obvious design — predict
+     whether a claim still stands at trace end, resolve against `final_beliefs`
+     — grades each arm against its own output, measuring self-consistency
+     rather than accuracy. An arm that never updates would score perfectly.
+     This is the same defect the §5.3 amendment records, and the same fix
+     applies: authored ground truth (`ClaimLabel`), not derived state.
+   * **Granularity is asymmetric.** SL carries a continuous posterior; the
+     hex-valued arms can emit only six distinct probabilities and are
+     quantisation-limited. "SL calibrates better" would then be partly a claim
+     about representational resolution rather than about being better informed.
+     That must be declared before any calibration outcome is inspected.
 3. ~~Paired fixtures do not exist.~~ **PARTIALLY LANDED — and it surfaced a
    construct-validity problem that outranks the rest of this list.**
 

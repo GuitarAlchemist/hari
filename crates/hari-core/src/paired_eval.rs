@@ -60,6 +60,30 @@ pub struct DecisionLabel {
     pub expect: ExpectedDecision,
 }
 
+/// Whether a claim ultimately stood — **authored**, never derived from any
+/// arm's output. See [`score_false_rejections`] for why that distinction is
+/// load-bearing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimOutcome {
+    /// The claim held up. Withholding on it was a false rejection.
+    Stood,
+    /// The claim was retracted, corrected, or otherwise failed. Withholding
+    /// on it was correct.
+    Withdrawn,
+    /// Genuinely undecided. Not scored either way, and reported as such.
+    Unresolved,
+}
+
+/// Ground truth for one proposition's fate across the trace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClaimLabel {
+    /// The proposition this grades.
+    pub proposition: String,
+    /// What actually happened to it.
+    pub outcome: ClaimOutcome,
+}
+
 /// A trace bundled with the ground truth needed to score it (#35 §9.3).
 ///
 /// Its own file format, so authoring paired fixtures never perturbs the
@@ -70,6 +94,10 @@ pub struct PairedFixture {
     pub trace: ResearchTrace,
     /// Ground truth for the decisions being graded.
     pub labels: Vec<DecisionLabel>,
+    /// Ground truth for claim fates, consumed by [`score_false_rejections`].
+    /// Optional so a fixture that only grades pairs stays valid.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claims: Vec<ClaimLabel>,
 }
 
 /// Why a labeled pair could not be scored. Reported, never silently dropped —
@@ -244,6 +272,86 @@ pub fn score_paired(report: &ResearchReplayReport, labels: &[DecisionLabel]) -> 
     score.paired_accuracy =
         (score.pairs > 0).then(|| score.both_correct as f64 / score.pairs as f64);
     score
+}
+
+/// Arm-independent false-rejection scoring (#35 §5.3).
+///
+/// # Why this exists beside `ReplayMetrics::false_rejection_count`
+///
+/// The intrinsic counter in `ReplayMetrics` resolves each `Wait` against the
+/// replay's **own** `final_beliefs`, and excuses a wait whose claim ended
+/// `Contradictory` on the grounds that withholding on irreconcilable evidence
+/// is correct. That is defensible *within* one arm. Across arms it is a bias,
+/// because whether a claim ends `Contradictory` is itself an arm's output
+/// rather than a fact about the world.
+///
+/// Measured on `fixtures/ix/heavy_contradiction.json`: `Lie` waits on two
+/// claims and is charged for neither, because it leaves both at
+/// `Contradictory`; `SubjectiveLogic` waits on six and is charged five,
+/// because it *resolves* those same claims to `Probable`. Same trace, same
+/// evidence — the intrinsic metric rewards staying stuck and penalises
+/// reaching a conclusion. Since §5.3 makes false rejections a **disqualifier**
+/// that can knock out a policy which won the primary metric, that artifact is
+/// load-bearing.
+///
+/// This scorer takes authored [`ClaimLabel`]s instead, so the verdict cannot
+/// depend on the arm being graded. **Use this for any cross-arm comparison;
+/// the intrinsic counter is single-arm diagnostics only.**
+#[must_use]
+pub fn score_false_rejections(
+    report: &ResearchReplayReport,
+    claims: &[ClaimLabel],
+) -> FalseRejectionScore {
+    let truth: BTreeMap<&str, ClaimOutcome> = claims
+        .iter()
+        .map(|c| (c.proposition.as_str(), c.outcome))
+        .collect();
+
+    let mut score = FalseRejectionScore::default();
+    for outcome in &report.outcomes {
+        if !outcome.actions.iter().any(|a| matches!(a, Action::Wait)) {
+            continue;
+        }
+        // A Wait carries no proposition of its own; attribute it to the claims
+        // the event touched. Propositionless payloads (goal_update and kin)
+        // have nothing to reject, so they are not decisions about a claim.
+        for proposition in outcome.event.touched_propositions() {
+            match truth.get(proposition.as_str()) {
+                Some(ClaimOutcome::Stood) => {
+                    score.scored += 1;
+                    score.false_rejections += 1;
+                }
+                Some(ClaimOutcome::Withdrawn) => {
+                    score.scored += 1;
+                    score.excused += 1;
+                }
+                Some(ClaimOutcome::Unresolved) => score.unresolved += 1,
+                // Never silently excused: an unlabeled claim-wait is missing
+                // ground truth, which is a fixture defect, not a free pass.
+                None => score.unlabeled.push(proposition),
+            }
+        }
+    }
+    score.unlabeled.sort();
+    score.unlabeled.dedup();
+    score
+}
+
+/// Result of [`score_false_rejections`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FalseRejectionScore {
+    /// Claim-waits that had authored ground truth and were graded.
+    pub scored: usize,
+    /// Graded waits on claims that went on to stand — the caution tax.
+    pub false_rejections: usize,
+    /// Graded waits on claims that were later withdrawn: correct restraint.
+    pub excused: usize,
+    /// Waits on claims explicitly labeled `Unresolved`.
+    pub unresolved: usize,
+    /// Claims waited on but carrying no label. Reported so a fixture cannot
+    /// quietly grade a subset and read as if it graded everything.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unlabeled: Vec<String>,
 }
 
 #[cfg(test)]
@@ -480,6 +588,125 @@ mod tests {
                 value: HexValue::Probable,
             },
         ]));
+    }
+
+    // --- arm-independent false rejections (#35 §5.3) ------------------------
+
+    /// A trace of `n` claims all stamped cycle 1. `state.cycle` climbs with
+    /// each claim event while the stamp does not, so from age 12 the decayed
+    /// score falls under θ_wait and the arm withholds. This is the only shape
+    /// that produces a `Wait` on a proposition (see §9 item 3).
+    fn claim_burst(n: usize) -> ResearchTrace {
+        ResearchTrace {
+            dimension: 4,
+            events: (0..n)
+                .map(|i| ResearchEvent {
+                    cycle: 1,
+                    source: "ix-a".to_string(),
+                    payload: ResearchEventPayload::BeliefUpdate {
+                        proposition: format!("claim-{i:02}"),
+                        value: HexValue::Probable,
+                        evidence: Evidence::new(),
+                    },
+                })
+                .collect(),
+        }
+    }
+
+    fn stood(p: &str) -> ClaimLabel {
+        ClaimLabel {
+            proposition: p.to_string(),
+            outcome: ClaimOutcome::Stood,
+        }
+    }
+
+    #[test]
+    fn a_wait_on_a_claim_that_stood_is_a_false_rejection() {
+        let report = replay(claim_burst(16));
+        let claims: Vec<ClaimLabel> = (0..16).map(|i| stood(&format!("claim-{i:02}"))).collect();
+        let score = score_false_rejections(&report, &claims);
+
+        // Claims 12..16 decay past θ_wait; all four stood, so all four are the
+        // caution tax §5.3 exists to charge.
+        assert_eq!(score.false_rejections, 4);
+        assert_eq!(score.scored, 4);
+        assert_eq!(score.excused, 0);
+        assert!(score.unlabeled.is_empty());
+    }
+
+    /// **The defect this scorer exists to avoid.** The intrinsic
+    /// `ReplayMetrics::false_rejection_count` reads the arm's own
+    /// `final_beliefs`, so an arm that leaves a claim `Contradictory` is
+    /// excused while one that resolves it is charged. This verdict must not
+    /// move when the arm's beliefs do.
+    #[test]
+    fn the_verdict_does_not_depend_on_the_arms_own_beliefs() {
+        let mut report = replay(claim_burst(16));
+        let claims: Vec<ClaimLabel> = (0..16).map(|i| stood(&format!("claim-{i:02}"))).collect();
+        let before = score_false_rejections(&report, &claims);
+
+        // Rewrite every belief to Contradictory — the state that buys an
+        // excusal from the intrinsic counter. Nothing about what the arm
+        // *did* has changed, so nothing about the verdict may change.
+        for value in report.final_beliefs.values_mut() {
+            *value = HexValue::Contradictory;
+        }
+        let after = score_false_rejections(&report, &claims);
+
+        assert_eq!(
+            before, after,
+            "false-rejection verdict moved when only the arm's own beliefs changed"
+        );
+        assert_eq!(after.false_rejections, 4);
+    }
+
+    #[test]
+    fn withholding_on_a_claim_that_was_withdrawn_is_excused() {
+        let report = replay(claim_burst(16));
+        let claims: Vec<ClaimLabel> = (0..16)
+            .map(|i| ClaimLabel {
+                proposition: format!("claim-{i:02}"),
+                outcome: ClaimOutcome::Withdrawn,
+            })
+            .collect();
+        let score = score_false_rejections(&report, &claims);
+
+        assert_eq!(score.false_rejections, 0, "restraint was charged as a tax");
+        assert_eq!(score.excused, 4);
+        assert_eq!(score.scored, 4);
+    }
+
+    #[test]
+    fn an_unlabeled_claim_wait_is_reported_not_excused() {
+        let report = replay(claim_burst(16));
+        // Only claim-12 is labeled; 13, 14, 15 also produce waits.
+        let score = score_false_rejections(&report, &[stood("claim-12")]);
+
+        assert_eq!(score.false_rejections, 1);
+        assert_eq!(
+            score.unlabeled,
+            vec!["claim-13", "claim-14", "claim-15"],
+            "missing ground truth was silently treated as a free pass"
+        );
+    }
+
+    #[test]
+    fn an_unresolved_claim_is_scored_neither_way() {
+        let report = replay(claim_burst(16));
+        let claims: Vec<ClaimLabel> = (0..16)
+            .map(|i| ClaimLabel {
+                proposition: format!("claim-{i:02}"),
+                outcome: ClaimOutcome::Unresolved,
+            })
+            .collect();
+        let score = score_false_rejections(&report, &claims);
+
+        assert_eq!(
+            (score.false_rejections, score.excused, score.scored),
+            (0, 0, 0)
+        );
+        assert_eq!(score.unresolved, 4);
+        assert!(score.unlabeled.is_empty());
     }
 
     #[test]

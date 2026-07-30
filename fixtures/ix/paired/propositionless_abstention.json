@@ -59,5 +59,11 @@
       "pair": "lambda-latency",
       "expect": "abstain"
     }
+  ],
+  "claims": [
+    {
+      "proposition": "tool-lambda-meets-latency-budget",
+      "outcome": "stood"
+    }
   ]
 }
