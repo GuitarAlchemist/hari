@@ -1143,6 +1143,64 @@ the hexavalent machinery may well earn its keep. What §9.6 removes is one
 specific hope: that recording data would change the primary metric's verdict for
 the shipped arm. It would not.
 
+### 9.7 `false_acceptance_count` is arm-biased too — and it closes §9.6's escape hatch
+
+§9.6 left one hope standing: that `false_acceptance_count`, the §5.2 secondary
+where the Phase-5 comparison actually lived, is *"where the hexavalent machinery
+may well earn its keep"*. Two findings, and the hatch closes.
+
+**The intrinsic counter carries the §5.3 defect, pointing the other way.**
+`accept_was_invalidated` charges an `Accept` by three routes: a later
+`Retraction`/`Correction` in the trace (arm-independent), the proposition ending
+`Contradictory`, or a polarity flip. The last two read *the arm's own*
+`final_beliefs`. Measured across `fixtures/ix/`:
+
+| arm | `false_acceptance_count` | charged via its own `Contradictory` |
+|---|---|---|
+| `RecencyDecay` | 12 | **5** |
+| `Lie` | 8 | **2** |
+| `SubjectiveLogic` | 3 | **0** |
+
+SL is never charged that way because it resolves contradictions to a
+probability. The hexavalent arms are charged because they **preserve** them —
+which `hari-lattice` documents as a deliberate design choice, not a failure to
+converge. **The metric penalises the substrate's defining feature, and only for
+the arms that have it.**
+
+*This does not overturn Phase 5.* Removing the own-`Contradictory` charges leaves
+`Lie` at 6 against SL's 3: the margin is partly artifactual, the sign is not. The
+existing verdict does not need reopening on this basis alone, and
+`score_false_acceptances` now exists so future comparisons are not exposed to it.
+
+**Scored arm-independently, the substrate again equals naive acceptance.** On the
+task corpus, against authored `ClaimLabel`s:
+
+| | IX-unassisted | RecencyDecay | Lie | SubjectiveLogic |
+|---|---|---|---|---|
+| false acceptances | 54 | **54** | **54** | **36** |
+| warranted accepts | 108 | 108 | 108 | 108 |
+
+The hexavalent arms commit to all 54 claims that did not hold up — exactly what
+pass-through does. SL commits to 36. Its 18 declined commitments are **all**
+false ones: its warranted count is identical at 108, so on this corpus its
+caution is perfectly targeted rather than merely more cautious.
+
+*The isolation corpus is not evidence of the same thing.* SL scores 0 false
+acceptances there only because it accepts nothing at all — the degenerate
+always-`Wait` §9.3.2 records. A zero earned by never committing is not a virtue,
+and pooling the two corpora would launder it into one.
+
+**Consequence.** Both the §5.1 primary and the §5.2 secondary where Phase 5 was
+decided now show the shipped substrate indistinguishable from naive acceptance,
+with SL ahead on both. §9.6's three routes are unchanged, but the case for route
+3 (**accept KILL and publish**) is materially stronger than it was, because the
+metric that was expected to rescue the substrate does not.
+
+*Still not a verdict.* This is authored-fixture instrument characterisation,
+which §9.4's standing rule bars from producing a §6 or §8 conclusion. What it
+establishes is that the driver should not be built in the expectation of a
+different answer on either metric.
+
 
 ## 10. Amendment policy
 

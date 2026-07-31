@@ -395,6 +395,97 @@ pub fn score_false_rejections(
     score
 }
 
+/// Arm-independent false-**acceptance** scoring (#35 §5.2).
+///
+/// # Why this exists beside `ReplayMetrics::false_acceptance_count`
+///
+/// The intrinsic counter carries the same defect the §5.3 amendment removed
+/// from `false_rejection_count`, pointing the other way.
+/// `accept_was_invalidated` has three routes to charging an `Accept`: a later
+/// `Retraction`/`Correction` in the trace (arm-independent), the proposition
+/// ending `Contradictory`, or a polarity flip. The last two read *the arm's
+/// own* `final_beliefs`.
+///
+/// That is not a rounding concern. Measured across `fixtures/ix/`:
+///
+/// | arm | `false_acceptance_count` | charged via its own `Contradictory` |
+/// |---|---|---|
+/// | `RecencyDecay` | 12 | **5** |
+/// | `Lie` | 8 | **2** |
+/// | `SubjectiveLogic` | 3 | **0** |
+///
+/// SL is never charged that way because it resolves contradictions to a
+/// probability. The hexavalent arms are charged because they **preserve** them
+/// — which `hari-lattice` documents as a deliberate design choice, not a
+/// failure to converge. So the intrinsic metric penalises the substrate's
+/// defining feature, and does so only for the arms that have it.
+///
+/// This scorer takes authored [`ClaimLabel`]s instead: an `Accept` is a false
+/// acceptance when the claim it committed to was `Withdrawn`, full stop. No
+/// arm's posterior enters the verdict. **Use this for any cross-arm
+/// comparison.**
+///
+/// # What this does not claim
+///
+/// It does **not** overturn the Phase-5 result. Removing the own-`Contradictory`
+/// charges leaves `Lie` at 6 against SL's 3, so the direction survives on this
+/// corpus — the margin is partly artifactual, the sign is not. A future
+/// comparison should use this scorer; the existing verdict does not need
+/// reopening on this basis alone.
+#[must_use]
+pub fn score_false_acceptances(
+    report: &ResearchReplayReport,
+    claims: &[ClaimLabel],
+) -> FalseAcceptanceScore {
+    let truth: BTreeMap<&str, ClaimOutcome> = claims
+        .iter()
+        .map(|c| (c.proposition.as_str(), c.outcome))
+        .collect();
+
+    let mut score = FalseAcceptanceScore::default();
+    for outcome in &report.outcomes {
+        for action in &outcome.actions {
+            let Action::Accept { proposition, .. } = action else {
+                continue;
+            };
+            match truth.get(proposition.as_str()) {
+                Some(ClaimOutcome::Withdrawn) => {
+                    score.scored += 1;
+                    score.false_acceptances += 1;
+                }
+                Some(ClaimOutcome::Stood) => {
+                    score.scored += 1;
+                    score.warranted += 1;
+                }
+                Some(ClaimOutcome::Unresolved) => score.unresolved += 1,
+                // Never silently forgiven, for the same reason a wait on an
+                // unlabeled claim is not excused: missing ground truth is a
+                // fixture defect, not a free pass.
+                None => score.unlabeled.push(proposition.clone()),
+            }
+        }
+    }
+    score.unlabeled.sort();
+    score.unlabeled.dedup();
+    score
+}
+
+/// Result of [`score_false_acceptances`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FalseAcceptanceScore {
+    /// Accepts that had authored ground truth and were graded.
+    pub scored: usize,
+    /// Graded accepts on claims that did **not** hold up.
+    pub false_acceptances: usize,
+    /// Graded accepts on claims that stood: committing was correct.
+    pub warranted: usize,
+    /// Accepts on claims explicitly labeled `Unresolved`.
+    pub unresolved: usize,
+    /// Accepted claims carrying no label.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unlabeled: Vec<String>,
+}
+
 /// Result of [`score_false_rejections`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FalseRejectionScore {
@@ -436,6 +527,10 @@ pub struct PairedArm {
     pub paired: PairedScore,
     /// §5.3 disqualifier input.
     pub false_rejections: FalseRejectionScore,
+    /// §5.2 secondary, scored arm-independently — see
+    /// [`score_false_acceptances`] for why the intrinsic counter cannot be
+    /// compared across arms.
+    pub false_acceptances: FalseAcceptanceScore,
 }
 
 /// A pair the arms did not agree on, and how each fared.
@@ -515,6 +610,7 @@ pub fn score_paired_all_arms(
             priority_model: model,
             paired: score_paired(report, &labels),
             false_rejections: score_false_rejections(report, &claims),
+            false_acceptances: score_false_acceptances(report, &claims),
         };
 
     let unassisted = grade("ix_unassisted", None, &unassisted_report);
@@ -950,6 +1046,52 @@ mod tests {
         );
         assert_eq!(score.unresolved, 4);
         assert!(score.unlabeled.is_empty());
+    }
+
+    /// The false-acceptance verdict must not depend on the arm's own posterior
+    /// — the defect the §5.3 amendment removed from `false_rejection_count`,
+    /// which the intrinsic `false_acceptance_count` still carries.
+    #[test]
+    fn the_false_acceptance_verdict_does_not_depend_on_the_arms_own_beliefs() {
+        let mut report = replay(act_then_abstain_trace());
+        let claims = vec![ClaimLabel {
+            proposition: "benchmark-x-is-reliable".to_string(),
+            outcome: ClaimOutcome::Withdrawn,
+        }];
+        let before = score_false_acceptances(&report, &claims);
+        assert_eq!(
+            before.false_acceptances, 1,
+            "precondition: the accept is charged"
+        );
+
+        // Drive the arm's own belief to every value in turn, including the two
+        // the intrinsic counter reads. The verdict must not move.
+        for value in [
+            HexValue::True,
+            HexValue::Probable,
+            HexValue::Unknown,
+            HexValue::Doubtful,
+            HexValue::False,
+            HexValue::Contradictory,
+        ] {
+            report
+                .final_beliefs
+                .insert("benchmark-x-is-reliable".to_string(), value);
+            assert_eq!(
+                score_false_acceptances(&report, &claims),
+                before,
+                "verdict moved when the arm's own belief became {value:?}"
+            );
+        }
+    }
+
+    /// An accepted claim with no authored label is reported, never forgiven.
+    #[test]
+    fn an_unlabeled_accept_is_reported_not_forgiven() {
+        let report = replay(act_then_abstain_trace());
+        let score = score_false_acceptances(&report, &[]);
+        assert_eq!((score.scored, score.false_acceptances), (0, 0));
+        assert_eq!(score.unlabeled, vec!["benchmark-x-is-reliable".to_string()]);
     }
 
     #[test]

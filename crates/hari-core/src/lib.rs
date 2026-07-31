@@ -118,9 +118,10 @@ pub mod unassisted;
 pub use unassisted::replay_unassisted;
 
 pub use paired_eval::{
-    outcome_acted, score_false_rejections, score_paired, score_paired_all_arms, ClaimLabel,
-    ClaimOutcome, DecisionLabel, ExpectedDecision, FalseRejectionScore, PairDefect, PairOutcome,
-    PairSeparation, PairedArm, PairedComparison, PairedFixture, PairedScore,
+    outcome_acted, score_false_acceptances, score_false_rejections, score_paired,
+    score_paired_all_arms, ClaimLabel, ClaimOutcome, DecisionLabel, ExpectedDecision,
+    FalseAcceptanceScore, FalseRejectionScore, PairDefect, PairOutcome, PairSeparation, PairedArm,
+    PairedComparison, PairedFixture, PairedScore,
 };
 
 // ---------------------------------------------------------------------------
