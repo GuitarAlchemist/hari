@@ -1434,12 +1434,21 @@ impl CognitiveLoop {
         // Collected first because the write borrows `self.state.goals` mutably
         // while the read borrows `self.state.beliefs`.
         //
-        // Still upgrade-only (`True | Probable`), matching the emission arms
-        // above: a goal whose evidence later collapses keeps its credit. That
-        // staleness is a *separate* defect, pinned by
-        // `known_violation_goal_status_is_never_revised_downward`, and changing it
-        // would alter what "achieved" means rather than which goals get looked
-        // at. Deliberately out of scope here.
+        // Upgrade-only, matching the emission arms above: a goal whose evidence
+        // later collapses keeps its credit. That staleness is a *separate*
+        // defect, pinned by `known_violation_goal_status_is_never_revised_downward`,
+        // and changing it would alter what "achieved" means rather than which
+        // goals get looked at. Deliberately out of scope here.
+        //
+        // The `True | Probable` filter selects which *beliefs* qualify; it does
+        // not by itself make the write an upgrade. Between 79ad578 and this
+        // commit it did not: `Probable` was written over an achieved `True`,
+        // which un-achieved the goal and re-admitted it to `top_goal`
+        // candidacy, where it displaced the real top goal and swallowed that
+        // goal's actions. Measured on `heavy_contradiction` (Escalate 13 → 10)
+        // and `long_recovery` (8 → 6). The downgrade guard below is what makes
+        // the word "upgrade-only" true of the code rather than only of the
+        // comment.
         let goal_beliefs: Vec<(String, HexValue)> = self
             .state
             .goals
@@ -1454,6 +1463,9 @@ impl CognitiveLoop {
             .collect();
         for (key, value) in goal_beliefs {
             if let Some(goal) = self.state.goals.get_mut(&key) {
+                if matches!(goal.status, HexValue::True) && !matches!(value, HexValue::True) {
+                    continue;
+                }
                 goal.status = value;
             }
         }

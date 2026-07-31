@@ -85,8 +85,14 @@ policy gets **both** halves right.
 An outcome *acts* when it contains at least one substantive action; `Log` is
 side-channel and ignored, as are the bookkeeping `UpdateBelief` /
 `SendMessage`. So `Accept`, `Escalate`, `Investigate`, and `Retry` are acting;
-`Wait` is abstaining. Two cases that occur nowhere in `fixtures/ix/` are pinned
-anyway: an outcome with no substantive action at all abstains, and an outcome
+`Wait` is abstaining. Two degenerate cases are pinned explicitly. **Correction
+(2026-07-30, adversarial review):** this text claimed both "occur nowhere in
+`fixtures/ix/`". Only the *mixed* case does. The *empty* case occurs 27 times
+under `SubjectiveLogic` — every `goal_update` and `relation_declaration`, which
+SL logs without recommending — and is precisely what awards SL the abstain half
+of every G2 pair in §9.3. The original claim was measured on the default arm
+alone. The pinned behaviour is unchanged; only the assertion that it was
+unexercised was wrong. The two cases: an outcome with no substantive action at all abstains, and an outcome
 mixing `Wait` with a substantive action acts. **`Escalate` counts as acting** —
 handing a decision upward is doing something rather than withholding.
 
@@ -204,11 +210,27 @@ which supersedes the `long_recovery` row and the aggregate):
 Two distinct substrate defects drive four of the five, and they push in
 **opposite directions**:
 
-* **Staleness.** The hexavalent write (`lib.rs:1384-1404`) is *upgrade-only* — it
-  assigns `goal.status` only in the `True | Probable` arm; `Contradictory`
-  escalates without touching status. So a goal keeps credit after its own
-  evidence collapses. SL's write is unconditional and tracks the posterior down.
-* **Starvation.** `top_goal` (`lib.rs:848-853`) filters out only goals whose
+* **Staleness.** The hexavalent write is *upgrade-only* — it assigns
+  `goal.status` only in the `True | Probable` arm; `Contradictory` escalates
+  without touching status. So a goal keeps credit after its own evidence
+  collapses. SL's write is unconditional and tracks the posterior down.
+
+  **Correction (2026-07-30, adversarial review).** Between `79ad578` and its
+  follow-up fix the word *upgrade-only* was false of the code. The
+  `True | Probable` filter selects which **beliefs** qualify to be written; the
+  write itself was unconditional, so `Probable` landed on an achieved `True`.
+  Since `top_goal` evicts only on `status == True`, the un-achieved goal was
+  re-admitted to candidacy, displaced the real top goal and swallowed its
+  actions. `79ad578` therefore also **falsified its own headline claim** that
+  emitted action sequences were byte-identical: `heavy_contradiction` lost three
+  `Escalate`s (13 → 10) and `long_recovery` two (8 → 6), in **both** hexavalent
+  arms. That claim had been checked against per-fixture *wait* counts, which did
+  not move — an inadequate check. With the downgrade guard in place the action
+  sequences are now identical to pre-`79ad578` on all eight fixtures and all
+  three arms, and every number in this section reproduces unchanged. Pinned by
+  `theorem_an_achieved_goal_is_not_un_achieved_by_a_softer_belief`, which fails
+  on the pre-fix code.
+* **Starvation.** `top_goal` filters out only goals whose
   status is already `True`, so *any* goal that never reaches `True` — including
   one stuck at `Unknown` — holds the slot indefinitely and blocks every
   lower-priority goal. The hex arms set status for `top_goal` alone; SL sets it
@@ -298,7 +320,11 @@ No eval outcome has been inspected.
 - **Why clustered:** ~20 decisions within one trace share a belief state. Treating
   them as independent would inflate effective n by up to ~20× and manufacture
   significance. Resampling at the trace level is the conservative choice.
-- **Implementation:** the aggregator is a **pure function** — decision-outcome
+- **Implementation (NOT BUILT — corrected 2026-07-30).** No bootstrap
+  aggregator exists anywhere in the workspace, and §9's prerequisite list never
+  included one. The present tense below describes a design, not code, and is a
+  **missing prerequisite** ranked alongside item 4. As designed, the aggregator
+  is a **pure function** — decision-outcome
   records in, CI/p out — so it is unit-testable on hand-built inputs with a
   known-sign effect, with no replay engine in the loop.
 
@@ -587,7 +613,7 @@ instead.
    `Accept` (`lib.rs:2362`), so the four probe claims spanning "1 unreplicated
    anecdote at `Doubtful`" to "500 runs at `True`" **still all act** under it.
    (b) It re-imports the defect the §5.3 amendment just removed: abstaining via
-   `Escalate` is uncharged, and `Lie` emits 13 `Escalate`s on
+   `Escalate` is uncharged, and `Lie` emits 10 `Escalate`s on
    `heavy_contradiction` — 13 free abstentions — while SL's claim-`Wait`s stay
    chargeable. (c) Under it, `act` reduces to `belief ∉ {Unknown, Contradictory}`,
    a `final_beliefs` readout promoted to primary. Switching a construct because
@@ -795,9 +821,19 @@ effect and that must be reported as prominently as the number.
 | defects | 0 | 0 | 0 |
 
 **Every cell matches §9.3.2's prediction**, which was committed before the
-amended corpus was authored (`f0c6ec5`). That is the strongest defence
-available for a post-hoc amendment, and it is offered as such rather than as
-proof the amendment was disinterested.
+amended corpus was authored (`f0c6ec5`).
+
+**How much that is worth: very little — corrected 2026-07-30.** This passage
+originally called it "the strongest defence available for a post-hoc
+amendment". §9.4 then establishes the opposite and voids it: every cell was
+computable in advance from published constants — the `from_hex` ladder and the
+`b > 0.7` gate give G1, decay/`Lie` evidence-blindness was already measured,
+G2 was already measured on the shipped weak pair, and G3-for-SL follows from
+retraction-reset semantics readable in the source. A prediction that could not
+have come out otherwise is not evidence of disinterest. **Its residual value is
+detecting author arithmetic errors, and nothing more.** Both sentences stood in
+this document at once; a reader stopping here was misled, which is why the
+correction lives at the claim rather than only in §9.4.
 
 Three things follow, and one of them disqualifies the table above from being
 read as an eval result.
@@ -903,6 +939,17 @@ outcomes from designs, blindness is not an integrity tool that exists. The ones
 that do exist are **disclosure, prediction committed in advance, mechanical
 generation, and a second decision-maker** — and this document uses all four
 rather than claiming an innocence it cannot have.
+
+**Correction (2026-07-30, adversarial review): the heading's "can never finish"
+is a policy, not a theorem, and is retained only as the former.** A
+pre-registered generative distribution over decision-relevant parameters,
+mechanically sampled, would give the bootstrap a population in exactly the same
+*conditional* sense this section grants the IX driver — and this section already
+concedes the driver "relocates authorship rather than escaping it". Once that is
+conceded, the difference between item 3 and item 4 is **surface area and task
+fidelity, not possible versus impossible**. The measured degeneracy below is
+real and the rule that follows is deliberate; the impossibility framing
+overreached and is withdrawn.
 
 **Standing rule, adopted here: no dual-rule test (§6) and no keep/kill verdict
 (§8) may ever be computed on an authored fixture.** Authored fixtures are

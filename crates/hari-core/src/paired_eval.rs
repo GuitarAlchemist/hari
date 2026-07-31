@@ -18,11 +18,21 @@
 //! # Act vs abstain
 //!
 //! Replay emits exactly five IX-facing action kinds (`Accept`, `Escalate`,
-//! `Investigate`, `Retry`, `Wait`) plus side-channel `Log`s. Measured across
-//! all eight fixtures in `fixtures/ix/`: `Log` aside, no outcome is ever empty
-//! and no outcome ever mixes `Wait` with a substantive action. The rule is
-//! therefore unambiguous on real data, but both degenerate cases are handled
-//! explicitly below rather than assumed away.
+//! `Investigate`, `Retry`, `Wait`) plus side-channel `Log`s. Two degenerate
+//! cases are possible in principle and are handled explicitly below rather
+//! than assumed away. Measured across all eight fixtures in `fixtures/ix/`:
+//!
+//! * **Mixed** (`Wait` beside a substantive action) occurs **nowhere**, in any
+//!   arm. Genuinely hypothetical.
+//! * **Empty** (`Log`s only) occurs **27 times under `SubjectiveLogic`** — on
+//!   every `goal_update` and `relation_declaration`, which SL logs without
+//!   recommending. Zero times under `RecencyDecay` or `Lie`.
+//!
+//! An earlier version of this comment claimed no outcome is ever empty. That
+//! was measured on the default arm alone and was false for SL — and the empty
+//! branch is not a curiosity: it is exactly what awards SL the abstain half of
+//! every G2 pair in the §9.3 corpora. The rule is unambiguous on real data;
+//! the claim that one of its branches is unexercised was not.
 //!
 //! **`Escalate` counts as acting.** It hands a decision to a higher authority,
 //! which is a decision to do something rather than to withhold. This is a

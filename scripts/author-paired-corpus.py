@@ -320,11 +320,7 @@ def build(theme, variant):
         "Pair ids encode the ground (g1-/g2-/g3-) so the per-ground breakdown",
         "the mix requires derives from PairedScore::per_pair.",
         "",
-        "G1 replication: the two labeled events are IDENTICAL payloads bar the",
-        "  proposition name. The only difference is that the act half's claim",
-        "  already has an independent corroborating experiment_result earlier in",
-        "  the trace. Abstain because one unreplicated run is what the",
-        "  flaky-vs-real task exists to catch.",
+        G1_NOTE[variant],
         "G2 commitability: act half carries a corroborated proposition; abstain",
         "  half is a goal_update, which carries none. Nothing to commit to.",
         "G3 withdrawn basis: both halves re-assert a claim a lab reported. The",
@@ -346,6 +342,25 @@ def build(theme, variant):
         "claims": claims,
     }
 
+
+G1_NOTE = {
+    "isolation": (
+        "G1 replication: the two labeled events are IDENTICAL payloads bar the "
+        "proposition name - same asserted value, same source, same evidence "
+        "keys. The ONLY difference is that the act half's claim already has an "
+        "independent corroborating experiment_result earlier in the trace. "
+        "Abstain because one unreplicated run is what the flaky-vs-real task "
+        "exists to catch."
+    ),
+    "task": (
+        "G1 replication: the act half asserts True AND has an independent "
+        "corroborating experiment_result; the abstain half asserts Probable "
+        "with no corroboration. TWO observables of section 2's one injected "
+        "trigger - a real effect both reproduces and is reported with "
+        "confidence. The payloads are NOT identical here; see the isolation "
+        "variant for the single-variable contrast."
+    ),
+}
 
 VARIANT_NOTE = {
     "isolation": (

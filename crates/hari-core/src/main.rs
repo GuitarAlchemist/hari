@@ -69,8 +69,9 @@ fn main() {
         // `--compare3` emits a three-arm wrapper object rather than a single
         // `ResearchReplayReport`, so it has nowhere to hang a calibration
         // block yet. Reject the combination loudly instead of silently
-        // dropping the flag — attaching per-arm calibration is the next
-        // slice (#35 §9.2 expand step).
+        // dropping the flag. Per-arm calibration is NOT "the next slice", as
+        // this comment used to say — #35 §9 reclassified it behind items 3 and
+        // 4, and §9.4 then made item 4 the sole remaining blocker.
         //
         // `--paired` is rejected for the same reason and one more: per-arm
         // calibration needs each arm to emit forecasts from its own posterior

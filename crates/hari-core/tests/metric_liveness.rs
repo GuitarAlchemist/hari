@@ -1169,3 +1169,98 @@ fn known_violation_goal_status_is_never_revised_downward() {
         "goal_completion_rate is {rate}; expected 0.5, half of it stale credit"
     );
 }
+
+/// An achieved goal is never un-achieved by a later weaker belief.
+///
+/// # Why this exists
+///
+/// `79ad578` added the bulk status refresh and described it — in the commit
+/// message, in the code comment, and in §5.4's third amendment — as
+/// "upgrade-only". It was not. The `True | Probable` filter selects which
+/// *beliefs* qualify to be written; the write itself was unconditional, so a
+/// goal sitting at `True` was overwritten with `Probable` the moment its belief
+/// softened. Because `top_goal` evicts only on `status == True`, that
+/// un-achieved goal was re-admitted to top-goal candidacy, displaced the real
+/// top goal, and swallowed its actions.
+///
+/// The same commit claimed the emitted action sequences were "byte-identical".
+/// They were not: `heavy_contradiction` lost three `Escalate`s (13 → 10) and
+/// `long_recovery` lost two (8 → 6), in **both** hexavalent arms. The claim was
+/// checked against per-fixture *wait* counts, which did not move — an
+/// inadequate check that this test replaces with the property itself.
+///
+/// No test in the suite caught it. The full suite passed on the defect, which
+/// is why this pins the mechanism directly rather than a fixture's numbers.
+#[test]
+fn theorem_an_achieved_goal_is_not_un_achieved_by_a_softer_belief() {
+    use hari_core::{CognitiveLoop, ResearchEvent, ResearchEventPayload};
+    use hari_lattice::HexValue;
+
+    let mut loop_ = CognitiveLoop::new(4);
+    let key = "gamma-goal";
+    let ev = |cycle: u64, payload: ResearchEventPayload| ResearchEvent {
+        cycle,
+        source: "ix-agent-a".to_string(),
+        payload,
+    };
+
+    loop_.process_research_event(ev(
+        1,
+        ResearchEventPayload::GoalUpdate {
+            key: key.to_string(),
+            description: "a goal that gets achieved".to_string(),
+            priority: 0.9,
+            status: None,
+        },
+    ));
+    // Drive the belief to True from two distinct sources — the projection
+    // downgrades a single-source True to Probable (lib.rs, >=2 distinct
+    // sources), and this test is about status, not about that rule.
+    for (cycle, source) in [(2u64, "ix-agent-a"), (3, "ix-agent-b")] {
+        loop_.process_research_event(ResearchEvent {
+            cycle,
+            source: source.to_string(),
+            payload: ResearchEventPayload::BeliefUpdate {
+                proposition: key.to_string(),
+                value: HexValue::True,
+                evidence: Default::default(),
+            },
+        });
+    }
+    let achieved = loop_.state.goals.get(key).expect("goal exists").status;
+    assert_eq!(
+        achieved,
+        HexValue::True,
+        "precondition failed: the goal never reached True, so this test would \
+         pass vacuously on any implementation"
+    );
+
+    // Now soften the belief. Retraction resets it, then a Probable assertion
+    // lands — the exact shape that un-achieved the goal between 79ad578 and
+    // the fix.
+    loop_.process_research_event(ev(
+        4,
+        ResearchEventPayload::Retraction {
+            proposition: key.to_string(),
+            reason: "supporting run withdrawn".to_string(),
+            retracts: None,
+        },
+    ));
+    loop_.process_research_event(ev(
+        5,
+        ResearchEventPayload::BeliefUpdate {
+            proposition: key.to_string(),
+            value: HexValue::Probable,
+            evidence: Default::default(),
+        },
+    ));
+
+    let after = loop_.state.goals.get(key).expect("goal exists").status;
+    assert_eq!(
+        after,
+        HexValue::True,
+        "an achieved goal was un-achieved by a softer belief (status {after:?}). \
+         That re-admits it to top_goal candidacy, where it displaces the real \
+         top goal and swallows its actions."
+    );
+}
