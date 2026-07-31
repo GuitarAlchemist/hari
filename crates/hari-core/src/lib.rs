@@ -115,8 +115,9 @@ pub use lineage::{LineageBundle, LineageEdge, LineageNode, LineageRun};
 pub mod paired_eval;
 
 pub use paired_eval::{
-    score_false_rejections, score_paired, ClaimLabel, ClaimOutcome, DecisionLabel,
-    ExpectedDecision, FalseRejectionScore, PairDefect, PairedFixture, PairedScore,
+    score_false_rejections, score_paired, score_paired_three_way, ClaimLabel, ClaimOutcome,
+    DecisionLabel, ExpectedDecision, FalseRejectionScore, PairDefect, PairOutcome, PairSeparation,
+    PairedArm, PairedFixture, PairedScore, ThreeWayPairedReport,
 };
 
 // ---------------------------------------------------------------------------

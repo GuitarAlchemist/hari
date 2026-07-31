@@ -209,3 +209,52 @@ fn three_way_divergence_exists_on_at_least_one_fixture() {
         FIXTURES.len()
     );
 }
+
+/// Every report must name the model that produced it.
+///
+/// It did not. `process_research_trace_subjective_logic` built its report with
+/// `priority_model: Default::default()`, documented as "left at its default
+/// (`PriorityModel::Flat`)". That justification expired when the post-Phase-5
+/// substrate decision moved the default to `RecencyDecay`: from then on every
+/// SL report — including the `subjective_logic` arm of every `--compare3` run —
+/// claimed to be a `RecencyDecay` report. Nothing read the field, so nothing
+/// failed, which is exactly why it survived.
+///
+/// #35 §5.1 grades arms side by side, so the label became load-bearing: a
+/// number that cannot be attributed to the policy that produced it is not a
+/// comparison. Pinned across the whole fixture corpus, and on all three arms,
+/// so a future arm cannot be added with a borrowed label.
+#[test]
+fn probe_every_arm_reports_the_model_that_produced_it() {
+    use hari_core::PriorityModel;
+
+    for path in FIXTURES {
+        let trace = load_trace(path);
+        let solo = process_research_trace_subjective_logic(
+            trace.clone(),
+            SubjectiveLogicConfig::default(),
+        );
+        assert_eq!(
+            solo.priority_model,
+            PriorityModel::SubjectiveLogic,
+            "{path}: standalone SL replay mislabels its model"
+        );
+
+        let three = compare_replay_three_way(trace, SubjectiveLogicConfig::default());
+        assert_eq!(
+            three.recency_decay.priority_model,
+            PriorityModel::RecencyDecay,
+            "{path}: decay arm mislabeled"
+        );
+        assert_eq!(
+            three.lie.priority_model,
+            PriorityModel::Lie,
+            "{path}: Lie arm mislabeled"
+        );
+        assert_eq!(
+            three.subjective_logic.priority_model,
+            PriorityModel::SubjectiveLogic,
+            "{path}: SL arm mislabeled"
+        );
+    }
+}

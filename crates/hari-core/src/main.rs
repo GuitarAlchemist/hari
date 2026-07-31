@@ -24,6 +24,10 @@ fn main() {
         //       (attach the forecast ledger's calibration block to the report)
         //   replay --paired <paired-fixture.json>
         //       (score the #35 §5.1 primary metric against bundled ground truth)
+        //   replay --paired --compare3 <paired-fixture.json>
+        //       (the same ground truth graded against all three arms at once —
+        //        §5.1 defines the primary metric per arm, so this is the shape
+        //        the eval actually consumes)
         let mut compare = false;
         let mut compare3 = false;
         let mut session_mode = false;
@@ -47,14 +51,18 @@ fn main() {
             }
             i += 1;
         }
-        let exclusive_count = [compare, compare3, session_mode, paired]
+        // `--paired --compare3` is the one legal combination: `--paired`
+        // selects the scorer, `--compare3` selects how many arms it grades.
+        // Every other pairing picks two incompatible output schemas.
+        let paired_three_way = paired && compare3;
+        let exclusive_count = [compare, compare3 && !paired, session_mode, paired]
             .iter()
             .filter(|x| **x)
             .count();
         if exclusive_count > 1 {
             eprintln!(
                 "hari-core replay: --compare, --compare3, --session, and --paired are mutually \
-                 exclusive"
+                 exclusive (except --paired --compare3, which grades all three arms)"
             );
             process::exit(2);
         }
@@ -63,14 +71,22 @@ fn main() {
         // block yet. Reject the combination loudly instead of silently
         // dropping the flag — attaching per-arm calibration is the next
         // slice (#35 §9.2 expand step).
-        if calibration && (compare3 || session_mode) {
+        //
+        // `--paired` is rejected for the same reason and one more: per-arm
+        // calibration needs each arm to emit forecasts from its own posterior
+        // (#35 §9.2), which does not exist yet. Silently dropping the flag
+        // would let a paired run read as if it had been calibration-scored.
+        if calibration && (compare3 || session_mode || paired) {
             eprintln!(
-                "hari-core replay: --calibration is not yet supported with --compare3 or --session"
+                "hari-core replay: --calibration is not yet supported with --compare3, --session, \
+                 or --paired"
             );
             process::exit(2);
         }
         let result = if session_mode {
             replay_session(path)
+        } else if paired_three_way {
+            replay_paired_three_way(path)
         } else if compare3 {
             replay_trace_three_way(path)
         } else if paired {
@@ -825,6 +841,49 @@ fn replay_paired(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
             "false_rejections": false_rejections,
         }),
     )?;
+    println!();
+    Ok(())
+}
+
+/// `replay --paired --compare3` — grade one label set against all three arms.
+///
+/// This is the shape #35 §5.1 consumes: the primary metric is defined per arm,
+/// so a single-arm score answers a question the pre-registration never asks.
+fn replay_paired_three_way(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let path = path.ok_or("usage: hari-core replay --paired --compare3 <paired-fixture.json>")?;
+    let fixture: hari_core::PairedFixture = serde_json::from_str(&fs::read_to_string(path)?)?;
+    let graded = hari_core::score_paired_three_way(fixture, SubjectiveLogicConfig::default());
+
+    // Defects derive from the label set and the outcome count, both of which
+    // are arm-independent — so reporting them once per arm would be noise.
+    // Warn per arm anyway *if* they differ, because that difference would mean
+    // the arms are being graded against different decisions.
+    for (name, arm) in [
+        ("recency_decay", &graded.recency_decay),
+        ("lie", &graded.lie),
+        ("subjective_logic", &graded.subjective_logic),
+    ] {
+        for defect in &arm.paired.defects {
+            warn!("paired fixture defect [{name}]: {defect:?}");
+        }
+        if arm.paired.is_ungraded() {
+            warn!("[{name}] no pair was gradeable — paired_accuracy is absent, not 0.0");
+        }
+        if !arm.false_rejections.unlabeled.is_empty() {
+            warn!(
+                "[{name}] waits on unlabeled claims (no ground truth, NOT excused): {:?}",
+                arm.false_rejections.unlabeled
+            );
+        }
+    }
+    // A §9.3 fixture exists to discriminate between the arms. One that grades
+    // all three identically has measured nothing, and saying so here is the
+    // difference between a null result and an unnoticed dud.
+    if graded.is_undiscriminating() {
+        warn!("no pair separated the arms — this fixture does not discriminate between the models");
+    }
+
+    serde_json::to_writer_pretty(std::io::stdout(), &graded)?;
     println!();
     Ok(())
 }

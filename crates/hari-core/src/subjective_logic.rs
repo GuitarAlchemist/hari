@@ -39,7 +39,7 @@
 //! The honest shape is a parallel pipeline.
 
 use crate::{
-    action_kind, compute_metrics_for, Action, Goal, ReplayMetrics, ResearchEvent,
+    action_kind, compute_metrics_for, Action, Goal, PriorityModel, ReplayMetrics, ResearchEvent,
     ResearchEventOutcome, ResearchEventPayload, ResearchReplayReport, ResearchTrace,
 };
 use hari_lattice::HexValue;
@@ -412,10 +412,18 @@ impl SubjectiveLogicState {
 /// shape, same `metrics` shape, same `final_beliefs`/`final_goals`
 /// — so 3-way comparisons are apples-to-apples.
 ///
-/// `priority_model` on the report is left at its default
-/// (`PriorityModel::Flat`) because SL does not score actions through
-/// the `PriorityModel` ladder. The `final_state_summary` carries an
-/// `[subjective-logic]` prefix so reports are easy to tell apart.
+/// `priority_model` on the report is `PriorityModel::SubjectiveLogic`.
+/// It formerly relied on `Default::default()`, justified in a comment
+/// as "left at its default (`PriorityModel::Flat`)" — which stopped
+/// being true when the post-Phase-5 substrate decision moved the
+/// default to `RecencyDecay`, at which point every SL report began
+/// claiming to be a `RecencyDecay` report. Harmless while nothing read
+/// the field; false once #35 §5.1 grades arms side by side and needs
+/// each set of numbers attributable to the policy that produced them.
+/// SL does not score actions through the `PriorityModel` ladder, but
+/// that is a reason to name it accurately, not to name it something
+/// else. The `final_state_summary` also carries an `[subjective-logic]`
+/// prefix.
 pub fn process_research_trace_subjective_logic(
     trace: ResearchTrace,
     config: SubjectiveLogicConfig,
@@ -490,7 +498,7 @@ pub fn process_research_trace_subjective_logic(
         final_beliefs,
         final_goals: state.goals,
         final_state_summary,
-        priority_model: Default::default(),
+        priority_model: PriorityModel::SubjectiveLogic,
         metrics,
         comparison: None,
         // SL has no belief-revision ledger; retraction resets an opinion

@@ -498,6 +498,65 @@ instead.
    proposition and so offers nothing to commit to (abstain). It is deliberately
    weak and labelled as such in the fixture itself.
 
+   **Third amendment (2026-07-30). The scorer now grades all three arms
+   against one label set — and the weak fixture already produces a result.**
+
+   §5.1 defines the primary metric *per arm*, but `replay --paired` scored a
+   single arm: it built one `CognitiveLoop` on the default model, so producing
+   the §5.1 table meant three fixture files differing only in the model, with
+   the same ground truth copied into each. Drift between those copies would be
+   indistinguishable from a policy difference once the numbers were in. Labels
+   grade the *decision point*, which is a property of the trace, so
+   `score_paired_three_way` replays one `PairedFixture` under `RecencyDecay`,
+   `Lie`, and SL and grades all three against its single label set. Reachable
+   as `replay --paired --compare3`. Arm-independence of gradeability is pinned
+   by `theorem_gradeability_is_arm_independent`; a fixture no arm splits on is
+   reported as `is_undiscriminating` rather than presented as agreement.
+
+   **The measured result reverses the expectation recorded above.** On
+   `propositionless_abstention.json` — the deliberately weak fixture — the arms
+   split, and not in SL's favour:
+
+   | arm | paired accuracy | act half | abstain half | false rejections |
+   |---|---|---|---|---|
+   | RecencyDecay | **1.000** | correct | correct | 0 |
+   | Lie | **1.000** | correct | correct | 0 |
+   | SubjectiveLogic | **0.000** | **wrong** | correct | **1** |
+
+   SL fuses the single corroborated `belief_update` to `b=0.550 d=0.150
+   u=0.300` (`P=0.700`), which does not clear its accept threshold, so it emits
+   `Wait` and misses the **act** half — on a claim labelled `stood`, which
+   §5.3 charges as a false rejection.
+
+   This matters for how §9.3 is authored. The correction above establishes that
+   SL abstains on evidence where the hexavalent arms are evidence-blind, and
+   the natural inference — that an evidence-based paired corpus would score 0.0
+   for decay and `Lie` by construction and thereby favour SL — is now shown to
+   be **half the picture**. Evidence-sensitivity is symmetric: it is a benefit
+   on abstain halves and a cost on act halves. The primary metric charges SL
+   for under-commitment exactly as it charges decay for over-commitment, which
+   is what a paired metric is for. No prediction about the corpus outcome
+   follows from either half alone, and none is made here.
+
+   Pinned by `subjective_logic_pays_for_its_caution_on_the_act_half`. One
+   fixture, one pair — this is a demonstration that the instrument
+   discriminates, not evidence about the arms.
+
+   **A latent mislabel surfaced while wiring this, and is fixed.**
+   `process_research_trace_subjective_logic` built its report with
+   `priority_model: Default::default()`, justified in a comment as "left at its
+   default (`PriorityModel::Flat`)". That ceased to be true when the
+   post-Phase-5 substrate decision moved the default to `RecencyDecay`: from
+   then on every SL report, including the `subjective_logic` arm of every
+   `--compare3` run, claimed to be a `RecencyDecay` report. Nothing read the
+   field, so nothing failed — the same shape as the four instrument defects
+   §9 already records. Under §5.1 the label becomes load-bearing, because a
+   number that cannot be attributed to the policy that produced it is not a
+   comparison. Now `PriorityModel::SubjectiveLogic`, pinned across the corpus
+   and on all three arms by `probe_every_arm_reports_the_model_that_produced_it`.
+   No metric moved: the full suite passes unchanged, which is itself the
+   evidence that nothing had been reading it.
+
    **Correction (2026-07-30, adversarial review).** The conclusion drawn above —
    "an evidence-insufficiency pair is not authorable" — is **false**, and the
    §5.1 taxonomy stands unamended. The scoped claim holds: `RecencyDecay` and
@@ -552,6 +611,17 @@ act/abstain taxonomy question in §5.1 is settled, authoring 5–10 traces × ~2
 pairs would produce a corpus whose abstain halves encode cycle arithmetic — 200
 labels that cannot be reused if the taxonomy changes. **Settle the taxonomy,
 then finish 3, then 4.**
+
+**Ranking update (2026-07-30).** The taxonomy is settled (item 3's correction)
+and the instrument is built (item 3's third amendment): one label set, three
+arms, per-pair verdicts. What remains in item 3 is **authoring the corpus** —
+`swarm_dissent`-shaped traces with `cycle` stamps tracking position so decay
+never fires, carrying forecasts about their own propositions per item 2. The
+fixture mix (how many pairs turn on evidence sufficiency versus other grounds)
+is a design choice with a foreseeable effect on the numbers, so it is committed
+here **before** any corpus is authored: an all-evidence corpus would measure
+one capability under a name that promises a general one. Author the mix first,
+inspect nothing until it is committed.
 
 Items 1 and 2 were the cheapest and were prerequisites for the decision rule
 itself; they landed first. **The remaining blockers are 3 and 4, in that

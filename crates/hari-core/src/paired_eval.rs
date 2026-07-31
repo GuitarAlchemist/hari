@@ -32,7 +32,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::{Action, ResearchReplayReport, ResearchTrace};
+use crate::subjective_logic::{
+    compare_replay_three_way, SubjectiveLogicConfig, ThreeWayReplayReport,
+};
+use crate::{Action, PriorityModel, ResearchReplayReport, ResearchTrace};
 
 /// What a correctly-behaving policy should do at one labeled decision point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +123,31 @@ pub enum PairDefect {
     EventIndexOutOfRange { pair: String, event_index: usize },
 }
 
+/// How one gradeable pair fared, kept alongside the aggregate.
+///
+/// Exists because the aggregate cannot answer the question §9.3 raises: *which*
+/// pairs separate the arms. A corpus whose abstain halves encode evidence
+/// insufficiency is expected to score 0.0 under the evidence-blind hexavalent
+/// arms and non-zero under Subjective Logic — and the per-pair list is what
+/// distinguishes that intended result from a fixture that is simply broken.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairOutcome {
+    /// The pair identifier shared by both halves.
+    pub pair: String,
+    /// The policy acted at the `Act` half, as it should have.
+    pub act_correct: bool,
+    /// The policy withheld at the `Abstain` half, as it should have.
+    pub abstain_correct: bool,
+}
+
+impl PairOutcome {
+    /// Both halves right — the unit the primary metric counts.
+    #[must_use]
+    pub fn both_correct(&self) -> bool {
+        self.act_correct && self.abstain_correct
+    }
+}
+
 /// Result of grading one replay against its labels.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PairedScore {
@@ -139,6 +167,10 @@ pub struct PairedScore {
     pub abstain_correct: usize,
     /// Labeled `Abstain` halves belonging to a complete pair.
     pub abstain_total: usize,
+    /// Per-pair verdicts for every gradeable pair, ordered by pair name.
+    /// Ungradeable pairs are absent here and present in `defects` instead.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub per_pair: Vec<PairOutcome>,
     /// Everything that could not be graded, named individually.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub defects: Vec<PairDefect>,
@@ -194,6 +226,7 @@ pub fn score_paired(report: &ResearchReplayReport, labels: &[DecisionLabel]) -> 
         act_total: 0,
         abstain_correct: 0,
         abstain_total: 0,
+        per_pair: Vec::new(),
         defects: Vec::new(),
     };
 
@@ -267,6 +300,11 @@ pub fn score_paired(report: &ResearchReplayReport, labels: &[DecisionLabel]) -> 
         // credit. §5.3's disqualifier exists because a policy could otherwise
         // bank every abstain half by never acting.
         score.both_correct += usize::from(act_right && abstain_right);
+        score.per_pair.push(PairOutcome {
+            pair: pair.to_string(),
+            act_correct: act_right,
+            abstain_correct: abstain_right,
+        });
     }
 
     score.paired_accuracy =
@@ -352,6 +390,147 @@ pub struct FalseRejectionScore {
     /// quietly grade a subset and read as if it graded everything.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unlabeled: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Three-arm scoring — the shape §5.1 actually asks for
+// ---------------------------------------------------------------------------
+
+/// One arm's grades, tagged with the model that produced them.
+///
+/// `false_rejections` is the authored-ground-truth scorer, never
+/// `ReplayMetrics::false_rejection_count` — see [`score_false_rejections`] for
+/// why the intrinsic counter cannot be compared across arms.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PairedArm {
+    /// The model this arm ran under.
+    pub priority_model: PriorityModel,
+    /// §5.1 primary plus its §5.2 act/abstain decomposition.
+    pub paired: PairedScore,
+    /// §5.3 disqualifier input.
+    pub false_rejections: FalseRejectionScore,
+}
+
+/// A pair the arms did not agree on, and how each fared.
+///
+/// `None` means the pair was ungradeable in that arm. Ground truth and trace
+/// structure are arm-independent, so in practice a pair is gradeable in all
+/// three arms or in none — but that is an invariant worth *reporting* rather
+/// than assuming, since a per-arm difference would mean the fixture is being
+/// graded against different decisions depending on the model.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairSeparation {
+    pub pair: String,
+    pub recency_decay: Option<bool>,
+    pub lie: Option<bool>,
+    pub subjective_logic: Option<bool>,
+}
+
+/// Every arm's grades against **one** shared label set (#35 §5.1).
+///
+/// # Why one label set, replayed three times
+///
+/// §5.1 defines the primary metric per arm; the comparison is the point. The
+/// alternative — one fixture file per arm — would put the same ground truth in
+/// three places and let them drift, and drift in ground truth is
+/// indistinguishable from a policy difference once the numbers are in. Labels
+/// grade the *decision point*, which is a property of the trace, not of the
+/// model that reads it.
+///
+/// The three `ResearchReplayReport`s are preserved verbatim in `replay` so a
+/// surprising grade can be traced back to the actions that produced it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreeWayPairedReport {
+    /// The underlying three-arm replay, unmodified.
+    pub replay: ThreeWayReplayReport,
+    pub recency_decay: PairedArm,
+    pub lie: PairedArm,
+    pub subjective_logic: PairedArm,
+    /// Pairs where the three arms did not all reach the same verdict. Empty
+    /// means the fixture does not discriminate between the models at all,
+    /// which for a §9.3 fixture is a failure of the fixture, not a result.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub separating_pairs: Vec<PairSeparation>,
+}
+
+impl ThreeWayPairedReport {
+    /// `true` when no pair separated the arms — every model graded identically.
+    #[must_use]
+    pub fn is_undiscriminating(&self) -> bool {
+        self.separating_pairs.is_empty()
+    }
+}
+
+/// Replay a [`PairedFixture`] under `RecencyDecay`, `Lie`, and Subjective
+/// Logic, grading all three against the fixture's single label set.
+#[must_use]
+pub fn score_paired_three_way(
+    fixture: PairedFixture,
+    sl_config: SubjectiveLogicConfig,
+) -> ThreeWayPairedReport {
+    let PairedFixture {
+        trace,
+        labels,
+        claims,
+    } = fixture;
+    let replay = compare_replay_three_way(trace, sl_config);
+
+    let grade = |report: &ResearchReplayReport| PairedArm {
+        priority_model: report.priority_model,
+        paired: score_paired(report, &labels),
+        false_rejections: score_false_rejections(report, &claims),
+    };
+
+    let recency_decay = grade(&replay.recency_decay);
+    let lie = grade(&replay.lie);
+    let subjective_logic = grade(&replay.subjective_logic);
+
+    let separating_pairs = separations(&recency_decay, &lie, &subjective_logic);
+
+    ThreeWayPairedReport {
+        replay,
+        recency_decay,
+        lie,
+        subjective_logic,
+        separating_pairs,
+    }
+}
+
+/// Pairs where the arms disagree, over the union of every pair any arm graded.
+///
+/// The union rather than the intersection: a pair gradeable in one arm and not
+/// another is exactly the anomaly [`PairSeparation`] documents, and taking the
+/// intersection would hide it.
+fn separations(decay: &PairedArm, lie: &PairedArm, sl: &PairedArm) -> Vec<PairSeparation> {
+    let verdicts = |arm: &PairedArm| -> BTreeMap<String, bool> {
+        arm.paired
+            .per_pair
+            .iter()
+            .map(|p| (p.pair.clone(), p.both_correct()))
+            .collect()
+    };
+    let (d, l, s) = (verdicts(decay), verdicts(lie), verdicts(sl));
+
+    let mut names: Vec<&String> = d.keys().chain(l.keys()).chain(s.keys()).collect();
+    names.sort();
+    names.dedup();
+
+    names
+        .into_iter()
+        .filter_map(|pair| {
+            let (dv, lv, sv) = (
+                d.get(pair).copied(),
+                l.get(pair).copied(),
+                s.get(pair).copied(),
+            );
+            (dv != lv || dv != sv || lv != sv).then(|| PairSeparation {
+                pair: pair.clone(),
+                recency_decay: dv,
+                lie: lv,
+                subjective_logic: sv,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -717,5 +896,190 @@ mod tests {
             proposition: "p".to_string(),
             value: HexValue::Probable,
         }]));
+    }
+
+    // -----------------------------------------------------------------------
+    // Three-arm scoring
+    // -----------------------------------------------------------------------
+
+    fn paired_fixture() -> PairedFixture {
+        PairedFixture {
+            trace: act_then_abstain_trace(),
+            labels: vec![
+                label(0, "p1", ExpectedDecision::Act),
+                label(1, "p1", ExpectedDecision::Abstain),
+            ],
+            claims: vec![ClaimLabel {
+                proposition: "benchmark-x-is-reliable".to_string(),
+                outcome: ClaimOutcome::Stood,
+            }],
+        }
+    }
+
+    /// The property that justifies one fixture file instead of three: ground
+    /// truth grades the *decision point*, so nothing about the label set may
+    /// depend on which model reads the trace.
+    ///
+    /// Defects and gradeable-pair counts derive from the labels and the outcome
+    /// count, both arm-independent — so if these ever diverge, the arms are
+    /// being graded against different decisions and no cross-arm number means
+    /// anything.
+    #[test]
+    fn theorem_gradeability_is_arm_independent() {
+        let graded = score_paired_three_way(paired_fixture(), SubjectiveLogicConfig::default());
+        let arms = [&graded.recency_decay, &graded.lie, &graded.subjective_logic];
+
+        for arm in arms {
+            assert_eq!(
+                arm.paired.defects, graded.recency_decay.paired.defects,
+                "defect list differs by arm — ground truth is not arm-independent"
+            );
+            assert_eq!(
+                arm.paired.pairs, graded.recency_decay.paired.pairs,
+                "gradeable-pair count differs by arm"
+            );
+            let names: Vec<&str> = arm
+                .paired
+                .per_pair
+                .iter()
+                .map(|p| p.pair.as_str())
+                .collect();
+            let expected: Vec<&str> = graded
+                .recency_decay
+                .paired
+                .per_pair
+                .iter()
+                .map(|p| p.pair.as_str())
+                .collect();
+            assert_eq!(names, expected, "graded pair names differ by arm");
+        }
+    }
+
+    /// Each arm is tagged with the model that actually produced it — a report
+    /// whose grades cannot be attributed to a policy is not a comparison.
+    #[test]
+    fn each_arm_reports_its_own_priority_model() {
+        let graded = score_paired_three_way(paired_fixture(), SubjectiveLogicConfig::default());
+        assert_eq!(
+            graded.recency_decay.priority_model,
+            PriorityModel::RecencyDecay
+        );
+        assert_eq!(graded.lie.priority_model, PriorityModel::Lie);
+        assert_eq!(
+            graded.subjective_logic.priority_model,
+            PriorityModel::SubjectiveLogic
+        );
+    }
+
+    /// `per_pair` must reconstruct the aggregate exactly. They are computed in
+    /// the same pass, so a mismatch means one of them was edited without the
+    /// other — and the per-pair list is what §9.3 reads to tell an intended
+    /// null result from a broken fixture.
+    #[test]
+    fn theorem_per_pair_reconstructs_the_aggregate() {
+        let graded = score_paired_three_way(paired_fixture(), SubjectiveLogicConfig::default());
+        for arm in [&graded.recency_decay, &graded.lie, &graded.subjective_logic] {
+            let s = &arm.paired;
+            assert_eq!(s.per_pair.len(), s.pairs);
+            assert_eq!(
+                s.per_pair.iter().filter(|p| p.both_correct()).count(),
+                s.both_correct
+            );
+            assert_eq!(
+                s.per_pair.iter().filter(|p| p.act_correct).count(),
+                s.act_correct
+            );
+            assert_eq!(
+                s.per_pair.iter().filter(|p| p.abstain_correct).count(),
+                s.abstain_correct
+            );
+        }
+    }
+
+    /// Subjective Logic withholds where the hexavalent arms commit.
+    ///
+    /// A single `Probable` report from one source fuses to `b=0.550 u=0.300`
+    /// (`P=0.700`), which does not clear SL's accept threshold, so SL emits
+    /// `Wait` and misses the **act** half. This is the mirror of the §9.3
+    /// prediction — SL's evidence-sensitivity is a cost on act halves, not only
+    /// a benefit on abstain halves — and it is pinned here because it is the
+    /// first measured evidence that the primary metric is not one-sided.
+    #[test]
+    fn subjective_logic_pays_for_its_caution_on_the_act_half() {
+        let graded = score_paired_three_way(paired_fixture(), SubjectiveLogicConfig::default());
+
+        assert_eq!(graded.recency_decay.paired.paired_accuracy, Some(1.0));
+        assert_eq!(graded.lie.paired.paired_accuracy, Some(1.0));
+        assert_eq!(graded.subjective_logic.paired.paired_accuracy, Some(0.0));
+
+        let sl = &graded.subjective_logic.paired.per_pair[0];
+        assert!(!sl.act_correct, "SL is expected to under-commit here");
+        assert!(sl.abstain_correct);
+
+        // And the §5.3 disqualifier charges it: the claim it withheld on stood.
+        assert_eq!(graded.subjective_logic.false_rejections.false_rejections, 1);
+        assert_eq!(graded.recency_decay.false_rejections.false_rejections, 0);
+    }
+
+    /// The separation list is the fixture's diagnostic, so it must name the
+    /// disagreeing pair and report each arm's verdict.
+    #[test]
+    fn separating_pairs_names_the_pair_the_arms_split_on() {
+        let graded = score_paired_three_way(paired_fixture(), SubjectiveLogicConfig::default());
+        assert!(!graded.is_undiscriminating());
+        assert_eq!(
+            graded.separating_pairs,
+            vec![PairSeparation {
+                pair: "p1".to_string(),
+                recency_decay: Some(true),
+                lie: Some(true),
+                subjective_logic: Some(false),
+            }]
+        );
+    }
+
+    /// A fixture every arm grades identically has measured nothing. The report
+    /// must say so rather than present three matching numbers as agreement.
+    #[test]
+    fn a_fixture_no_arm_splits_on_is_reported_as_undiscriminating() {
+        // Labels inverted, so every arm gets the act half wrong and the abstain
+        // half wrong or right identically — SL included, since it withholds at
+        // both indexes.
+        let mut fixture = paired_fixture();
+        fixture.labels = vec![
+            label(1, "p1", ExpectedDecision::Act),
+            label(0, "p1", ExpectedDecision::Abstain),
+        ];
+        let graded = score_paired_three_way(fixture, SubjectiveLogicConfig::default());
+
+        // Vacuity guard: the pair must actually have been graded. An empty
+        // separation list is otherwise trivially satisfiable by grading nothing.
+        assert_eq!(graded.recency_decay.paired.pairs, 1);
+        assert_eq!(graded.subjective_logic.paired.pairs, 1);
+        assert!(graded.is_undiscriminating());
+        assert!(graded.separating_pairs.is_empty());
+    }
+
+    /// An ungradeable pair must not be silently dropped from the separation
+    /// list — `None` in one arm is exactly the anomaly worth surfacing.
+    #[test]
+    fn an_ungradeable_pair_yields_no_separation_entry_but_a_defect_in_every_arm() {
+        let mut fixture = paired_fixture();
+        fixture
+            .labels
+            .push(label(0, "orphan", ExpectedDecision::Act));
+        let graded = score_paired_three_way(fixture, SubjectiveLogicConfig::default());
+
+        for arm in [&graded.recency_decay, &graded.lie, &graded.subjective_logic] {
+            assert_eq!(
+                arm.paired.defects,
+                vec![PairDefect::MissingHalf {
+                    pair: "orphan".to_string(),
+                    present: ExpectedDecision::Act,
+                }]
+            );
+        }
+        // `orphan` is gradeable in no arm, so it cannot separate them.
+        assert!(graded.separating_pairs.iter().all(|s| s.pair != "orphan"));
     }
 }
