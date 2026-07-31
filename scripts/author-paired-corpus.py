@@ -108,7 +108,16 @@ def belief(prop, value, bench, metric, val, budget, runs, note):
     }
 
 
-def build(theme):
+def build(theme, variant):
+    """variant == "isolation": act halves stay Probable, so the ONLY difference
+    between a pair's two labeled events is prior corroboration (section 9.3.1).
+
+    variant == "task": act halves assert True, which is what a source reporting
+    a reproduced effect does (section 9.3.2).  Bundles asserted confidence with
+    reproduction, faithful to section 2's "real regression vs injected
+    variance".  Abstain halves are identical in both variants.
+    """
+    act_value = "Probable" if variant == "isolation" else "True"
     t = theme["slug"]
     bench, metric, good, budget = (
         theme["bench"],
@@ -134,7 +143,7 @@ def build(theme):
             "ix-runner-beta",
             experiment(
                 real,
-                "Probable",
+                act_value,
                 "ix-runner-beta",
                 f"{bench}-replication",
                 metric,
@@ -148,7 +157,7 @@ def build(theme):
             "ix-runner-alpha",
             experiment(
                 real,
-                "Probable",
+                act_value,
                 "ix-runner-alpha",
                 bench,
                 metric,
@@ -190,7 +199,7 @@ def build(theme):
             "ix-runner-beta",
             experiment(
                 prop,
-                "Probable",
+                act_value,
                 "ix-runner-beta",
                 f"{bench}-corroboration",
                 metric,
@@ -202,7 +211,7 @@ def build(theme):
         )
         act_i = push(
             "ix-agent-evaluator",
-            belief(prop, "Probable", bench, metric, good, budget, 24, "clears budget"),
+            belief(prop, act_value, bench, metric, good, budget, 24, "clears budget"),
         )
         abstain_i = push(
             "ix-runner-orchestrator",
@@ -232,7 +241,7 @@ def build(theme):
             "ix-lab-gamma",
             experiment(
                 intact,
-                "Probable",
+                act_value,
                 "ix-lab-gamma",
                 f"{bench}-lab",
                 metric,
@@ -246,7 +255,7 @@ def build(theme):
             "ix-agent-evaluator",
             belief(
                 intact,
-                "Probable",
+                act_value,
                 bench,
                 metric,
                 good,
@@ -261,7 +270,7 @@ def build(theme):
             "ix-lab-gamma",
             experiment(
                 pulled,
-                "Probable",
+                act_value,
                 "ix-lab-gamma",
                 f"{bench}-lab",
                 metric,
@@ -284,7 +293,7 @@ def build(theme):
             "ix-agent-evaluator",
             belief(
                 pulled,
-                "Probable",
+                act_value,
                 bench,
                 metric,
                 good,
@@ -304,10 +313,10 @@ def build(theme):
         ]
 
     comment = [
-        f"#35 section 9.3 paired fixture - {theme['title']}.",
+        f"#35 section 9.3 paired fixture ({variant}) - {theme['title']}.",
         "",
-        "Authored to the fixture mix committed in b35d89e, BEFORE any arm was",
-        "replayed against these shapes. 9 pairs, 3 per ground, equal weight.",
+        "9 pairs, 3 per ground, equal weight, per the mix committed in b35d89e.",
+        VARIANT_NOTE[variant],
         "Pair ids encode the ground (g1-/g2-/g3-) so the per-ground breakdown",
         "the mix requires derives from PairedScore::per_pair.",
         "",
@@ -338,12 +347,29 @@ def build(theme):
     }
 
 
+VARIANT_NOTE = {
+    "isolation": (
+        "ISOLATION variant (section 9.3.1): act halves assert Probable, the "
+        "same as abstain halves, so the ONLY difference between a pair's two "
+        "labeled events is prior corroboration. Authored before any arm was "
+        "replayed. Measures whether an arm detects reproduction alone."
+    ),
+    "task": (
+        "TASK variant (section 9.3.2): act halves assert True, which is what a "
+        "source reporting a reproduced effect does. Bundles asserted confidence "
+        "with reproduction, faithful to section 2's 'real regression vs "
+        "injected variance'. Never pooled with the isolation variant."
+    ),
+}
+
+
 def main():
     out = "fixtures/ix/paired"
     os.makedirs(out, exist_ok=True)
-    for theme in THEMES:
-        doc = build(theme)
-        path = os.path.join(out, f"{theme['slug']}.json")
+    for variant in ("isolation", "task"):
+      for theme in THEMES:
+        doc = build(theme, variant)
+        path = os.path.join(out, f"{theme['slug']}-{variant}.json")
         with io.open(path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(doc, f, indent=2, ensure_ascii=False)
             f.write("\n")

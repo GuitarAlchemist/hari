@@ -1,9 +1,9 @@
 {
   "_comment": [
-    "#35 section 9.3 paired fixture - cost per 1k requests.",
+    "#35 section 9.3 paired fixture (task) - cost per 1k requests.",
     "",
-    "Authored to the fixture mix committed in b35d89e, BEFORE any arm was",
-    "replayed against these shapes. 9 pairs, 3 per ground, equal weight.",
+    "9 pairs, 3 per ground, equal weight, per the mix committed in b35d89e.",
+    "TASK variant (section 9.3.2): act halves assert True, which is what a source reporting a reproduced effect does. Bundles asserted confidence with reproduction, faithful to section 2's 'real regression vs injected variance'. Never pooled with the isolation variant.",
     "Pair ids encode the ground (g1-/g2-/g3-) so the per-ground breakdown",
     "the mix requires derives from PairedScore::per_pair.",
     "",
@@ -34,7 +34,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g1-cost-1-real",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-replication",
             "runs": 24,
@@ -50,7 +50,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g1-cost-1-real",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -82,7 +82,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g1-cost-2-real",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-replication",
             "runs": 24,
@@ -98,7 +98,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g1-cost-2-real",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -130,7 +130,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g1-cost-3-real",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-replication",
             "runs": 24,
@@ -146,7 +146,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g1-cost-3-real",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -178,7 +178,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g2-cost-1",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-corroboration",
             "runs": 24,
@@ -194,7 +194,7 @@
         "payload": {
           "type": "belief_update",
           "proposition": "g2-cost-1",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -221,7 +221,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g2-cost-2",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-corroboration",
             "runs": 24,
@@ -237,7 +237,7 @@
         "payload": {
           "type": "belief_update",
           "proposition": "g2-cost-2",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -264,7 +264,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g2-cost-3",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-corroboration",
             "runs": 24,
@@ -280,7 +280,7 @@
         "payload": {
           "type": "belief_update",
           "proposition": "g2-cost-3",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -307,7 +307,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g3-cost-1-intact",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-lab",
             "runs": 24,
@@ -323,7 +323,7 @@
         "payload": {
           "type": "belief_update",
           "proposition": "g3-cost-1-intact",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -339,7 +339,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g3-cost-1-pulled",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-lab",
             "runs": 24,
@@ -368,7 +368,7 @@
         "payload": {
           "type": "belief_update",
           "proposition": "g3-cost-1-pulled",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -384,7 +384,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g3-cost-2-intact",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-lab",
             "runs": 24,
@@ -400,7 +400,7 @@
         "payload": {
           "type": "belief_update",
           "proposition": "g3-cost-2-intact",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -416,7 +416,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g3-cost-2-pulled",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-lab",
             "runs": 24,
@@ -445,7 +445,7 @@
         "payload": {
           "type": "belief_update",
           "proposition": "g3-cost-2-pulled",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -461,7 +461,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g3-cost-3-intact",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-lab",
             "runs": 24,
@@ -477,7 +477,7 @@
         "payload": {
           "type": "belief_update",
           "proposition": "g3-cost-3-intact",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,
@@ -493,7 +493,7 @@
         "payload": {
           "type": "experiment_result",
           "proposition": "g3-cost-3-pulled",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost-lab",
             "runs": 24,
@@ -522,7 +522,7 @@
         "payload": {
           "type": "belief_update",
           "proposition": "g3-cost-3-pulled",
-          "value": "Probable",
+          "value": "True",
           "evidence": {
             "benchmark": "unit-cost",
             "runs": 24,

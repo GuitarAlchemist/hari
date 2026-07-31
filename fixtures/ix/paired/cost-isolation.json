@@ -1,0 +1,691 @@
+{
+  "_comment": [
+    "#35 section 9.3 paired fixture (isolation) - cost per 1k requests.",
+    "",
+    "9 pairs, 3 per ground, equal weight, per the mix committed in b35d89e.",
+    "ISOLATION variant (section 9.3.1): act halves assert Probable, the same as abstain halves, so the ONLY difference between a pair's two labeled events is prior corroboration. Authored before any arm was replayed. Measures whether an arm detects reproduction alone.",
+    "Pair ids encode the ground (g1-/g2-/g3-) so the per-ground breakdown",
+    "the mix requires derives from PairedScore::per_pair.",
+    "",
+    "G1 replication: the two labeled events are IDENTICAL payloads bar the",
+    "  proposition name. The only difference is that the act half's claim",
+    "  already has an independent corroborating experiment_result earlier in",
+    "  the trace. Abstain because one unreplicated run is what the",
+    "  flaky-vs-real task exists to catch.",
+    "G2 commitability: act half carries a corroborated proposition; abstain",
+    "  half is a goal_update, which carries none. Nothing to commit to.",
+    "G3 withdrawn basis: both halves re-assert a claim a lab reported. The",
+    "  abstain half's only support was retracted (targeted selector) between",
+    "  the report and the re-assertion, so the claim now rests on nothing.",
+    "",
+    "Cycle stamps track trace position, so exp(-lambda*age) < theta_wait",
+    "never fires and no abstain half is satisfiable by decay arithmetic.",
+    "",
+    "Claim outcomes are ground truth by construction, not derived from any",
+    "arm: '-flaky' is injected variance and '-pulled' lost its support, so",
+    "both are 'withdrawn' and withholding on them is excused under 5.3."
+  ],
+  "trace": {
+    "dimension": 4,
+    "events": [
+      {
+        "cycle": 1,
+        "source": "ix-runner-beta",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g1-cost-1-real",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-replication",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "independent runner reports the same result"
+          }
+        }
+      },
+      {
+        "cycle": 2,
+        "source": "ix-runner-alpha",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g1-cost-1-real",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "clears budget"
+          }
+        }
+      },
+      {
+        "cycle": 3,
+        "source": "ix-runner-alpha",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g1-cost-1-flaky",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "clears budget"
+          }
+        }
+      },
+      {
+        "cycle": 4,
+        "source": "ix-runner-beta",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g1-cost-2-real",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-replication",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "independent runner reports the same result"
+          }
+        }
+      },
+      {
+        "cycle": 5,
+        "source": "ix-runner-alpha",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g1-cost-2-real",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "clears budget"
+          }
+        }
+      },
+      {
+        "cycle": 6,
+        "source": "ix-runner-alpha",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g1-cost-2-flaky",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "clears budget"
+          }
+        }
+      },
+      {
+        "cycle": 7,
+        "source": "ix-runner-beta",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g1-cost-3-real",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-replication",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "independent runner reports the same result"
+          }
+        }
+      },
+      {
+        "cycle": 8,
+        "source": "ix-runner-alpha",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g1-cost-3-real",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "clears budget"
+          }
+        }
+      },
+      {
+        "cycle": 9,
+        "source": "ix-runner-alpha",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g1-cost-3-flaky",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "clears budget"
+          }
+        }
+      },
+      {
+        "cycle": 10,
+        "source": "ix-runner-beta",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g2-cost-1",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-corroboration",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "independent runner reports the same result"
+          }
+        }
+      },
+      {
+        "cycle": 11,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "g2-cost-1",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "clears budget"
+          }
+        }
+      },
+      {
+        "cycle": 12,
+        "source": "ix-runner-orchestrator",
+        "payload": {
+          "type": "goal_update",
+          "key": "g2-cost-1-characterise",
+          "description": "Characterise cost per 1k requests across regions",
+          "priority": 0.9,
+          "status": "Unknown"
+        }
+      },
+      {
+        "cycle": 13,
+        "source": "ix-runner-beta",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g2-cost-2",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-corroboration",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "independent runner reports the same result"
+          }
+        }
+      },
+      {
+        "cycle": 14,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "g2-cost-2",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "clears budget"
+          }
+        }
+      },
+      {
+        "cycle": 15,
+        "source": "ix-runner-orchestrator",
+        "payload": {
+          "type": "goal_update",
+          "key": "g2-cost-2-characterise",
+          "description": "Characterise cost per 1k requests across regions",
+          "priority": 0.9,
+          "status": "Unknown"
+        }
+      },
+      {
+        "cycle": 16,
+        "source": "ix-runner-beta",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g2-cost-3",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-corroboration",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "independent runner reports the same result"
+          }
+        }
+      },
+      {
+        "cycle": 17,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "g2-cost-3",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "clears budget"
+          }
+        }
+      },
+      {
+        "cycle": 18,
+        "source": "ix-runner-orchestrator",
+        "payload": {
+          "type": "goal_update",
+          "key": "g2-cost-3-characterise",
+          "description": "Characterise cost per 1k requests across regions",
+          "priority": 0.9,
+          "status": "Unknown"
+        }
+      },
+      {
+        "cycle": 19,
+        "source": "ix-lab-gamma",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g3-cost-1-intact",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-lab",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "lab run supports the claim"
+          }
+        }
+      },
+      {
+        "cycle": 20,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "g3-cost-1-intact",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "re-asserted on the lab result"
+          }
+        }
+      },
+      {
+        "cycle": 21,
+        "source": "ix-lab-gamma",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g3-cost-1-pulled",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-lab",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "lab run supports the claim"
+          }
+        }
+      },
+      {
+        "cycle": 22,
+        "source": "ix-lab-gamma",
+        "payload": {
+          "type": "retraction",
+          "proposition": "g3-cost-1-pulled",
+          "reason": "lab withdrew the supporting run: harness misconfiguration",
+          "retracts": {
+            "source": "ix-lab-gamma",
+            "cycle": 21
+          }
+        }
+      },
+      {
+        "cycle": 23,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "g3-cost-1-pulled",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "re-asserted on the lab result"
+          }
+        }
+      },
+      {
+        "cycle": 24,
+        "source": "ix-lab-gamma",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g3-cost-2-intact",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-lab",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "lab run supports the claim"
+          }
+        }
+      },
+      {
+        "cycle": 25,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "g3-cost-2-intact",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "re-asserted on the lab result"
+          }
+        }
+      },
+      {
+        "cycle": 26,
+        "source": "ix-lab-gamma",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g3-cost-2-pulled",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-lab",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "lab run supports the claim"
+          }
+        }
+      },
+      {
+        "cycle": 27,
+        "source": "ix-lab-gamma",
+        "payload": {
+          "type": "retraction",
+          "proposition": "g3-cost-2-pulled",
+          "reason": "lab withdrew the supporting run: harness misconfiguration",
+          "retracts": {
+            "source": "ix-lab-gamma",
+            "cycle": 26
+          }
+        }
+      },
+      {
+        "cycle": 28,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "g3-cost-2-pulled",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "re-asserted on the lab result"
+          }
+        }
+      },
+      {
+        "cycle": 29,
+        "source": "ix-lab-gamma",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g3-cost-3-intact",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-lab",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "lab run supports the claim"
+          }
+        }
+      },
+      {
+        "cycle": 30,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "g3-cost-3-intact",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "re-asserted on the lab result"
+          }
+        }
+      },
+      {
+        "cycle": 31,
+        "source": "ix-lab-gamma",
+        "payload": {
+          "type": "experiment_result",
+          "proposition": "g3-cost-3-pulled",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost-lab",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "lab run supports the claim"
+          }
+        }
+      },
+      {
+        "cycle": 32,
+        "source": "ix-lab-gamma",
+        "payload": {
+          "type": "retraction",
+          "proposition": "g3-cost-3-pulled",
+          "reason": "lab withdrew the supporting run: harness misconfiguration",
+          "retracts": {
+            "source": "ix-lab-gamma",
+            "cycle": 31
+          }
+        }
+      },
+      {
+        "cycle": 33,
+        "source": "ix-agent-evaluator",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "g3-cost-3-pulled",
+          "value": "Probable",
+          "evidence": {
+            "benchmark": "unit-cost",
+            "runs": 24,
+            "usd_per_1k": 2.41,
+            "budget": 3.0,
+            "note": "re-asserted on the lab result"
+          }
+        }
+      }
+    ]
+  },
+  "labels": [
+    {
+      "event_index": 1,
+      "pair": "g1-cost-1",
+      "expect": "act"
+    },
+    {
+      "event_index": 2,
+      "pair": "g1-cost-1",
+      "expect": "abstain"
+    },
+    {
+      "event_index": 4,
+      "pair": "g1-cost-2",
+      "expect": "act"
+    },
+    {
+      "event_index": 5,
+      "pair": "g1-cost-2",
+      "expect": "abstain"
+    },
+    {
+      "event_index": 7,
+      "pair": "g1-cost-3",
+      "expect": "act"
+    },
+    {
+      "event_index": 8,
+      "pair": "g1-cost-3",
+      "expect": "abstain"
+    },
+    {
+      "event_index": 10,
+      "pair": "g2-cost-1",
+      "expect": "act"
+    },
+    {
+      "event_index": 11,
+      "pair": "g2-cost-1",
+      "expect": "abstain"
+    },
+    {
+      "event_index": 13,
+      "pair": "g2-cost-2",
+      "expect": "act"
+    },
+    {
+      "event_index": 14,
+      "pair": "g2-cost-2",
+      "expect": "abstain"
+    },
+    {
+      "event_index": 16,
+      "pair": "g2-cost-3",
+      "expect": "act"
+    },
+    {
+      "event_index": 17,
+      "pair": "g2-cost-3",
+      "expect": "abstain"
+    },
+    {
+      "event_index": 19,
+      "pair": "g3-cost-1",
+      "expect": "act"
+    },
+    {
+      "event_index": 22,
+      "pair": "g3-cost-1",
+      "expect": "abstain"
+    },
+    {
+      "event_index": 24,
+      "pair": "g3-cost-2",
+      "expect": "act"
+    },
+    {
+      "event_index": 27,
+      "pair": "g3-cost-2",
+      "expect": "abstain"
+    },
+    {
+      "event_index": 29,
+      "pair": "g3-cost-3",
+      "expect": "act"
+    },
+    {
+      "event_index": 32,
+      "pair": "g3-cost-3",
+      "expect": "abstain"
+    }
+  ],
+  "claims": [
+    {
+      "proposition": "g1-cost-1-real",
+      "outcome": "stood"
+    },
+    {
+      "proposition": "g1-cost-1-flaky",
+      "outcome": "withdrawn"
+    },
+    {
+      "proposition": "g1-cost-2-real",
+      "outcome": "stood"
+    },
+    {
+      "proposition": "g1-cost-2-flaky",
+      "outcome": "withdrawn"
+    },
+    {
+      "proposition": "g1-cost-3-real",
+      "outcome": "stood"
+    },
+    {
+      "proposition": "g1-cost-3-flaky",
+      "outcome": "withdrawn"
+    },
+    {
+      "proposition": "g2-cost-1",
+      "outcome": "stood"
+    },
+    {
+      "proposition": "g2-cost-2",
+      "outcome": "stood"
+    },
+    {
+      "proposition": "g2-cost-3",
+      "outcome": "stood"
+    },
+    {
+      "proposition": "g3-cost-1-intact",
+      "outcome": "stood"
+    },
+    {
+      "proposition": "g3-cost-1-pulled",
+      "outcome": "withdrawn"
+    },
+    {
+      "proposition": "g3-cost-2-intact",
+      "outcome": "stood"
+    },
+    {
+      "proposition": "g3-cost-2-pulled",
+      "outcome": "withdrawn"
+    },
+    {
+      "proposition": "g3-cost-3-intact",
+      "outcome": "stood"
+    },
+    {
+      "proposition": "g3-cost-3-pulled",
+      "outcome": "withdrawn"
+    }
+  ]
+}

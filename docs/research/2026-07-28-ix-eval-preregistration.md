@@ -781,6 +781,75 @@ provenance withdrawal and that is the more interesting result. If the aggregate
 lands anywhere other than 0.333 / 0.667, this amendment mispredicted its own
 effect and that must be reported as prominently as the number.
 
+#### 9.3.3 The amended corpus, measured — prediction confirmed exactly
+
+| | RecencyDecay | Lie | SubjectiveLogic |
+|---|---|---|---|
+| **Paired Accuracy** | **0.333** | **0.333** | **0.667** |
+| Act accuracy | 1.000 | 1.000 | 1.000 |
+| Abstain accuracy | 0.333 | 0.333 | 0.667 |
+| G1 replication | 0.000 | 0.000 | **1.000** |
+| G2 commitability | 1.000 | 1.000 | 1.000 |
+| G3 withdrawn basis | 0.000 | 0.000 | 0.000 |
+| false rejections (§5.3) | 0 | 0 | **0** (18 excused) |
+| defects | 0 | 0 | 0 |
+
+**Every cell matches §9.3.2's prediction**, which was committed before the
+amended corpus was authored (`f0c6ec5`). That is the strongest defence
+available for a post-hoc amendment, and it is offered as such rather than as
+proof the amendment was disinterested.
+
+Three things follow, and one of them disqualifies the table above from being
+read as an eval result.
+
+*SL clears the §5.3 disqualifier here.* It takes **zero** false rejections on
+the task corpus — its 18 abstentions all land on `-flaky` claims, which are
+injected variance by construction and therefore excused. So on this corpus SL
+wins the primary metric without paying the caution tax that §5.3 exists to
+charge. On the isolation corpus the same arm takes **108**. Same policy, same
+grounds, same proportions: the disqualifier is entirely determined by whether
+the corpus reaches SL's decision boundary.
+
+*No arm carries provenance withdrawal into its act/abstain decision.* G3 is
+0.000 for all three, on both corpora. A claim whose only supporting
+`experiment_result` was retracted by targeted selector draws exactly the same
+response as one whose support stands. For SL the mechanism is visible: the
+retraction resets the opinion to vacuous, and the subsequent `True`
+re-assertion re-clears `b > 0.7` from scratch. This was the one ground whose
+outcome was unknown at authoring time, and it is unanimous — which makes it the
+most informative result of the three.
+
+**The corpus does not have 54 independent decisions. It has 9, replicated six
+times.** All six traces are generated from one template; the only differences
+are theme slugs and evidence values, and §9.3.2 established that evidence
+*content* is inert. Verified directly: the `(cycle, source, payload type,
+value)` sequence is byte-identical across all six fixtures, and every arm
+returns identical per-fixture numbers. §3 requires 5–10 traces because §6
+aggregates by a **trace-clustered** paired bootstrap; six copies of one trace
+have zero between-cluster variance, so the bootstrap would report a
+spuriously tight interval and §7's MDE would be meaningless. **The effective
+sample size is 9 pairs.** This is an authoring error of the same kind as the
+inert-axis one: the corpus satisfies §3's trace count in file count and not in
+substance.
+
+Consequently **no dual-rule test may be run against this corpus**, and the
+numbers above are instrument characterisation, not an eval outcome. What they
+establish is narrow and real: the scorer grades, the grounds discriminate, and
+the arms separate on two of three grounds in a direction that matches a
+prediction made in advance.
+
+**What genuine trace independence requires** — the open item, and a design
+question rather than more authoring. Between-trace variance has to come from
+the *decisions* differing across traces, not from cosmetic relabeling. That
+means traces that differ in what an arm actually sees: interleaved rather than
+blocked grounds, varying numbers of competing assertions per claim, claims that
+sit at different distances from `b > 0.7`, contradictions resolving in
+different directions, and pair counts that differ per trace. Designing that
+distribution is itself a pre-registration decision — it determines the
+between-cluster variance the bootstrap will find, and picking it after seeing
+§9.3.3 would be the third post-hoc corpus revision in one sitting. It is
+deliberately left to an owner call.
+
 Items 1 and 2 were the cheapest and were prerequisites for the decision rule
 itself; they landed first. **The remaining blockers are 3 and 4, in that
 order** — per-arm calibration is now ranked behind them, because both the

@@ -1,9 +1,9 @@
 {
   "_comment": [
-    "#35 section 9.3 paired fixture - prefix cache hit rate.",
+    "#35 section 9.3 paired fixture (isolation) - eval-suite accuracy.",
     "",
-    "Authored to the fixture mix committed in b35d89e, BEFORE any arm was",
-    "replayed against these shapes. 9 pairs, 3 per ground, equal weight.",
+    "9 pairs, 3 per ground, equal weight, per the mix committed in b35d89e.",
+    "ISOLATION variant (section 9.3.1): act halves assert Probable, the same as abstain halves, so the ONLY difference between a pair's two labeled events is prior corroboration. Authored before any arm was replayed. Measures whether an arm detects reproduction alone.",
     "Pair ids encode the ground (g1-/g2-/g3-) so the per-ground breakdown",
     "the mix requires derives from PairedScore::per_pair.",
     "",
@@ -33,13 +33,13 @@
         "source": "ix-runner-beta",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g1-cache-1-real",
+          "proposition": "g1-accuracy-1-real",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-replication",
+            "benchmark": "suite-exact-match-replication",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "independent runner reports the same result"
           }
         }
@@ -49,13 +49,13 @@
         "source": "ix-runner-alpha",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g1-cache-1-real",
+          "proposition": "g1-accuracy-1-real",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "clears budget"
           }
         }
@@ -65,13 +65,13 @@
         "source": "ix-runner-alpha",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g1-cache-1-flaky",
+          "proposition": "g1-accuracy-1-flaky",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "clears budget"
           }
         }
@@ -81,13 +81,13 @@
         "source": "ix-runner-beta",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g1-cache-2-real",
+          "proposition": "g1-accuracy-2-real",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-replication",
+            "benchmark": "suite-exact-match-replication",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "independent runner reports the same result"
           }
         }
@@ -97,13 +97,13 @@
         "source": "ix-runner-alpha",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g1-cache-2-real",
+          "proposition": "g1-accuracy-2-real",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "clears budget"
           }
         }
@@ -113,13 +113,13 @@
         "source": "ix-runner-alpha",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g1-cache-2-flaky",
+          "proposition": "g1-accuracy-2-flaky",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "clears budget"
           }
         }
@@ -129,13 +129,13 @@
         "source": "ix-runner-beta",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g1-cache-3-real",
+          "proposition": "g1-accuracy-3-real",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-replication",
+            "benchmark": "suite-exact-match-replication",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "independent runner reports the same result"
           }
         }
@@ -145,13 +145,13 @@
         "source": "ix-runner-alpha",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g1-cache-3-real",
+          "proposition": "g1-accuracy-3-real",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "clears budget"
           }
         }
@@ -161,13 +161,13 @@
         "source": "ix-runner-alpha",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g1-cache-3-flaky",
+          "proposition": "g1-accuracy-3-flaky",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "clears budget"
           }
         }
@@ -177,13 +177,13 @@
         "source": "ix-runner-beta",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g2-cache-1",
+          "proposition": "g2-accuracy-1",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-corroboration",
+            "benchmark": "suite-exact-match-corroboration",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "independent runner reports the same result"
           }
         }
@@ -193,13 +193,13 @@
         "source": "ix-agent-evaluator",
         "payload": {
           "type": "belief_update",
-          "proposition": "g2-cache-1",
+          "proposition": "g2-accuracy-1",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "clears budget"
           }
         }
@@ -209,8 +209,8 @@
         "source": "ix-runner-orchestrator",
         "payload": {
           "type": "goal_update",
-          "key": "g2-cache-1-characterise",
-          "description": "Characterise prefix cache hit rate across regions",
+          "key": "g2-accuracy-1-characterise",
+          "description": "Characterise eval-suite accuracy across regions",
           "priority": 0.9,
           "status": "Unknown"
         }
@@ -220,13 +220,13 @@
         "source": "ix-runner-beta",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g2-cache-2",
+          "proposition": "g2-accuracy-2",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-corroboration",
+            "benchmark": "suite-exact-match-corroboration",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "independent runner reports the same result"
           }
         }
@@ -236,13 +236,13 @@
         "source": "ix-agent-evaluator",
         "payload": {
           "type": "belief_update",
-          "proposition": "g2-cache-2",
+          "proposition": "g2-accuracy-2",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "clears budget"
           }
         }
@@ -252,8 +252,8 @@
         "source": "ix-runner-orchestrator",
         "payload": {
           "type": "goal_update",
-          "key": "g2-cache-2-characterise",
-          "description": "Characterise prefix cache hit rate across regions",
+          "key": "g2-accuracy-2-characterise",
+          "description": "Characterise eval-suite accuracy across regions",
           "priority": 0.9,
           "status": "Unknown"
         }
@@ -263,13 +263,13 @@
         "source": "ix-runner-beta",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g2-cache-3",
+          "proposition": "g2-accuracy-3",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-corroboration",
+            "benchmark": "suite-exact-match-corroboration",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "independent runner reports the same result"
           }
         }
@@ -279,13 +279,13 @@
         "source": "ix-agent-evaluator",
         "payload": {
           "type": "belief_update",
-          "proposition": "g2-cache-3",
+          "proposition": "g2-accuracy-3",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "clears budget"
           }
         }
@@ -295,8 +295,8 @@
         "source": "ix-runner-orchestrator",
         "payload": {
           "type": "goal_update",
-          "key": "g2-cache-3-characterise",
-          "description": "Characterise prefix cache hit rate across regions",
+          "key": "g2-accuracy-3-characterise",
+          "description": "Characterise eval-suite accuracy across regions",
           "priority": 0.9,
           "status": "Unknown"
         }
@@ -306,13 +306,13 @@
         "source": "ix-lab-gamma",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g3-cache-1-intact",
+          "proposition": "g3-accuracy-1-intact",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-lab",
+            "benchmark": "suite-exact-match-lab",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "lab run supports the claim"
           }
         }
@@ -322,13 +322,13 @@
         "source": "ix-agent-evaluator",
         "payload": {
           "type": "belief_update",
-          "proposition": "g3-cache-1-intact",
+          "proposition": "g3-accuracy-1-intact",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "re-asserted on the lab result"
           }
         }
@@ -338,13 +338,13 @@
         "source": "ix-lab-gamma",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g3-cache-1-pulled",
+          "proposition": "g3-accuracy-1-pulled",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-lab",
+            "benchmark": "suite-exact-match-lab",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "lab run supports the claim"
           }
         }
@@ -354,7 +354,7 @@
         "source": "ix-lab-gamma",
         "payload": {
           "type": "retraction",
-          "proposition": "g3-cache-1-pulled",
+          "proposition": "g3-accuracy-1-pulled",
           "reason": "lab withdrew the supporting run: harness misconfiguration",
           "retracts": {
             "source": "ix-lab-gamma",
@@ -367,13 +367,13 @@
         "source": "ix-agent-evaluator",
         "payload": {
           "type": "belief_update",
-          "proposition": "g3-cache-1-pulled",
+          "proposition": "g3-accuracy-1-pulled",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "re-asserted on the lab result"
           }
         }
@@ -383,13 +383,13 @@
         "source": "ix-lab-gamma",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g3-cache-2-intact",
+          "proposition": "g3-accuracy-2-intact",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-lab",
+            "benchmark": "suite-exact-match-lab",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "lab run supports the claim"
           }
         }
@@ -399,13 +399,13 @@
         "source": "ix-agent-evaluator",
         "payload": {
           "type": "belief_update",
-          "proposition": "g3-cache-2-intact",
+          "proposition": "g3-accuracy-2-intact",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "re-asserted on the lab result"
           }
         }
@@ -415,13 +415,13 @@
         "source": "ix-lab-gamma",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g3-cache-2-pulled",
+          "proposition": "g3-accuracy-2-pulled",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-lab",
+            "benchmark": "suite-exact-match-lab",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "lab run supports the claim"
           }
         }
@@ -431,7 +431,7 @@
         "source": "ix-lab-gamma",
         "payload": {
           "type": "retraction",
-          "proposition": "g3-cache-2-pulled",
+          "proposition": "g3-accuracy-2-pulled",
           "reason": "lab withdrew the supporting run: harness misconfiguration",
           "retracts": {
             "source": "ix-lab-gamma",
@@ -444,13 +444,13 @@
         "source": "ix-agent-evaluator",
         "payload": {
           "type": "belief_update",
-          "proposition": "g3-cache-2-pulled",
+          "proposition": "g3-accuracy-2-pulled",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "re-asserted on the lab result"
           }
         }
@@ -460,13 +460,13 @@
         "source": "ix-lab-gamma",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g3-cache-3-intact",
+          "proposition": "g3-accuracy-3-intact",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-lab",
+            "benchmark": "suite-exact-match-lab",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "lab run supports the claim"
           }
         }
@@ -476,13 +476,13 @@
         "source": "ix-agent-evaluator",
         "payload": {
           "type": "belief_update",
-          "proposition": "g3-cache-3-intact",
+          "proposition": "g3-accuracy-3-intact",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "re-asserted on the lab result"
           }
         }
@@ -492,13 +492,13 @@
         "source": "ix-lab-gamma",
         "payload": {
           "type": "experiment_result",
-          "proposition": "g3-cache-3-pulled",
+          "proposition": "g3-accuracy-3-pulled",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit-lab",
+            "benchmark": "suite-exact-match-lab",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "lab run supports the claim"
           }
         }
@@ -508,7 +508,7 @@
         "source": "ix-lab-gamma",
         "payload": {
           "type": "retraction",
-          "proposition": "g3-cache-3-pulled",
+          "proposition": "g3-accuracy-3-pulled",
           "reason": "lab withdrew the supporting run: harness misconfiguration",
           "retracts": {
             "source": "ix-lab-gamma",
@@ -521,13 +521,13 @@
         "source": "ix-agent-evaluator",
         "payload": {
           "type": "belief_update",
-          "proposition": "g3-cache-3-pulled",
+          "proposition": "g3-accuracy-3-pulled",
           "value": "Probable",
           "evidence": {
-            "benchmark": "prefix-cache-hit",
+            "benchmark": "suite-exact-match",
             "runs": 24,
-            "hit_rate": 0.871,
-            "budget": 0.8,
+            "exact_match": 0.913,
+            "budget": 0.9,
             "note": "re-asserted on the lab result"
           }
         }
@@ -537,154 +537,154 @@
   "labels": [
     {
       "event_index": 1,
-      "pair": "g1-cache-1",
+      "pair": "g1-accuracy-1",
       "expect": "act"
     },
     {
       "event_index": 2,
-      "pair": "g1-cache-1",
+      "pair": "g1-accuracy-1",
       "expect": "abstain"
     },
     {
       "event_index": 4,
-      "pair": "g1-cache-2",
+      "pair": "g1-accuracy-2",
       "expect": "act"
     },
     {
       "event_index": 5,
-      "pair": "g1-cache-2",
+      "pair": "g1-accuracy-2",
       "expect": "abstain"
     },
     {
       "event_index": 7,
-      "pair": "g1-cache-3",
+      "pair": "g1-accuracy-3",
       "expect": "act"
     },
     {
       "event_index": 8,
-      "pair": "g1-cache-3",
+      "pair": "g1-accuracy-3",
       "expect": "abstain"
     },
     {
       "event_index": 10,
-      "pair": "g2-cache-1",
+      "pair": "g2-accuracy-1",
       "expect": "act"
     },
     {
       "event_index": 11,
-      "pair": "g2-cache-1",
+      "pair": "g2-accuracy-1",
       "expect": "abstain"
     },
     {
       "event_index": 13,
-      "pair": "g2-cache-2",
+      "pair": "g2-accuracy-2",
       "expect": "act"
     },
     {
       "event_index": 14,
-      "pair": "g2-cache-2",
+      "pair": "g2-accuracy-2",
       "expect": "abstain"
     },
     {
       "event_index": 16,
-      "pair": "g2-cache-3",
+      "pair": "g2-accuracy-3",
       "expect": "act"
     },
     {
       "event_index": 17,
-      "pair": "g2-cache-3",
+      "pair": "g2-accuracy-3",
       "expect": "abstain"
     },
     {
       "event_index": 19,
-      "pair": "g3-cache-1",
+      "pair": "g3-accuracy-1",
       "expect": "act"
     },
     {
       "event_index": 22,
-      "pair": "g3-cache-1",
+      "pair": "g3-accuracy-1",
       "expect": "abstain"
     },
     {
       "event_index": 24,
-      "pair": "g3-cache-2",
+      "pair": "g3-accuracy-2",
       "expect": "act"
     },
     {
       "event_index": 27,
-      "pair": "g3-cache-2",
+      "pair": "g3-accuracy-2",
       "expect": "abstain"
     },
     {
       "event_index": 29,
-      "pair": "g3-cache-3",
+      "pair": "g3-accuracy-3",
       "expect": "act"
     },
     {
       "event_index": 32,
-      "pair": "g3-cache-3",
+      "pair": "g3-accuracy-3",
       "expect": "abstain"
     }
   ],
   "claims": [
     {
-      "proposition": "g1-cache-1-real",
+      "proposition": "g1-accuracy-1-real",
       "outcome": "stood"
     },
     {
-      "proposition": "g1-cache-1-flaky",
+      "proposition": "g1-accuracy-1-flaky",
       "outcome": "withdrawn"
     },
     {
-      "proposition": "g1-cache-2-real",
+      "proposition": "g1-accuracy-2-real",
       "outcome": "stood"
     },
     {
-      "proposition": "g1-cache-2-flaky",
+      "proposition": "g1-accuracy-2-flaky",
       "outcome": "withdrawn"
     },
     {
-      "proposition": "g1-cache-3-real",
+      "proposition": "g1-accuracy-3-real",
       "outcome": "stood"
     },
     {
-      "proposition": "g1-cache-3-flaky",
+      "proposition": "g1-accuracy-3-flaky",
       "outcome": "withdrawn"
     },
     {
-      "proposition": "g2-cache-1",
+      "proposition": "g2-accuracy-1",
       "outcome": "stood"
     },
     {
-      "proposition": "g2-cache-2",
+      "proposition": "g2-accuracy-2",
       "outcome": "stood"
     },
     {
-      "proposition": "g2-cache-3",
+      "proposition": "g2-accuracy-3",
       "outcome": "stood"
     },
     {
-      "proposition": "g3-cache-1-intact",
+      "proposition": "g3-accuracy-1-intact",
       "outcome": "stood"
     },
     {
-      "proposition": "g3-cache-1-pulled",
+      "proposition": "g3-accuracy-1-pulled",
       "outcome": "withdrawn"
     },
     {
-      "proposition": "g3-cache-2-intact",
+      "proposition": "g3-accuracy-2-intact",
       "outcome": "stood"
     },
     {
-      "proposition": "g3-cache-2-pulled",
+      "proposition": "g3-accuracy-2-pulled",
       "outcome": "withdrawn"
     },
     {
-      "proposition": "g3-cache-3-intact",
+      "proposition": "g3-accuracy-3-intact",
       "outcome": "stood"
     },
     {
-      "proposition": "g3-cache-3-pulled",
+      "proposition": "g3-accuracy-3-pulled",
       "outcome": "withdrawn"
     }
   ]

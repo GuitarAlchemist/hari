@@ -1,9 +1,9 @@
 {
   "_comment": [
-    "#35 section 9.3 paired fixture - p99 latency budget.",
+    "#35 section 9.3 paired fixture (isolation) - p99 latency budget.",
     "",
-    "Authored to the fixture mix committed in b35d89e, BEFORE any arm was",
-    "replayed against these shapes. 9 pairs, 3 per ground, equal weight.",
+    "9 pairs, 3 per ground, equal weight, per the mix committed in b35d89e.",
+    "ISOLATION variant (section 9.3.1): act halves assert Probable, the same as abstain halves, so the ONLY difference between a pair's two labeled events is prior corroboration. Authored before any arm was replayed. Measures whether an arm detects reproduction alone.",
     "Pair ids encode the ground (g1-/g2-/g3-) so the per-ground breakdown",
     "the mix requires derives from PairedScore::per_pair.",
     "",
