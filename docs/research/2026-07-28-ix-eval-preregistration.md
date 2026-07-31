@@ -858,6 +858,89 @@ turned out to be unexercised by the existing corpus. Two of §8's inputs are
 instruments with nothing yet to measure; §9.3 is what supplies the signal, and
 it must carry emitted forecasts as well as paired traces.
 
+**Superseded by §9.4 below**: item 3 cannot supply what §6 consumes, so the
+"3 then 4" ordering is inverted.
+
+### 9.4 Ranking inversion — item 4 precedes item 3, and item 3 can never finish
+
+**Recorded 2026-07-30 after an independent review** (Fable 5, advisory, given
+the pre-registration, the fixtures, the generator and the arm constants, and
+asked to verify rather than accept the summary it was given).
+
+The §9 ordering — "settle the taxonomy, then finish 3, then 4" — is **wrong**,
+and authoring the corpus is what demonstrated it. Item 3 cannot supply what §6
+consumes, no matter how it is authored.
+
+**The corpus degeneracy is worse than §9.3.3 recorded: three effective decision
+situations, not nine.** §9.3.3 attributed it to the six traces being one
+template. The review found it also holds *within* a trace: the three pairs of a
+ground are clones of each other, differing only in the proposition slug, which
+no arm reads except as an opinion-map key. Verified directly — within every
+ground, in every arm, on both corpora, all three pairs return identical
+`(act_correct, abstain_correct)` verdicts. The tell was already in §9.3.2 and
+§9.3.3's own tables: every per-ground score is exactly `0.000` or `1.000`,
+never ⅓ or ⅔. So the corpus holds **3** distinct decision situations replicated
+18 times each, and the defect is not a trace-count problem that varying traces
+would fix. The generator produces no variation at any level.
+
+**Why no authored corpus can fix it.** §6 aggregates by a paired bootstrap
+clustered by trace. A bootstrap estimates sampling variance across traces drawn
+from a population. Hand-authored traces are not draws from anything: the
+"variance" it would find is a property of whoever wrote the generator, and with
+deterministic arms the resulting CI width is a design artifact. The unit of
+analysis is not the defect — clustering by trace is correct, since decisions
+within a trace share belief state. **The defect is that there is no
+population.**
+
+**Blind pre-registration of a trace distribution is not available to this
+author, and the record proves it.** §9.3.2's prediction landed in every cell
+because the arms are deterministic over a small input space, so the outcome of
+any candidate design is computable before it is run. Randomising cosmetic
+parameters yields zero variance (this corpus is the existence proof);
+randomising decision-relevant ones requires choosing a distribution over them,
+which is the same discretion one level up. When the designer can compute
+outcomes from designs, blindness is not an integrity tool that exists. The ones
+that do exist are **disclosure, prediction committed in advance, mechanical
+generation, and a second decision-maker** — and this document uses all four
+rather than claiming an innocence it cannot have.
+
+**Standing rule, adopted here: no dual-rule test (§6) and no keep/kill verdict
+(§8) may ever be computed on an authored fixture.** Authored fixtures are
+instrument characterisation only. This is not a comment on the two corpora's
+quality; it follows from there being no population to bootstrap over. Both
+corpora are **frozen** and retained permanently as regression instruments:
+
+* `*-isolation.json` holds the asserted `HexValue` fixed and varies only
+  corroboration. It is the cleanest probe in the repo of whether a
+  representation *sees* replication, and it produced the finding that SL's
+  discrimination (`b=0.647` vs `0.550`) exists in the posterior and is
+  discarded at the `b > 0.7` gate.
+* `*-task.json` bundles asserted confidence with reproduction per §2's trigger.
+
+Their findings stand and need no statistics, being deterministic and
+universal across the arms — in particular G3, where **no arm carries provenance
+withdrawal into its act/abstain decision**.
+
+**Consequence for §1.** This was foreseeable from the document's own first
+page, which exists to escape "fixture replay authored by us". Authoring six
+more fixtures was always in tension with that premise. §2 defines the task as
+*recorded* IX sessions with injected perturbations, and item 4 was pre-registered
+as blocking from day one — so nothing is abandoned by declining to author a
+third corpus. **Item 4 is now the sole remaining blocker.** Between-trace
+variance must come from harness randomness — which perturbations are injected,
+their magnitudes, seeds, run counts, event ordering — that is, from §2's task,
+not from an author's pen.
+
+**What this does not claim.** The driver relocates authorship rather than
+escaping it: the perturbation-injection distribution is still chosen by us. What
+shrinks is the surface — from "which 54 decisions" to "which distribution" —
+and a distribution is disclosable in a way that 54 hand-placed decisions are
+not. Any eventual §8 verdict is therefore **conditional on the declared task
+distribution, not on the world**, and must be reported in those terms. That
+distribution is the one remaining pre-registration decision and is an owner
+call (§9.3.3), to be taken on a drafted spec with the arm-boundary straddles
+enumerated, never on an open question.
+
 ## 10. Amendment policy
 
 This document may be amended **only** by a git commit that (a) states what
