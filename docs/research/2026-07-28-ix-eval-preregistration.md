@@ -694,6 +694,93 @@ to emit forecasts from its own posterior (item 2), which does not exist. These
 fixtures make the *abstention* measures exercisable; they do not by themselves
 make the §8 calibration criterion defined.
 
+#### 9.3.2 First measurement, and an underspecification in 9.3.1 it exposed
+
+The corpus authored to §9.3.1 (54 pairs, 108 labels, committed before any
+outcome was inspected) measures:
+
+| | RecencyDecay | Lie | SubjectiveLogic |
+|---|---|---|---|
+| **Paired Accuracy** | **0.333** | **0.333** | **0.000** |
+| Act accuracy | 1.000 | 1.000 | **0.000** |
+| Abstain accuracy | 0.333 | 0.333 | **1.000** |
+| G1 replication | 0.000 | 0.000 | 0.000 |
+| G2 commitability | 1.000 | 1.000 | 0.000 |
+| G3 withdrawn basis | 0.000 | 0.000 | 0.000 |
+| false rejections (§5.3) | 0 | 0 | **108** |
+
+Identical on all six fixtures. **Both policies are degenerate on this corpus,
+in opposite directions**: `RecencyDecay` and `Lie` act on every claim, SL acts
+on nothing. §2 predicted exactly this failure shape — "an always-`Accept` or
+always-`Wait` policy scores 100% on one half of every pair and 0% on the
+other" — and the pairing caught it, which is the guard working.
+
+**The finding worth keeping: SL's discrimination is real and is discarded at
+the threshold.** On G1 the corroborated claim fuses to `b=0.647 P=0.735` and
+the uncorroborated one to `b=0.550 P=0.700`. The posterior separates them. But
+`belief_accept_threshold` is `0.7` and the gate is `b > 0.7`, so **both** fall
+short and both draw `Wait`. Evidence-sensitivity exists in the representation
+and does not reach the action at this evidence level. That is a sharper result
+than "SL discriminates" would have been, and it is not visible in any aggregate.
+
+**Two authoring errors, both mine, both in §9.3.1.**
+
+*The evidence map is inert.* §9.3.1 specifies abstain halves with "small
+`runs`" and act halves with "large `runs`". No arm reads evidence **content**:
+`Evidence` is consulted only for `.len()`, in a log line
+(`subjective_logic.rs:551`, `:580`). `runs`, `p99_ms`, `budget` and every other
+key are decorative. The only load-bearing dimensions at the `ResearchEvent`
+boundary are the asserted `HexValue` and the number of agreeing assertions.
+§9.3.1 specified the corpus along an axis that does nothing.
+
+*The one axis that matters was left unspecified.* Having no guidance on
+`value`, the corpus was authored with every act half at `Probable`
+(`b=0.55` via the `Opinion::from_hex` ladder), which fuses to `0.647` — just
+under the `0.7` gate. `True` maps to `b=0.85` and clears it on a single event.
+So the corpus sits entirely on one side of SL's decision boundary and cannot
+distinguish "SL never acts" from "SL cannot act *here*". The latter is the
+truth: SL's act side is reachable, and this corpus does not reach it.
+
+**Amendment (2026-07-30), and it is post-hoc — labelled as such.** This is
+written *after* the numbers above were seen, which §10 flags. Two things make
+it a specification repair rather than an outcome-driven amendment, and a reader
+is entitled to weigh them:
+
+1. Nothing below changes the metric, the taxonomy, the decision rule, the
+   grounds, or their proportions. It adds a specification for an axis §9.3.1
+   left undefined while specifying an axis that turned out to be inert.
+2. The predicted effect is stated **before** the new corpus is authored or run,
+   immediately below, and the prediction is checkable against what lands.
+
+*Amended G1 operationalisation.* Act half: `True`, plus an independent
+corroborating assertion. Abstain half: `Probable`, single source, no
+corroboration. This bundles **two** observables — asserted confidence and
+reproduction — where §9.3.1 named one. That is faithful to §2, whose injected
+trigger is *"a real regression vs. injected variance"*: a real effect both
+reproduces and is reported with confidence. G2 and G3 act halves move to `True`
+for the same reason. Abstain halves are unchanged.
+
+*The original corpus is retained, not replaced.* It holds `value` fixed and
+varies corroboration alone, which is the tighter contrast and the only thing
+that isolates reproduction as a variable. It is renamed to `*-isolation.json`
+and its result above stands as reported. The amended corpus lands beside it as
+`*-task.json`. **The two are never pooled**: one measures whether an arm can
+detect reproduction, the other whether it can grade the task §2 defines.
+
+*Prediction, recorded before the amended corpus exists.*
+
+| ground | RecencyDecay / Lie | SubjectiveLogic |
+|---|---|---|
+| G1 | **0.000** — acts on both halves regardless of `value` | **1.000** — `True` clears `b>0.7`, single `Probable` does not |
+| G2 | **1.000** | **1.000** |
+| G3 | **0.000** — nothing carries retraction into the act/abstain decision | **0.000** — retraction resets the opinion to vacuous, then `True` re-clears the gate |
+| **aggregate** | **0.333** | **0.667** |
+
+If G3 comes back non-zero for any arm, the prediction was wrong about
+provenance withdrawal and that is the more interesting result. If the aggregate
+lands anywhere other than 0.333 / 0.667, this amendment mispredicted its own
+effect and that must be reported as prominently as the number.
+
 Items 1 and 2 were the cheapest and were prerequisites for the decision rule
 itself; they landed first. **The remaining blockers are 3 and 4, in that
 order** — per-arm calibration is now ranked behind them, because both the
