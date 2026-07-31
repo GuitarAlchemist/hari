@@ -357,6 +357,15 @@ pub fn score_false_rejections(
 
     let mut score = FalseRejectionScore::default();
     for outcome in &report.outcomes {
+        // NOTE — this disagrees with `outcome_acted` on one case both modules
+        // claim to have pinned. A *mixed* outcome (`Wait` beside a substantive
+        // action) is classified as **acting** by §5.1's taxonomy, yet charged
+        // here, because this triggers on the presence of any `Wait`. The case
+        // is currently unreachable — zero mixed outcomes across every arm,
+        // fixture and paired corpus — so no number is affected. Recorded so the
+        // divergence is found here rather than the hard way if a future policy
+        // makes it reachable; resolving it then is a §10 amendment, since it
+        // changes what the §5.3 disqualifier charges.
         if !outcome.actions.iter().any(|a| matches!(a, Action::Wait)) {
             continue;
         }

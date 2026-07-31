@@ -610,12 +610,15 @@ instead.
    **The alternative taxonomy (§5.1) is rejected**, on three measured grounds
    rather than on preference. (a) It does not fix the observation offered as its
    reason: `recommend_for_claim` maps `True | Probable | Doubtful | False` all to
-   `Accept` (`lib.rs:2362`), so the four probe claims spanning "1 unreplicated
+   `Accept`, so the four probe claims spanning "1 unreplicated
    anecdote at `Doubtful`" to "500 runs at `True`" **still all act** under it.
    (b) It re-imports the defect the §5.3 amendment just removed: abstaining via
-   `Escalate` is uncharged, and `Lie` emits 10 `Escalate`s on
+   `Escalate` is uncharged, and `Lie` emits 13 `Escalate`s on
    `heavy_contradiction` — 13 free abstentions — while SL's claim-`Wait`s stay
-   chargeable. (c) Under it, `act` reduces to `belief ∉ {Unknown, Contradictory}`,
+   chargeable. (`d1cd78d` briefly "corrected" this to 10, which was the count
+   only inside the `79ad578` defect window; the guard in that same commit
+   restored 13, so the edit made the number wrong and the sentence
+   self-contradictory. Reverted.) (c) Under it, `act` reduces to `belief ∉ {Unknown, Contradictory}`,
    a `final_beliefs` readout promoted to primary. Switching a construct because
    it makes the instrument respond is instrument-driven redefinition, which §10
    does not license — §10 guards against *outcome*-driven amendment, which is a
@@ -652,8 +655,19 @@ inspect nothing until it is committed.
 ### 9.3.1 Fixture mix — declared 2026-07-30, before a single pair was authored
 
 The corpus is authored to this specification. It is committed in its own commit,
-ahead of any fixture, so the ordering is checkable in git history rather than
-asserted here.
+ahead of any fixture.
+
+**What that does and does not establish — corrected 2026-07-30.** Git certifies
+the **commit sequence**, not when the artifacts were written. The 356-line
+generator and 54 pairs landed 2m41s after this declaration commit, so they
+plainly existed before the commits were sequenced, and the claim "before a
+single pair was authored" is not something git checks. §9.4 states the general
+form of this (blind pre-registration is unavailable to this author); it is
+repeated here because a reader stopping at this section would otherwise be told
+the history verifies something it cannot. What the sequence does establish is
+that the specification was **fixed and public before the measurements existed**,
+which is the property §10 actually needs — no number in §9.3.2 or §9.3.3 could
+have influenced the text above it.
 
 Every abstain half is justified **normatively** — by what a competent research
 assistant should do — and never by what any arm happens to emit. No arm was
@@ -993,6 +1007,12 @@ enumerated, never on an open question.
 This document may be amended **only** by a git commit that (a) states what
 changed, (b) states why, and (c) is made **before** the affected outcome is
 inspected. The commit history is the audit trail.
+
+**Caveat on that audit trail (added 2026-07-30).** Git timestamps are
+author-controlled: `79ad578` carries an exactly-round `09:00:00` author and
+committer date, i.e. a hand-set time. The audit trail is therefore the commit
+**order and content**, which is what §9.3.1's amended note relies on — never the
+wall-clock times, and never a claim about when work was performed.
 
 Amendments after unblinding are permitted **only** as clearly-labeled
 post-hoc analysis, which **cannot** satisfy §8 and cannot be reported as a

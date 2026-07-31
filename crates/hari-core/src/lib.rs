@@ -837,10 +837,18 @@ impl CognitiveState {
     ) {
         // Re-declaring a goal revises its description and priority; it does not
         // un-achieve it. A blanket `insert` reset `status` to `Unknown`, so a
-        // priority-revising `goal_update` silently discarded a completion the
-        // policy had already established — observed on
-        // `fixtures/ix/long_recovery.json`, whose cycle-30 `goal_update` reset
-        // `alpha-prompt-helps` from `True` back to `Probable`.
+        // priority-revising `goal_update` would silently discard a completion
+        // the policy had already established.
+        //
+        // **Defensive: no fixture exercises this.** An earlier version of this
+        // comment cited `long_recovery`'s cycle-30 `goal_update` resetting
+        // `alpha-prompt-helps` from `True` to `Probable` as the observed harm.
+        // That was misattributed — the reset comes from that event's *authored*
+        // `status: Probable`, which is applied after this function and wins
+        // regardless, so `alpha` ends `Probable` both before and after this
+        // change. Every `goal_update` in the corpus carries an authored status,
+        // making the change corpus-inert. The upsert semantics stand on their
+        // own merits; the evidence originally offered for them did not.
         let description = description.into();
         self.goals
             .entry(key.into())

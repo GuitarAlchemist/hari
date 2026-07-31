@@ -1128,7 +1128,7 @@ fn theorem_every_goal_is_evaluated_not_only_the_top() {
 }
 
 /// **Known violation — stale goal status.** The THINK block
-/// (`lib.rs:1384-1404`) writes `goal.status` *only* in the `True | Probable`
+/// (the bulk status refresh) writes `goal.status` *only* in the `True | Probable`
 /// arm. `Contradictory` escalates without touching status, `Unknown`
 /// investigates, and `Doubtful`/`False` fall through to `_ => {}`. Status is
 /// therefore never revised **downward**: a goal credited as achieved keeps that
