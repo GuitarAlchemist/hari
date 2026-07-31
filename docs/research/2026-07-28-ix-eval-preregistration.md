@@ -623,6 +623,77 @@ here **before** any corpus is authored: an all-evidence corpus would measure
 one capability under a name that promises a general one. Author the mix first,
 inspect nothing until it is committed.
 
+### 9.3.1 Fixture mix — declared 2026-07-30, before a single pair was authored
+
+The corpus is authored to this specification. It is committed in its own commit,
+ahead of any fixture, so the ordering is checkable in git history rather than
+asserted here.
+
+Every abstain half is justified **normatively** — by what a competent research
+assistant should do — and never by what any arm happens to emit. No arm was
+replayed against any of these shapes before this section was written. The
+grounds are three, in equal proportion:
+
+**G1 — replication.** *Abstain:* a claim supported by one source, small `runs`,
+explicitly unreplicated. *Act:* the same claim shape supported by two
+independent sources with large `runs` in agreement. Single injected trigger:
+replication. Normative basis: acting on one small unreplicated result is
+precisely the flaky-vs-real failure §2 exists to catch.
+
+**G2 — commitability.** *Abstain:* an event carrying no proposition
+(`goal_update`, `relation_declaration`). *Act:* an event carrying a corroborated
+proposition. Trigger: presence of a claim. Normative basis: there is no claim to
+commit to, so withholding is the only coherent response.
+
+**G3 — withdrawn basis.** *Abstain:* a claim whose supporting
+`experiment_result` has just been retracted, leaving it unsupported. *Act:* the
+same claim with its support intact. Trigger: the retraction. Normative basis:
+re-committing on withdrawn support is exactly the false acceptance §5.2 counts.
+
+**Proportion: exactly equal.** Three pairs per ground per trace — 9 pairs, 18
+labeled decisions per trace — across 6 traces: **54 pairs, 108 labeled
+decisions**, inside §3's pre-registered 100–200 range. Equal thirds are chosen
+so that no ground dominates the aggregate. A 4/3/3 split weighted toward G1 was
+considered and rejected: G1 is the ground whose outcome is most predictable in
+advance, and over-weighting a predictable ground tilts the aggregate without
+measuring anything more.
+
+**Expected discriminating power, declared now so a later "it only worked
+because of ground X" is checkable.**
+
+| ground | hexavalent arms (`RecencyDecay`, `Lie`) | `SubjectiveLogic` |
+|---|---|---|
+| G1 replication | expected to **fail every abstain half** — measured evidence-blindness (§9 item 3), so ~0.0 on G1 | can pass; not guaranteed to |
+| G2 commitability | expected to pass — this is the shipped weak pair's shape | measured to **fail the act half** on that pair (third amendment) |
+| G3 withdrawn basis | **genuinely open** — no measurement exists of whether any arm carries provenance withdrawal into its act/abstain decision | **genuinely open** |
+
+G1 and G2 are expected to pull in opposite directions, which is the point of
+running both. G3 is the only ground whose outcome is unknown to the author at
+authoring time, and it is included at full weight for exactly that reason.
+
+**Reporting.** Aggregate Paired Accuracy is the §5.1 primary and remains the
+only metric carrying the decision rule. A **per-ground breakdown is reported
+alongside it, always** — a win concentrated in one ground must not read as a
+general one. Pair identifiers therefore encode the ground (`g1-…`, `g2-…`,
+`g3-…`) so the breakdown is derivable from `PairedScore::per_pair` rather than
+reconstructed by hand.
+
+**Construction constraints.**
+
+* `cycle` stamps track trace position, so `exp(-λ·age) < θ_wait` never fires and
+  no abstain half is satisfiable by decay arithmetic (§9 item 3's tautology
+  warning).
+* Each pair's two halves differ by the single injected trigger named above and
+  by nothing else — same proposition shape, same source vocabulary, same
+  evidence keys.
+* Ground truth is authored in the `PairedFixture` sidecar; no eval scaffolding
+  enters the Hari↔IX protocol boundary.
+
+**What this mix does not settle.** Per-arm calibration still requires each arm
+to emit forecasts from its own posterior (item 2), which does not exist. These
+fixtures make the *abstention* measures exercisable; they do not by themselves
+make the §8 calibration criterion defined.
+
 Items 1 and 2 were the cheapest and were prerequisites for the decision rule
 itself; they landed first. **The remaining blockers are 3 and 4, in that
 order** — per-arm calibration is now ranked behind them, because both the
