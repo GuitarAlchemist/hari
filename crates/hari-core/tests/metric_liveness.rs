@@ -1264,3 +1264,112 @@ fn theorem_an_achieved_goal_is_not_un_achieved_by_a_softer_belief() {
          top goal and swallows its actions."
     );
 }
+
+/// On claim assertions, the shipped default never withholds where the §4 null
+/// baseline commits — so §8 clause 1 is structurally zero for it.
+///
+/// #35 §8's **KEEP** rule opens with *"experimental beats `IX-unassisted` on
+/// Paired Accuracy"*. This pins the measured relationship between the two.
+///
+/// An earlier version of this test asserted flat decision-identity across both
+/// hexavalent arms. **It failed on first run**, which is the test doing its job:
+/// `Lie` diverges on `cognition_divergence` event 3. The true property is
+/// sharper and is pinned in three parts:
+///
+/// 1. **On every proposition-bearing assertion, `RecencyDecay` acts exactly
+///    where the null baseline acts** — zero divergences across the corpus.
+///    `HexValue` selects *which* action (`Accept` / `Investigate` / `Escalate`,
+///    all acting under §5.1); it never selects *whether*. So for the shipped
+///    default, §8 clause 1 is zero by construction: the policy layer changes
+///    what Hari commits to, never whether it commits.
+/// 2. `RecencyDecay`'s **only** act/abstain divergence is on `retraction`,
+///    where it emits `Retry` and the null baseline emits nothing. That is a
+///    definitional choice in the baseline (a withdrawal is an instruction, not
+///    a claim to decide about), disclosed rather than tuned away — matching the
+///    arm here would be fitting the comparator to the thing it measures.
+/// 3. `Lie` **does** withhold on claim assertions — 18 across the corpus. Every
+///    one is its cycle-age decay firing, never evidence. `Lie` is excluded from
+///    §4's arms anyway, so this changes no verdict; it is pinned because it is
+///    the difference that makes part 1 a finding rather than a tautology.
+///
+/// This is a negative result of the same class as the Phase-5 `Lie` verdict. If
+/// a future change makes the hexavalent path abstain on *evidence*, part 1
+/// fails loudly — at which point deleting it **is** the finding.
+#[test]
+fn theorem_the_default_arm_never_withholds_where_the_null_baseline_commits() {
+    use hari_core::{
+        compare_replay_three_way, outcome_acted, replay_unassisted, ResearchEventPayload,
+        SubjectiveLogicConfig,
+    };
+
+    let (mut assertions, mut decay_retraction_only, mut lie_withheld, mut sl_diverged) =
+        (0usize, 0usize, 0usize, 0usize);
+
+    for path_buf in corpus_paths() {
+        let path = path_buf.to_string_lossy().to_string();
+        let trace = load_trace(&path);
+        let null = replay_unassisted(trace.clone());
+        let three = compare_replay_three_way(trace, SubjectiveLogicConfig::default());
+
+        for (i, out) in null.outcomes.iter().enumerate() {
+            let null_acted = outcome_acted(&out.actions);
+            let decay_acted = outcome_acted(&three.recency_decay.outcomes[i].actions);
+            let lie_acted = outcome_acted(&three.lie.outcomes[i].actions);
+            let is_assertion = matches!(
+                out.event.payload,
+                ResearchEventPayload::BeliefUpdate { .. }
+                    | ResearchEventPayload::ExperimentResult { .. }
+                    | ResearchEventPayload::AgentVote { .. }
+                    | ResearchEventPayload::Correction { .. }
+            );
+
+            if is_assertion {
+                assertions += 1;
+                // Part 1 — the §8-relevant claim.
+                assert_eq!(
+                    decay_acted, null_acted,
+                    "{path} event {i}: the shipped default diverges from IX-unassisted \
+                     on a claim assertion. If deliberate, §8 clause 1 has become \
+                     answerable and this theorem should be deleted with that recorded \
+                     as the finding."
+                );
+                if !lie_acted {
+                    lie_withheld += 1;
+                }
+            } else if decay_acted != null_acted {
+                // Part 2 — every remaining divergence is a retraction.
+                assert!(
+                    matches!(out.event.payload, ResearchEventPayload::Retraction { .. }),
+                    "{path} event {i}: unexpected non-retraction divergence for the \
+                     default arm ({:?})",
+                    out.event.payload
+                );
+                decay_retraction_only += 1;
+            }
+
+            if null_acted != outcome_acted(&three.subjective_logic.outcomes[i].actions) {
+                sl_diverged += 1;
+            }
+        }
+    }
+
+    // Vacuity guard: an empty corpus satisfies every assertion above.
+    assert!(
+        assertions >= 80,
+        "only {assertions} claim assertions compared — the corpus is not being          exercised (it holds 83; this floor guards vacuity, it is not a target)"
+    );
+    // Positive control: the comparison CAN detect divergence, so part 1 is a
+    // measurement and not an artifact of a classifier that never says no.
+    assert!(
+        sl_diverged > 0 && lie_withheld > 0,
+        "neither SL ({sl_diverged}) nor Lie ({lie_withheld}) ever diverged from the null \
+         baseline — outcome_acted is not discriminating, so part 1 proves nothing"
+    );
+    // Part 3 — the measured counts, pinned so a silent change surfaces.
+    assert_eq!(
+        (decay_retraction_only, lie_withheld),
+        (5, 18),
+        "divergence profile moved: default-arm retraction-only divergences and Lie \
+         claim-withholdings"
+    );
+}

@@ -62,10 +62,10 @@ explicitly rather than pretending they are independent.
 
 | Arm | What it is | Role |
 |---|---|---|
-| `IX-unassisted` | recorded IX behavior with no Hari policy applied | null baseline — the "does Hari do anything" comparison |
+| `IX-unassisted` | pass-through acceptance: every claim taken at face value, nothing else decided (`unassisted.rs`; pinned §9.5) | null baseline — the "does Hari do anything" comparison |
 | `RecencyDecay` | current default `PriorityModel` (ADR-0001) | incumbent — what shipping today already gives you |
 | `SubjectiveLogic` | Opinion-fusion pipeline, ~600 lines | **cheap baseline — the one that matters** |
-| experimental | any Hari policy under test | the claim |
+| experimental | **the shipped `RecencyDecay` `CognitiveLoop`** (pinned §9.5) | the claim |
 
 `Lie` is **not** an arm. It was demoted on evidence (`phase5-fixture-rollup.md`
 §7) and adding it back would be re-litigating a settled negative result.
@@ -1001,6 +1001,95 @@ distribution, not on the world**, and must be reported in those terms. That
 distribution is the one remaining pre-registration decision and is an owner
 call (§9.3.3), to be taken on a drafted spec with the arm-boundary straddles
 enumerated, never on an open question.
+
+### 9.5 The two open arm definitions, pinned — and §8 clause 1 measured
+
+**Amendment (2026-07-30).** §9.4 left item 4 as the sole blocker, but building
+it required two definitions §4 never supplied: what `experimental` is, and what
+`IX-unassisted` does. Both are pinned here. Neither is a preference: each is
+determined by text already committed, and the reasoning is given so a reader can
+disagree with the derivation rather than only with the conclusion.
+
+**`experimental` := the shipped `RecencyDecay` `CognitiveLoop`.** §1 asks
+whether *"routing a recorded IX autoresearch session through Hari"* helps.
+"Hari", as shipped, is the default `PriorityModel` — `RecencyDecay` per ADR-0001.
+`Lie` is excluded on evidence (§4) and `SubjectiveLogic` is named as the *cheap
+baseline* the substrate must not lose to, so neither can also be the claim. That
+leaves exactly one candidate. This does **not** change any default;
+`test_priority_model_default_is_recency_decay` stays green.
+
+**`IX-unassisted` := pass-through acceptance.** §4 defines it as "recorded IX
+behavior with no Hari policy applied". A policy layer is what decides whether to
+act on a claim, withhold, or escalate; remove it and what remains is taking
+every report at face value. So the arm accepts every proposition-bearing
+assertion and takes no substantive action on anything else
+(`crates/hari-core/src/unassisted.rs`).
+
+The temptation is to define this baseline weakly — thrashing, or accepting at
+random — because a weak null is easy to beat. That would be instrument-driven
+design of exactly the kind §10 forbids, applied to the **comparator** instead of
+the metric. Pass-through is the strongest honest reading of "no policy".
+
+One definitional choice is disclosed rather than tuned: a `retraction` is an
+instruction, not a claim to decide about, so this arm emits nothing on one. The
+hexavalent arms emit `Retry`. That is the *only* place the shipped default
+diverges from the baseline, and matching the arm here would have meant fitting
+the comparator to the thing it measures.
+
+#### §8 clause 1 is structurally zero for the shipped substrate
+
+Measured, not predicted — and the first prediction was **wrong**, caught by its
+own test. The claim written first was flat decision-identity across both
+hexavalent arms; `theorem_the_default_arm_never_withholds_where_the_null_baseline_commits`
+failed on first run against `cognition_divergence`. The true relationship:
+
+* **On every one of the corpus's 83 claim assertions, `RecencyDecay` acts
+  exactly where `IX-unassisted` acts.** Zero divergences. `HexValue` selects
+  *which* action — `Accept` / `Investigate` / `Escalate`, all acting under §5.1
+  — and never *whether*.
+* `Lie` withholds on 18 claim assertions, every one via cycle-age decay rather
+  than evidence. Not a §4 arm, so no verdict moves; it is what makes the line
+  above a measurement rather than a tautology.
+
+On both §9.3 corpora, all four arms score:
+
+| | IX-unassisted | RecencyDecay | Lie | SubjectiveLogic |
+|---|---|---|---|---|
+| isolation | 0.333 | 0.333 | 0.333 | 0.000 |
+| task | 0.333 | 0.333 | 0.333 | **0.667** |
+
+`IX-unassisted` is identical to the shipped default on every ground of both
+corpora. **So §8 clause 1 — "experimental beats `IX-unassisted` on Paired
+Accuracy" — evaluates to exactly zero.**
+
+**What that means, stated carefully.** The substrate's policy layer changes
+*what* Hari commits to, not *whether* it commits. Paired Accuracy measures only
+the latter, so on this metric the shipped substrate is indistinguishable from
+naive acceptance. It is a **negative result of the same class as the Phase-5
+`Lie` verdict**, and §8 already commits to publishing that class of result.
+
+**What it does not mean.** Three limits, all load-bearing:
+
+1. This is measured on **authored fixtures**, which §9.4's standing rule bars
+   from producing a §6 dual-rule test or a §8 verdict. It is instrument
+   characterisation. The eval has still not run.
+2. It is a statement about the **primary metric**, not about the substrate.
+   `HexValue`, contradiction preservation, provenance and revision may well earn
+   their keep on *what* is committed — `false_acceptance_count` is where the
+   Phase-5 comparison lived, and it is a §5.2 secondary here. §5.2 forbids
+   substituting a secondary for the primary in the conclusion, and that
+   prohibition binds in this direction too.
+3. It sharpens rather than removes the need for item 4. A driver-recorded corpus
+   could still separate the arms — but only if it contains decisions where
+   *whether* to act is genuinely in question, which is precisely what the
+   reporter model and perturbation distribution must be designed to produce.
+
+**Consequence for §8.** With clause 1 at zero for the shipped default, the
+kill/keep rule as written resolves to **KILL** unless the experimental arm is
+changed or the metric is. Both are owner calls, and both must be made *before*
+a driver corpus is recorded, not after. This section records that the rule now
+has a determinate answer on every instrument that exists — which is the outcome
+pre-registration is for, and the reason it was written before the data.
 
 ## 10. Amendment policy
 

@@ -113,11 +113,14 @@ pub use lineage::{LineageBundle, LineageEdge, LineageNode, LineageRun};
 // eval scaffolding and every existing trace replays byte-identically.
 // ---------------------------------------------------------------------------
 pub mod paired_eval;
+pub mod unassisted;
+
+pub use unassisted::replay_unassisted;
 
 pub use paired_eval::{
-    score_false_rejections, score_paired, score_paired_three_way, ClaimLabel, ClaimOutcome,
-    DecisionLabel, ExpectedDecision, FalseRejectionScore, PairDefect, PairOutcome, PairSeparation,
-    PairedArm, PairedFixture, PairedScore, ThreeWayPairedReport,
+    outcome_acted, score_false_rejections, score_paired, score_paired_all_arms, ClaimLabel,
+    ClaimOutcome, DecisionLabel, ExpectedDecision, FalseRejectionScore, PairDefect, PairOutcome,
+    PairSeparation, PairedArm, PairedComparison, PairedFixture, PairedScore,
 };
 
 // ---------------------------------------------------------------------------

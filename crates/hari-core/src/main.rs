@@ -853,13 +853,14 @@ fn replay_paired(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
 fn replay_paired_three_way(path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let path = path.ok_or("usage: hari-core replay --paired --compare3 <paired-fixture.json>")?;
     let fixture: hari_core::PairedFixture = serde_json::from_str(&fs::read_to_string(path)?)?;
-    let graded = hari_core::score_paired_three_way(fixture, SubjectiveLogicConfig::default());
+    let graded = hari_core::score_paired_all_arms(fixture, SubjectiveLogicConfig::default());
 
     // Defects derive from the label set and the outcome count, both of which
     // are arm-independent — so reporting them once per arm would be noise.
     // Warn per arm anyway *if* they differ, because that difference would mean
     // the arms are being graded against different decisions.
     for (name, arm) in [
+        ("ix_unassisted", &graded.unassisted),
         ("recency_decay", &graded.recency_decay),
         ("lie", &graded.lie),
         ("subjective_logic", &graded.subjective_logic),
