@@ -1091,6 +1091,59 @@ a driver corpus is recorded, not after. This section records that the rule now
 has a determinate answer on every instrument that exists — which is the outcome
 pre-registration is for, and the reason it was written before the data.
 
+### 9.6 The driver cannot rescue §8 clause 1 — established, not argued
+
+§9.5 measured clause 1 at zero on the eight authored fixtures. The natural hope
+is that item 4 fixes this: that a driver-recorded corpus, with real
+perturbations, real noise and a real reporter model, would produce decisions
+where *whether* to act is genuinely in question. **It cannot**, and this is
+worth knowing before the driver is built rather than after.
+
+The mechanism is not statistical. `RecencyDecay`'s act/abstain decision is a
+pure function of `state.cycle - event.cycle`: it withholds only once
+`exp(-λ·age) < θ_wait`, i.e. age ≥ 12. A recorder stamps events as they arrive,
+so age is ~0 and the arm always acts — which is exactly what pass-through does.
+Evidence, source, asserted value and payload content are all irrelevant to it.
+No distribution over any of them changes the decision, because none of them is
+an input to it.
+
+Pinned over **400 randomly composed traces** restamped so `cycle` tracks
+position, by
+`theorem_no_naturally_stamped_trace_separates_the_default_arm_from_the_null_baseline`
+— generated rather than authored, so the result cannot be an artifact of eight
+fixtures someone chose. Zero separations across ~1,000 claim assertions.
+
+The companion `probe_a_deliberately_stale_stamping_does_separate_them` is the
+positive control: stamp every event `cycle: 1`, let age exceed 12, and the arm
+*does* withhold where pass-through commits. So "never separates" is a
+measurement rather than a broken comparison — and the only stamping that
+separates them is the one §9 item 3 already identified as a tautology, a fixture
+an author must deliberately construct and no recorder produces.
+
+**Therefore the routes to a non-zero clause 1 are exactly three**, and building
+the driver opens no fourth:
+
+1. **Change the experimental arm.** `SubjectiveLogic` does separate — 0.667 vs
+   0.333 on the task corpus. But §4 names it the *cheap baseline*, so promoting
+   it to `experimental` changes the question from "does the substrate help" to
+   "does opinion fusion help", and leaves §8 clause 2 comparing SL to itself.
+2. **Change §5.1's taxonomy.** The rejected alternative — *act* = `Accept`,
+   *abstain* = `Wait`/`Investigate`/`Escalate` — makes act/abstain a function of
+   `HexValue` and therefore of evidence. §9.3 rejected it on three measured
+   grounds, and adopting it now, after seeing that the current taxonomy yields
+   zero, would be precisely the outcome-driven amendment §10 forbids. If it is
+   adopted, that ordering must be disclosed.
+3. **Accept KILL** and publish, as §8 already commits to.
+
+**This does not make item 4 pointless.** The driver is still what supplies §6 a
+population, still what makes the abstention and calibration measures
+exercisable, and still the only route to a §5.2 comparison — including
+`false_acceptance_count`, where the Phase-5 comparison actually lived and where
+the hexavalent machinery may well earn its keep. What §9.6 removes is one
+specific hope: that recording data would change the primary metric's verdict for
+the shipped arm. It would not.
+
+
 ## 10. Amendment policy
 
 This document may be amended **only** by a git commit that (a) states what

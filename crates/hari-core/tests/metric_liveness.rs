@@ -1373,3 +1373,133 @@ fn theorem_the_default_arm_never_withholds_where_the_null_baseline_commits() {
          claim-withholdings"
     );
 }
+
+/// Restamp a trace so `cycle` tracks position — what a live recorder produces.
+fn restamp_to_position(trace: &ResearchTrace) -> ResearchTrace {
+    let mut value = serde_json::to_value(trace).expect("serializes");
+    if let Some(events) = value.get_mut("events").and_then(|e| e.as_array_mut()) {
+        for (i, ev) in events.iter_mut().enumerate() {
+            ev["cycle"] = serde_json::json!(i as u64 + 1);
+        }
+    }
+    serde_json::from_value(value).expect("restamped trace deserializes")
+}
+
+/// **No perturbation distribution can make §8 clause 1 non-zero for the shipped
+/// arm.** Established over generated traces rather than argued.
+///
+/// §9.5 measured `RecencyDecay == IX-unassisted` on the eight authored
+/// fixtures. The obvious hope is that a driver-recorded corpus (#35 §9 item 4)
+/// would separate them — that real perturbations, real noise and a real
+/// reporter model would produce decisions where *whether* to act is in
+/// question. This test says they cannot, and says it over 400 randomly composed
+/// traces instead of on the eight fixtures someone might have cherry-picked.
+///
+/// The mechanism is not statistical. `RecencyDecay`'s act/abstain decision is a
+/// pure function of `state.cycle - event.cycle` (§9 item 3): it withholds only
+/// once `exp(-λ·age) < θ_wait`, i.e. age ≥ 12. A recorder stamps events as they
+/// arrive, so age is ~0 and the arm always acts — exactly what pass-through
+/// does. Evidence, source, value and payload content are all irrelevant to it.
+///
+/// So the routes to a non-zero clause 1 are: change the experimental arm,
+/// change §5.1's taxonomy, or accept **KILL**. Building a driver first would
+/// not open a fourth. That is worth knowing before the driver is built, which
+/// is why this is pinned rather than left as a plausible argument.
+#[test]
+fn theorem_no_naturally_stamped_trace_separates_the_default_arm_from_the_null_baseline() {
+    use hari_core::{
+        outcome_acted, replay_unassisted, CognitiveLoop, PriorityModel, ResearchEventPayload,
+    };
+
+    let pool = event_pool();
+    let mut rng = Rng(0x5EED_1234_ABCD_0001);
+    let (mut assertions, mut traces_with_assertions) = (0usize, 0usize);
+
+    for trial in 0..TRIALS {
+        let trace = restamp_to_position(&generate_trace(&mut rng, &pool));
+        let null = replay_unassisted(trace.clone());
+        let decay = CognitiveLoop::with_model(trace.dimension, PriorityModel::RecencyDecay)
+            .process_research_trace(trace);
+
+        let mut had = false;
+        for (i, out) in null.outcomes.iter().enumerate() {
+            if !matches!(
+                out.event.payload,
+                ResearchEventPayload::BeliefUpdate { .. }
+                    | ResearchEventPayload::ExperimentResult { .. }
+                    | ResearchEventPayload::AgentVote { .. }
+                    | ResearchEventPayload::Correction { .. }
+            ) {
+                continue;
+            }
+            assertions += 1;
+            had = true;
+            assert_eq!(
+                outcome_acted(&decay.outcomes[i].actions),
+                outcome_acted(&out.actions),
+                "trial {trial} event {i}: the shipped arm separated from the null baseline \
+                 on a naturally-stamped trace. §8 clause 1 may now be answerable — delete \
+                 this theorem and record that as the finding."
+            );
+        }
+        if had {
+            traces_with_assertions += 1;
+        }
+    }
+
+    assert!(
+        assertions >= 1000 && traces_with_assertions >= 300,
+        "only {assertions} assertions over {traces_with_assertions} traces — not exercised"
+    );
+}
+
+/// Positive control for the theorem above: the comparison **can** detect a
+/// separation, so "never separates" is a measurement and not a broken probe.
+///
+/// Stamp every event at `cycle: 1` and the decay term runs: past age 12,
+/// `exp(-0.2·age) < 0.1` suppresses the action list to `[Wait]` and the arm
+/// withholds where pass-through commits. That stamping is not something a
+/// recorder produces — it is a fixture an author must deliberately construct,
+/// which is the §9 item 3 tautology — but it proves the instrument is live.
+#[test]
+fn probe_a_deliberately_stale_stamping_does_separate_them() {
+    use hari_core::{
+        outcome_acted, replay_unassisted, CognitiveLoop, PriorityModel, ResearchEventPayload,
+    };
+
+    let pool = event_pool();
+    let mut rng = Rng(0x5EED_1234_ABCD_0002);
+    let mut separations = 0usize;
+
+    for _ in 0..TRIALS {
+        // Long traces, every event stamped cycle 1, so ages exceed 12.
+        let mut trace = generate_trace(&mut rng, &pool);
+        if trace.events.len() < 14 {
+            continue;
+        }
+        for ev in &mut trace.events {
+            ev.cycle = 1;
+        }
+        let null = replay_unassisted(trace.clone());
+        let decay = CognitiveLoop::with_model(trace.dimension, PriorityModel::RecencyDecay)
+            .process_research_trace(trace);
+
+        for (i, out) in null.outcomes.iter().enumerate() {
+            if matches!(
+                out.event.payload,
+                ResearchEventPayload::BeliefUpdate { .. }
+                    | ResearchEventPayload::ExperimentResult { .. }
+                    | ResearchEventPayload::AgentVote { .. }
+            ) && outcome_acted(&decay.outcomes[i].actions) != outcome_acted(&out.actions)
+            {
+                separations += 1;
+            }
+        }
+    }
+
+    assert!(
+        separations > 0,
+        "stale stamping produced no separation either — the comparison is not live, \
+         so the companion theorem's 'never separates' proves nothing"
+    );
+}
