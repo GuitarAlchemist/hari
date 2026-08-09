@@ -1,0 +1,176 @@
+{
+  "trace": {
+    "dimension": 4,
+    "events": [
+      {
+        "cycle": 1,
+        "source": "ix-runner-0",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "accuracy-regression-00",
+          "value": "Doubtful",
+          "evidence": {
+            "injected": "regression",
+            "p99_ms": 381,
+            "runs": 32
+          }
+        }
+      },
+      {
+        "cycle": 2,
+        "source": "ix-runner-0",
+        "payload": {
+          "type": "goal_update",
+          "key": "accuracy-characterise-00",
+          "description": "characterise accuracy run 0",
+          "priority": 0.9375,
+          "status": "Doubtful"
+        }
+      },
+      {
+        "cycle": 3,
+        "source": "ix-runner-0",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "accuracy-regression-01",
+          "value": "Doubtful",
+          "evidence": {
+            "injected": "variance",
+            "p99_ms": 351,
+            "runs": 32
+          }
+        }
+      },
+      {
+        "cycle": 4,
+        "source": "ix-runner-1",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "accuracy-regression-01",
+          "value": "Doubtful",
+          "evidence": {
+            "injected": "variance",
+            "p99_ms": 438,
+            "runs": 32
+          }
+        }
+      },
+      {
+        "cycle": 5,
+        "source": "ix-runner-0",
+        "payload": {
+          "type": "goal_update",
+          "key": "accuracy-characterise-01",
+          "description": "characterise accuracy run 1",
+          "priority": 0.921875,
+          "status": "Doubtful"
+        }
+      },
+      {
+        "cycle": 6,
+        "source": "ix-runner-0",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "accuracy-regression-02",
+          "value": "Probable",
+          "evidence": {
+            "injected": "regression",
+            "p99_ms": 408,
+            "runs": 32
+          }
+        }
+      },
+      {
+        "cycle": 7,
+        "source": "ix-runner-1",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "accuracy-regression-02",
+          "value": "Probable",
+          "evidence": {
+            "injected": "regression",
+            "p99_ms": 297,
+            "runs": 32
+          }
+        }
+      },
+      {
+        "cycle": 8,
+        "source": "ix-runner-2",
+        "payload": {
+          "type": "belief_update",
+          "proposition": "accuracy-regression-02",
+          "value": "Probable",
+          "evidence": {
+            "injected": "regression",
+            "p99_ms": 289,
+            "runs": 32
+          }
+        }
+      },
+      {
+        "cycle": 9,
+        "source": "ix-runner-0",
+        "payload": {
+          "type": "goal_update",
+          "key": "accuracy-characterise-02",
+          "description": "characterise accuracy run 2",
+          "priority": 0.75,
+          "status": "Probable"
+        }
+      }
+    ]
+  },
+  "labels": [
+    {
+      "event_index": 0,
+      "pair": "accuracy-regression-00",
+      "expect": "act"
+    },
+    {
+      "event_index": 1,
+      "pair": "accuracy-regression-00",
+      "expect": "abstain"
+    },
+    {
+      "event_index": 2,
+      "pair": "accuracy-regression-01",
+      "expect": "act"
+    },
+    {
+      "event_index": 4,
+      "pair": "accuracy-regression-01",
+      "expect": "abstain"
+    },
+    {
+      "event_index": 5,
+      "pair": "accuracy-regression-02",
+      "expect": "act"
+    },
+    {
+      "event_index": 8,
+      "pair": "accuracy-regression-02",
+      "expect": "abstain"
+    }
+  ],
+  "claims": [
+    {
+      "proposition": "accuracy-regression-00",
+      "outcome": "stood"
+    },
+    {
+      "proposition": "accuracy-regression-01",
+      "outcome": "withdrawn"
+    },
+    {
+      "proposition": "accuracy-regression-02",
+      "outcome": "stood"
+    }
+  ],
+  "provenance": {
+    "driver": "ix_reference/paired_driver",
+    "spec": "flaky-vs-real/v1",
+    "seed": 20260728,
+    "trace_digest": "442c06e5b01cf342"
+  }
+}

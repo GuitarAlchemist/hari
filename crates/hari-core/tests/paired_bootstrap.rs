@@ -25,9 +25,11 @@
 //!    verdict may be computed on an authored fixture.
 
 use hari_core::paired_eval::{
-    apply_kill_keep, bootstrap_paired_difference, cluster_from_arms, pooling_violation,
-    score_paired_all_arms, BootstrapConfig, CalibrationMargin, ClauseStatus, CorpusProvenance,
-    KillKeepVerdict, PairedDelta, TraceCluster,
+    apply_kill_keep, bootstrap_paired_difference, check_corpus, cluster_from_arms,
+    fixture_provenance, pooling_violation, reconcile_provenance, score_paired_all_arms,
+    trace_digest, ArmBindingError, BootstrapConfig, CalibrationMargin, ClauseStatus, CorpusDefect,
+    CorpusProvenance, FixtureProvenance, KillKeepVerdict, PairOutcome, PairedArm, PairedDelta,
+    PairedScore, ProvenanceDefect, TraceCluster,
 };
 use hari_core::{PairedFixture, SubjectiveLogicConfig};
 
@@ -42,6 +44,8 @@ use hari_core::{PairedFixture, SubjectiveLogicConfig};
 fn cluster(trace: &str, deltas: &[bool]) -> TraceCluster {
     TraceCluster {
         trace: trace.to_string(),
+        treatment: "experimental".to_string(),
+        baseline: "baseline".to_string(),
         pairs: deltas
             .iter()
             .enumerate()
@@ -56,12 +60,46 @@ fn cluster(trace: &str, deltas: &[bool]) -> TraceCluster {
 }
 
 fn run(clusters: &[TraceCluster]) -> Option<hari_core::paired_eval::PairedBootstrap> {
-    bootstrap_paired_difference(
-        "experimental",
-        "baseline",
-        clusters,
-        BootstrapConfig::default(),
-    )
+    bootstrap_paired_difference(clusters, BootstrapConfig::default())
+        .expect("hand-built clusters name one arm pair")
+}
+
+/// `run` for clusters built by `cluster_from_arms`, where the arm names are the
+/// point of the test rather than boilerplate.
+fn run_named(clusters: &[TraceCluster]) -> Option<hari_core::paired_eval::PairedBootstrap> {
+    bootstrap_paired_difference(clusters, BootstrapConfig::default())
+        .expect("the corpus names one arm pair")
+}
+
+/// A [`PairedArm`] carrying only the per-pair verdicts — enough for
+/// `cluster_from_arms`, which reads nothing else.
+fn arm_with_pairs(arm: &str, pairs: &[&str]) -> PairedArm {
+    let per_pair: Vec<PairOutcome> = pairs
+        .iter()
+        .map(|p| PairOutcome {
+            pair: (*p).to_string(),
+            act_correct: true,
+            abstain_correct: true,
+        })
+        .collect();
+    PairedArm {
+        arm: arm.to_string(),
+        priority_model: None,
+        conditioned_abstention: Default::default(),
+        paired: PairedScore {
+            pairs: per_pair.len(),
+            both_correct: per_pair.len(),
+            paired_accuracy: Some(1.0),
+            act_correct: per_pair.len(),
+            act_total: per_pair.len(),
+            abstain_correct: per_pair.len(),
+            abstain_total: per_pair.len(),
+            per_pair,
+            defects: Vec::new(),
+        },
+        false_rejections: Default::default(),
+        false_acceptances: Default::default(),
+    }
 }
 
 #[test]
@@ -114,6 +152,8 @@ fn clustering_by_trace_refuses_the_significance_that_independence_would_manufact
         .enumerate()
         .map(|(i, p)| TraceCluster {
             trace: format!("d{i:02}"),
+            treatment: "experimental".to_string(),
+            baseline: "baseline".to_string(),
             pairs: vec![p.clone()],
             unmatched: Vec::new(),
         })
@@ -182,6 +222,8 @@ fn identical_arms_yield_a_point_interval_at_zero_and_fail_the_dual_rule() {
     let clusters: Vec<TraceCluster> = (0..6)
         .map(|i| TraceCluster {
             trace: format!("t{i}"),
+            treatment: "experimental".to_string(),
+            baseline: "baseline".to_string(),
             pairs: (0..9)
                 .map(|j| PairedDelta {
                     pair: format!("t{i}-p{j}"),
@@ -282,12 +324,150 @@ fn a_pair_graded_in_only_one_arm_is_named_rather_than_dropped() {
         cluster("t0", &[true, true]),
         TraceCluster {
             trace: "t1".to_string(),
+            treatment: "experimental".to_string(),
+            baseline: "baseline".to_string(),
             pairs: cluster("t1", &[true, false]).pairs,
             unmatched: vec!["t1-orphan".to_string()],
         },
     ];
     let b = run(&clusters).expect("interval");
     assert_eq!(b.unmatched, vec!["t1/t1-orphan".to_string()]);
+}
+
+/// **The mutation this pins.** `bootstrap_paired_difference` used to re-accept
+/// arm identity as two free `&str` at the call site. Transposing the two string
+/// literals in `main.rs` published `treatment: recency_decay,
+/// treatment_accuracy: 0.6667` — the shipped substrate credited with
+/// SubjectiveLogic's entire advantage — under a sign-correct interval, a passing
+/// dual rule and a fully green suite.
+///
+/// There is no literal left to transpose. What remains transposable is the pair
+/// of arms handed to `cluster_from_arms`, so that is what is exercised here: the
+/// labels and the sign must both follow the data, and neither may be settable
+/// independently of it.
+#[test]
+fn the_published_arm_labels_follow_the_arms_the_clusters_were_built_from() {
+    let forward = task_clusters(|g| &g.subjective_logic, |g| &g.recency_decay);
+    let transposed = task_clusters(|g| &g.recency_decay, |g| &g.subjective_logic);
+
+    let f = run_named(&forward).expect("interval");
+    let t = run_named(&transposed).expect("interval");
+
+    assert_eq!(
+        (f.treatment.as_str(), f.baseline.as_str()),
+        ("subjective_logic", "recency_decay")
+    );
+    assert_eq!(
+        (t.treatment.as_str(), t.baseline.as_str()),
+        ("recency_decay", "subjective_logic"),
+        "labels did not follow the transposition"
+    );
+    // The sign follows too, so a transposed run cannot publish the shipped arm's
+    // name over the cheap baseline's advantage.
+    assert!((f.difference - 1.0 / 3.0).abs() < 1e-12, "{}", f.difference);
+    assert!((t.difference + 1.0 / 3.0).abs() < 1e-12, "{}", t.difference);
+    assert!((f.treatment_accuracy - 2.0 / 3.0).abs() < 1e-12);
+    assert!((t.treatment_accuracy - 1.0 / 3.0).abs() < 1e-12);
+}
+
+/// Clusters built from different arm pairs cannot be aggregated into one
+/// interval: whichever label were chosen, half the numbers came from elsewhere.
+#[test]
+fn a_corpus_whose_clusters_disagree_about_their_arms_is_refused() {
+    let mut clusters = vec![cluster("t0", &[true, false]), cluster("t1", &[true, true])];
+    clusters[1].baseline = "ix_unassisted".to_string();
+
+    let err = bootstrap_paired_difference(&clusters, BootstrapConfig::default())
+        .expect_err("disagreeing clusters must be refused, not silently labeled");
+    assert_eq!(
+        err,
+        ArmBindingError::Mismatch {
+            trace: "t1".to_string(),
+            treatment: "experimental".to_string(),
+            baseline: "ix_unassisted".to_string(),
+            expected_treatment: "experimental".to_string(),
+            expected_baseline: "baseline".to_string(),
+        }
+    );
+}
+
+#[test]
+fn an_unattributable_cluster_is_refused_rather_than_published() {
+    let mut unlabeled = vec![cluster("t0", &[true, false])];
+    unlabeled[0].treatment = String::new();
+    assert_eq!(
+        bootstrap_paired_difference(&unlabeled, BootstrapConfig::default()).expect_err("refused"),
+        ArmBindingError::Unlabeled {
+            trace: "t0".to_string()
+        }
+    );
+
+    // An arm compared against itself has a difference of zero by construction,
+    // which would read as two arms agreeing.
+    let mut self_paired = vec![cluster("t0", &[true, false])];
+    self_paired[0].baseline = "experimental".to_string();
+    assert_eq!(
+        bootstrap_paired_difference(&self_paired, BootstrapConfig::default()).expect_err("refused"),
+        ArmBindingError::SameArm {
+            trace: "t0".to_string(),
+            arm: "experimental".to_string()
+        }
+    );
+}
+
+/// **The finite-`B` correction, pinned exactly.** `(count+1)/(B+1)` is asserted
+/// in the report as a property of the instrument — *"a p-value of exactly zero
+/// is not reportable"*. Replacing it with `count/B` left the whole suite green
+/// and published `p = 0.0000` on the corpus below, which is the number the
+/// report says finite resampling cannot justify.
+///
+/// A degenerate corpus is the discriminating input: every one of the 10,000
+/// resamples returns `+2/3`, so `le = 0` and the uncorrected tail is exactly
+/// `0/10000`. `> 0.0` alone would not discriminate every way of getting the
+/// correction wrong, so the value is pinned.
+#[test]
+fn probe_the_finite_b_correction_is_pinned_exactly() {
+    let clusters: Vec<TraceCluster> = (0..6)
+        .map(|i| cluster(&format!("clone{i}"), &[true, true, false]))
+        .collect();
+    let b = run(&clusters).expect("interval");
+
+    assert_eq!(
+        b.p_value,
+        2.0 / 10_001.0,
+        "the two-sided ASL must be 2·(0+1)/(B+1) exactly, not 2·0/B"
+    );
+    assert!(b.p_value > 0.0, "no finite resampling justifies p = 0");
+    assert_eq!(b.resamples, 10_000);
+}
+
+/// `unmatched` is documented as *"expected to stay empty — which is exactly why
+/// it is reported rather than assumed"*, and the anomaly it surfaces is the one
+/// `PairSeparation` calls invalidating for every cross-arm number: the two arms
+/// graded against different decisions. Deleting the reverse-direction scan left
+/// the suite green, because no test called `cluster_from_arms` with per-pair
+/// sets that differ. This exercises **both** directions.
+#[test]
+fn cluster_from_arms_names_pairs_missing_from_either_direction() {
+    let treatment = arm_with_pairs("treatment_arm", &["shared", "treatment-only"]);
+    let baseline = arm_with_pairs("baseline_arm", &["shared", "baseline-only"]);
+
+    let c = cluster_from_arms("t0", &treatment, &baseline);
+
+    assert_eq!(
+        c.pairs.iter().map(|p| p.pair.as_str()).collect::<Vec<_>>(),
+        vec!["shared"],
+        "only pairs gradeable in both arms enter the estimate"
+    );
+    assert_eq!(
+        c.unmatched,
+        vec!["baseline-only".to_string(), "treatment-only".to_string()],
+        "a pair missing from either arm must be named; deleting either scan drops one"
+    );
+    assert_eq!(
+        (c.treatment.as_str(), c.baseline.as_str()),
+        ("treatment_arm", "baseline_arm")
+    );
 }
 
 /// §9.3.2 states that the isolation and task corpora are **never pooled**.
@@ -308,6 +488,116 @@ fn the_two_corpora_may_not_be_pooled() {
     assert_eq!(pooling_violation(&[]), None);
 }
 
+/// **The two ways around the suffix match** (review S8). `pooling_violation`
+/// refuses a run only when both suffixes are present, so a fixture belonging to
+/// neither corpus, and the same fixture repeated, both got through.
+#[test]
+fn a_fixture_belonging_to_no_declared_corpus_may_not_join_one() {
+    // The exact laundering that was verified against the shipped CLI: pooling
+    // `propositionless_abstention` into the task corpus made a corpus §9.4 calls
+    // degenerate report `zero_between_cluster_variance: false`.
+    assert_eq!(
+        check_corpus(&["accuracy-task", "propositionless_abstention"]),
+        Err(CorpusDefect::UndeclaredCorpus {
+            trace: "propositionless_abstention".to_string()
+        })
+    );
+    // And it is refused whichever corpus it is mixed into, and on its own.
+    assert!(check_corpus(&["accuracy-isolation", "propositionless_abstention"]).is_err());
+    assert!(check_corpus(&["propositionless_abstention"]).is_err());
+    // A declared corpus still passes, and so does an empty argument list —
+    // "no fixtures" is the CLI's usage error, not a corpus defect.
+    assert_eq!(check_corpus(&["accuracy-task", "cache-task"]), Ok(()));
+    assert_eq!(check_corpus(&[]), Ok(()));
+}
+
+#[test]
+fn the_same_trace_twice_is_not_two_resampling_units() {
+    assert_eq!(
+        check_corpus(&["accuracy-task", "cache-task", "accuracy-task"]),
+        Err(CorpusDefect::DuplicateTrace {
+            trace: "accuracy-task".to_string()
+        })
+    );
+}
+
+#[test]
+fn check_corpus_still_enforces_the_non_pooling_rule() {
+    assert_eq!(
+        check_corpus(&["accuracy-isolation", "cache-task"]),
+        Err(CorpusDefect::Pooled {
+            isolation: "accuracy-isolation".to_string(),
+            task: "cache-task".to_string(),
+        })
+    );
+}
+
+// ---------------------------------------------------------------------------
+// §9.4 read off the corpus rather than asserted on the command line
+// ---------------------------------------------------------------------------
+
+/// Every fixture committed before the driver existed is unstamped, and reads as
+/// authored without anyone having to say so — which is what makes §9.4's rule
+/// hold against the corpus rather than against the operator's memory.
+#[test]
+fn an_unstamped_fixture_is_authored_and_cannot_be_declared_recorded() {
+    let fixture = task_fixture("accuracy");
+    assert!(fixture.provenance.is_none(), "the corpus is hand-authored");
+    assert_eq!(
+        fixture_provenance(&fixture).expect("no stamp to verify"),
+        CorpusProvenance::Authored
+    );
+
+    // `--corpus recorded` over it was previously accepted and printed
+    // `provenance: driver_recorded` with nothing inspecting the fixture.
+    let refused = reconcile_provenance(
+        CorpusProvenance::Authored,
+        Some(CorpusProvenance::DriverRecorded),
+    )
+    .expect_err("an authored corpus may not be declared recorded");
+    assert_eq!(
+        *refused,
+        ProvenanceDefect::Undeclared {
+            declared: CorpusProvenance::DriverRecorded
+        }
+    );
+}
+
+#[test]
+fn a_stamped_fixture_is_recorded_only_while_its_digest_matches_its_trace() {
+    let mut fixture = task_fixture("accuracy");
+    fixture.provenance = Some(FixtureProvenance {
+        driver: "ix_reference/paired_driver".to_string(),
+        spec: "flaky-vs-real/v1".to_string(),
+        seed: 20_260_728,
+        trace_digest: trace_digest(&fixture.trace),
+    });
+    assert_eq!(
+        fixture_provenance(&fixture).expect("digest matches"),
+        CorpusProvenance::DriverRecorded
+    );
+
+    // Edit the trace and the stamp no longer attributes these decisions to the
+    // run that produced it.
+    fixture.trace.events.pop();
+    let err = fixture_provenance(&fixture).expect_err("an edited trace must not stay recorded");
+    assert!(
+        matches!(*err, ProvenanceDefect::DigestMismatch { .. }),
+        "{err:?}"
+    );
+
+    // Declining a verdict is always allowed: a recorded corpus may be run as
+    // authored, which is the safe direction.
+    assert_eq!(
+        reconcile_provenance(
+            CorpusProvenance::DriverRecorded,
+            Some(CorpusProvenance::Authored)
+        )
+        .expect("downgrade is always permitted"),
+        CorpusProvenance::Authored
+    );
+}
+
 // ---------------------------------------------------------------------------
 // §8, applied mechanically
 // ---------------------------------------------------------------------------
@@ -325,6 +615,8 @@ fn failing_bootstrap() -> hari_core::paired_eval::PairedBootstrap {
     let clusters: Vec<TraceCluster> = (0..6)
         .map(|i| TraceCluster {
             trace: format!("t{i}"),
+            treatment: "experimental".to_string(),
+            baseline: "baseline".to_string(),
             pairs: (0..9)
                 .map(|j| PairedDelta {
                     pair: format!("t{i}-p{j}"),
@@ -412,6 +704,225 @@ fn a_missing_bootstrap_leaves_clause_one_undefined_and_kills() {
     assert_eq!(decision.verdict, KillKeepVerdict::Kill);
 }
 
+/// **The check §9.4's standing rule does not already make** (review S3). Clause 1
+/// used to read `dual_rule_passes` alone. On a corpus with no between-cluster
+/// variance the dual rule passes *automatically* whenever the point estimate is
+/// non-zero: every resample returns the same statistic, so the interval has zero
+/// width, excludes zero, and `p = 2/(B+1) < α` unconditionally.
+///
+/// The only thing standing between that and a mechanical §8 pass was
+/// `CorpusProvenance`, which is a caller assertion. A degenerate corpus plus one
+/// mis-set flag would then have converted the corpus's *design* into a clause-1
+/// pass. It cannot now, whatever the flag says.
+#[test]
+fn a_dual_rule_pass_on_a_corpus_with_no_between_cluster_variance_is_undefined() {
+    let clusters: Vec<TraceCluster> = (0..6)
+        .map(|i| cluster(&format!("clone{i}"), &[true, true, false]))
+        .collect();
+    let b = run(&clusters).expect("interval");
+    // Preconditions: the rule really does pass, and the corpus really is degenerate.
+    assert!(b.dual_rule_passes);
+    assert!(b.zero_between_cluster_variance);
+
+    let decision = apply_kill_keep(
+        Some(&b),
+        Some(CalibrationMargin {
+            experimental_mean_brier: 0.10,
+            subjective_logic_mean_brier: 0.30,
+        }),
+        // The provenance a mis-set flag would supply.
+        CorpusProvenance::DriverRecorded,
+    );
+    assert_eq!(
+        decision.clause1,
+        ClauseStatus::Undefined,
+        "a zero-width interval on a corpus with no population is not a measured effect"
+    );
+    assert_eq!(decision.clause2, ClauseStatus::Passes);
+    assert_eq!(
+        decision.verdict,
+        KillKeepVerdict::Kill,
+        "an undefined clause cannot satisfy KEEP"
+    );
+    assert!(
+        decision
+            .rationale
+            .iter()
+            .any(|r| r.contains("no between-cluster variance")),
+        "the reason must be named: {:?}",
+        decision.rationale
+    );
+}
+
+/// Degeneracy may manufacture a pass; it can never manufacture a failure. The
+/// published clause-1 result on both §9.3 corpora is `fails` by an
+/// identically-zero difference, and that reading must not move.
+#[test]
+fn a_failing_dual_rule_still_fails_on_a_degenerate_corpus() {
+    let b = failing_bootstrap();
+    assert!(
+        b.zero_between_cluster_variance,
+        "identical arms, six clones"
+    );
+    let decision = apply_kill_keep(Some(&b), None, CorpusProvenance::DriverRecorded);
+    assert_eq!(decision.clause1, ClauseStatus::Fails);
+}
+
+/// The degeneracy detector is named for a **variance** property, so it must be
+/// computed as one. Testing identity of the whole delta sequence instead is
+/// strictly stronger and gives a false negative exactly where it matters: two
+/// clusters with deltas `[+1, −1]` and `[−1, +1]` have distinct signatures,
+/// equal means, and a zero-width interval that would have been reported as a
+/// sampling result.
+#[test]
+fn clusters_with_equal_means_but_different_orderings_are_still_degenerate() {
+    let flip = |trace: &str, up_first: bool| TraceCluster {
+        trace: trace.to_string(),
+        treatment: "experimental".to_string(),
+        baseline: "baseline".to_string(),
+        pairs: vec![
+            PairedDelta {
+                pair: format!("{trace}-a"),
+                treatment_correct: up_first,
+                baseline_correct: !up_first,
+            },
+            PairedDelta {
+                pair: format!("{trace}-b"),
+                treatment_correct: !up_first,
+                baseline_correct: up_first,
+            },
+        ],
+        unmatched: Vec::new(),
+    };
+    let clusters: Vec<TraceCluster> = (0..6).map(|i| flip(&format!("t{i}"), i % 2 == 0)).collect();
+
+    let b = run(&clusters).expect("interval");
+    assert_eq!(
+        b.distinct_cluster_signatures, 2,
+        "the sequences genuinely differ — which is why signature identity misses this"
+    );
+    assert!(
+        (b.ci_high - b.ci_low).abs() < 1e-12,
+        "precondition: the interval has zero width"
+    );
+    assert!(
+        b.zero_between_cluster_variance,
+        "equal cluster means are zero between-cluster variance, whatever the ordering"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// §5.2's fourth metric — Conditioned Abstention Rate (issue story 11)
+// ---------------------------------------------------------------------------
+
+/// The degenerate policy §5.1's pairing exists to catch. Abstain Accuracy alone
+/// reads a flattering `1.0`; the conditioned rates show the abstention is not
+/// conditioned on anything.
+#[test]
+fn an_always_abstaining_policy_scores_zero_discrimination_however_good_its_abstain_accuracy() {
+    let always_abstain = PairedScore {
+        pairs: 8,
+        both_correct: 0,
+        paired_accuracy: Some(0.0),
+        act_correct: 0,
+        act_total: 8,
+        abstain_correct: 8,
+        abstain_total: 8,
+        per_pair: Vec::new(),
+        defects: Vec::new(),
+    };
+    let car = always_abstain.conditioned_abstention();
+
+    assert_eq!(car.rate_when_warranted, Some(1.0));
+    assert_eq!(
+        car.rate_when_unwarranted,
+        Some(1.0),
+        "it abstains on the act halves too — the leg Abstain Accuracy cannot show"
+    );
+    assert_eq!(
+        car.discrimination,
+        Some(0.0),
+        "abstention that ignores the condition discriminates nothing"
+    );
+    // The flattering number that made the guard necessary.
+    assert_eq!(
+        always_abstain.abstain_correct as f64 / always_abstain.abstain_total as f64,
+        1.0
+    );
+}
+
+/// The overlap, pinned rather than left to be rediscovered: under §5.1's binary
+/// taxonomy `rate_when_warranted` counts the same events as Abstain Accuracy. A
+/// report presenting them as independent corroboration would double-count one
+/// measurement.
+#[test]
+fn the_warranted_leg_is_abstain_accuracy_on_every_arm_of_the_task_corpus() {
+    for theme in TASK_CORPUS {
+        let graded = score_paired_all_arms(task_fixture(theme), SubjectiveLogicConfig::default());
+        for arm in [
+            &graded.unassisted,
+            &graded.recency_decay,
+            &graded.lie,
+            &graded.subjective_logic,
+        ] {
+            let s = &arm.paired;
+            assert!(s.abstain_total > 0, "{theme}/{} grades nothing", arm.arm);
+            let abstain_accuracy = s.abstain_correct as f64 / s.abstain_total as f64;
+            assert_eq!(
+                arm.conditioned_abstention.rate_when_warranted,
+                Some(abstain_accuracy),
+                "{theme}/{}",
+                arm.arm
+            );
+            // And the metric is carried on the arm, so it reaches JSON consumers.
+            assert_eq!(arm.conditioned_abstention, s.conditioned_abstention());
+        }
+    }
+}
+
+/// A perfectly conditioned policy: abstains exactly when abstaining is right.
+#[test]
+fn a_perfectly_conditioned_policy_scores_full_discrimination() {
+    let perfect = PairedScore {
+        pairs: 5,
+        both_correct: 5,
+        paired_accuracy: Some(1.0),
+        act_correct: 5,
+        act_total: 5,
+        abstain_correct: 5,
+        abstain_total: 5,
+        per_pair: Vec::new(),
+        defects: Vec::new(),
+    };
+    let car = perfect.conditioned_abstention();
+    assert_eq!(car.rate_when_warranted, Some(1.0));
+    assert_eq!(car.rate_when_unwarranted, Some(0.0));
+    assert_eq!(car.discrimination, Some(1.0));
+    assert_eq!(car.abstained_when_unwarranted, 0);
+    assert_eq!(car.abstained_when_warranted, 5);
+}
+
+/// An unexercised condition has no rate, for the same reason an ungraded run has
+/// no accuracy — `None` is not a rate of zero.
+#[test]
+fn an_unexercised_condition_yields_no_rate_rather_than_zero() {
+    let car = PairedScore {
+        pairs: 0,
+        both_correct: 0,
+        paired_accuracy: None,
+        act_correct: 0,
+        act_total: 0,
+        abstain_correct: 0,
+        abstain_total: 0,
+        per_pair: Vec::new(),
+        defects: Vec::new(),
+    }
+    .conditioned_abstention();
+    assert_eq!(car.rate_when_warranted, None);
+    assert_eq!(car.rate_when_unwarranted, None);
+    assert_eq!(car.discrimination, None);
+}
+
 // ---------------------------------------------------------------------------
 // End to end over the committed §9.3 corpus, through the replay boundary
 // ---------------------------------------------------------------------------
@@ -425,6 +936,12 @@ const TASK_CORPUS: [&str; 6] = [
     "throughput",
 ];
 
+fn task_fixture(theme: &str) -> PairedFixture {
+    let path = format!("../../fixtures/ix/paired/{theme}-task.json");
+    serde_json::from_str(&std::fs::read_to_string(&path).expect("fixture must exist"))
+        .expect("fixture must parse")
+}
+
 fn task_clusters(
     treatment: fn(&hari_core::PairedComparison) -> &hari_core::PairedArm,
     baseline: fn(&hari_core::PairedComparison) -> &hari_core::PairedArm,
@@ -432,11 +949,8 @@ fn task_clusters(
     TASK_CORPUS
         .iter()
         .map(|theme| {
-            let path = format!("../../fixtures/ix/paired/{theme}-task.json");
-            let fixture: PairedFixture =
-                serde_json::from_str(&std::fs::read_to_string(&path).expect("fixture must exist"))
-                    .expect("fixture must parse");
-            let graded = score_paired_all_arms(fixture, SubjectiveLogicConfig::default());
+            let graded =
+                score_paired_all_arms(task_fixture(theme), SubjectiveLogicConfig::default());
             cluster_from_arms(theme, treatment(&graded), baseline(&graded))
         })
         .collect()
@@ -448,14 +962,15 @@ fn task_clusters(
 #[test]
 fn the_shipped_arm_does_not_separate_from_the_null_baseline_on_the_task_corpus() {
     let clusters = task_clusters(|g| &g.recency_decay, |g| &g.unassisted);
-    let b = bootstrap_paired_difference(
-        "recency_decay",
-        "ix_unassisted",
-        &clusters,
-        BootstrapConfig::default(),
-    )
-    .expect("54 pairs must be gradeable");
+    let b = bootstrap_paired_difference(&clusters, BootstrapConfig::default())
+        .expect("the corpus names one arm pair")
+        .expect("54 pairs must be gradeable");
 
+    assert_eq!(
+        (b.treatment.as_str(), b.baseline.as_str()),
+        ("recency_decay", "ix_unassisted"),
+        "the published arm labels must be the arms the clusters were built from"
+    );
     assert_eq!(b.clusters, 6);
     assert_eq!(b.pairs, 54);
     assert!(b.unmatched.is_empty());
@@ -475,14 +990,14 @@ fn the_shipped_arm_does_not_separate_from_the_null_baseline_on_the_task_corpus()
 #[test]
 fn subjective_logic_separates_from_the_shipped_arm_on_a_corpus_with_no_population() {
     let clusters = task_clusters(|g| &g.subjective_logic, |g| &g.recency_decay);
-    let b = bootstrap_paired_difference(
-        "subjective_logic",
-        "recency_decay",
-        &clusters,
-        BootstrapConfig::default(),
-    )
-    .expect("54 pairs must be gradeable");
+    let b = bootstrap_paired_difference(&clusters, BootstrapConfig::default())
+        .expect("the corpus names one arm pair")
+        .expect("54 pairs must be gradeable");
 
+    assert_eq!(
+        (b.treatment.as_str(), b.baseline.as_str()),
+        ("subjective_logic", "recency_decay")
+    );
     assert!(
         (b.difference - 1.0 / 3.0).abs() < 1e-12,
         "difference {}",

@@ -111,6 +111,151 @@ pub struct PairedFixture {
     /// Optional so a fixture that only grades pairs stays valid.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub claims: Vec<ClaimLabel>,
+    /// Where this fixture came from, stamped by the driver that produced it.
+    /// Absent on every hand-authored fixture — which is how [`fixture_provenance`]
+    /// reads them as [`CorpusProvenance::Authored`] without anyone saying so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<FixtureProvenance>,
+}
+
+/// A driver's stamp on a fixture it generated (#35 §9 item 4).
+///
+/// # Why this exists rather than a command-line flag
+///
+/// §9.4 adopted a standing rule that no §8 verdict may be computed on an
+/// authored corpus, and the first cut enforced it from `--corpus authored`
+/// on the command line. That made the rule exactly as strong as the flag:
+/// `--corpus recorded` over the six hand-authored task fixtures was accepted
+/// without complaint and printed `provenance: driver_recorded`. Nothing
+/// inspected the fixture. §9.4 says the rule is *"enforced rather than
+/// remembered"*; against the corpus it was only the latter.
+///
+/// The stamp carries a digest of the trace it was computed over, so a fixture
+/// whose trace was edited after generation no longer verifies and is refused.
+/// **This is tamper-evidence, not tamper-proofing:** [`trace_digest`] is a
+/// non-cryptographic hash and anyone who can edit the fixture can recompute it.
+/// The failure mode it closes is the one that actually happened — a corpus
+/// declared recorded because the operator believed it was.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FixtureProvenance {
+    /// The driver that generated this fixture, e.g. `ix_reference/paired_driver`.
+    pub driver: String,
+    /// The declared generative spec the trace was drawn from (§9.4: the
+    /// distribution is the disclosable unit, not the 54 decisions).
+    pub spec: String,
+    /// The seed this trace was drawn with. With `spec`, it is what makes the
+    /// corpus re-derivable rather than merely re-readable.
+    pub seed: u64,
+    /// [`trace_digest`] of `PairedFixture::trace` at generation time, hex.
+    pub trace_digest: String,
+}
+
+/// Why a fixture's provenance stamp could not be honoured.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProvenanceDefect {
+    /// The stamp does not match the trace it is attached to.
+    DigestMismatch {
+        driver: String,
+        stamped: String,
+        recomputed: String,
+    },
+    /// The caller declared a provenance the fixtures do not support.
+    Undeclared { declared: CorpusProvenance },
+}
+
+impl std::fmt::Display for ProvenanceDefect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DigestMismatch {
+                driver,
+                stamped,
+                recomputed,
+            } => write!(
+                f,
+                "fixture stamped by `{driver}` carries trace_digest {stamped} but its trace \
+                 digests to {recomputed} — the trace was edited after the driver recorded it, \
+                 so the stamp attributes numbers to a run that did not produce them"
+            ),
+            Self::Undeclared { declared } => write!(
+                f,
+                "--corpus {} was asserted, but no fixture carries a driver provenance stamp. \
+                 §9.4's standing rule is enforced against the corpus, not against the command \
+                 line: a hand-authored fixture cannot be declared recorded.",
+                match declared {
+                    CorpusProvenance::Authored => "authored",
+                    CorpusProvenance::DriverRecorded => "recorded",
+                }
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ProvenanceDefect {}
+
+/// FNV-1a-64 over the canonical JSON serialization of a trace, hex.
+///
+/// Deliberately not a cryptographic hash and deliberately not a dependency: the
+/// property needed is that an edit to the trace changes the digest, which FNV-1a
+/// gives in ~10 lines with no crate that a version bump could move. See
+/// [`FixtureProvenance`] for the threat model this does and does not address.
+#[must_use]
+pub fn trace_digest(trace: &ResearchTrace) -> String {
+    let bytes = serde_json::to_vec(trace).unwrap_or_default();
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// Read a fixture's provenance from the fixture itself.
+///
+/// An unstamped fixture is [`Authored`](CorpusProvenance::Authored) — the
+/// conservative reading, and the one every fixture committed before the driver
+/// existed gets without being edited. A stamped fixture is
+/// [`DriverRecorded`](CorpusProvenance::DriverRecorded) only if its digest still
+/// matches the trace it is attached to.
+pub fn fixture_provenance(
+    fixture: &PairedFixture,
+) -> Result<CorpusProvenance, Box<ProvenanceDefect>> {
+    let Some(stamp) = &fixture.provenance else {
+        return Ok(CorpusProvenance::Authored);
+    };
+    let recomputed = trace_digest(&fixture.trace);
+    if recomputed != stamp.trace_digest {
+        return Err(Box::new(ProvenanceDefect::DigestMismatch {
+            driver: stamp.driver.clone(),
+            stamped: stamp.trace_digest.clone(),
+            recomputed,
+        }));
+    }
+    Ok(CorpusProvenance::DriverRecorded)
+}
+
+/// Reconcile what the corpus proves with what the caller declared.
+///
+/// The corpus is authoritative. A caller may always *downgrade* to
+/// [`Authored`](CorpusProvenance::Authored) — declining a verdict is never
+/// unsafe — but may never declare `DriverRecorded` over fixtures that carry no
+/// stamp, which is the assertion §9.4's rule was found resting on.
+pub fn reconcile_provenance(
+    derived: CorpusProvenance,
+    declared: Option<CorpusProvenance>,
+) -> Result<CorpusProvenance, Box<ProvenanceDefect>> {
+    match (derived, declared) {
+        (_, None) => Ok(derived),
+        (CorpusProvenance::DriverRecorded, Some(CorpusProvenance::Authored)) => {
+            Ok(CorpusProvenance::Authored)
+        }
+        (CorpusProvenance::Authored, Some(CorpusProvenance::DriverRecorded)) => {
+            Err(Box::new(ProvenanceDefect::Undeclared {
+                declared: CorpusProvenance::DriverRecorded,
+            }))
+        }
+        _ => Ok(derived),
+    }
 }
 
 /// Why a labeled pair could not be scored. Reported, never silently dropped —
@@ -193,6 +338,78 @@ impl PairedScore {
     pub fn is_ungraded(&self) -> bool {
         self.paired_accuracy.is_none()
     }
+
+    /// §5.2's **Conditioned Abstention Rate**, derived from the same graded
+    /// pairs — see [`ConditionedAbstention`] for what "conditioned" means here
+    /// and for the overlap with Abstain Accuracy.
+    #[must_use]
+    pub fn conditioned_abstention(&self) -> ConditionedAbstention {
+        // Under §5.1's binary taxonomy every decision is either acting or
+        // abstaining, so "abstained on an Act half" is exactly the Act half the
+        // policy got wrong. No new observation is required and none is invented.
+        let abstained_when_unwarranted = self.act_total - self.act_correct;
+        let abstained_when_warranted = self.abstain_correct;
+        let rate = |num: usize, den: usize| (den > 0).then(|| num as f64 / den as f64);
+        let rate_when_warranted = rate(abstained_when_warranted, self.abstain_total);
+        let rate_when_unwarranted = rate(abstained_when_unwarranted, self.act_total);
+        ConditionedAbstention {
+            abstain_halves: self.abstain_total,
+            abstained_when_warranted,
+            act_halves: self.act_total,
+            abstained_when_unwarranted,
+            rate_when_warranted,
+            rate_when_unwarranted,
+            discrimination: rate_when_warranted
+                .zip(rate_when_unwarranted)
+                .map(|(w, u)| w - u),
+        }
+    }
+}
+
+/// §5.2's Conditioned Abstention Rate — the abstention rate **conditioned on
+/// whether abstaining was the right call**, which is what the AgentAbstain
+/// paired design makes available and an unconditional abstention rate does not.
+///
+/// # What this adds over §5.2's Act/Abstain accuracies, and what it does not
+///
+/// `rate_when_warranted` is **numerically identical to Abstain Accuracy** under
+/// §5.1's taxonomy: abstaining on a labeled `Abstain` half *is* getting that
+/// half right, so the two quantities count the same events. That is a property
+/// of the adopted taxonomy rather than a defect, and it is stated here rather
+/// than left for a reader to rediscover — a report that presented the two as
+/// independent corroboration would be double-counting one measurement.
+///
+/// The metric's information content over the existing three is therefore the
+/// **`rate_when_unwarranted` leg and the `discrimination` between them**: a
+/// policy that abstains without reading the condition — the degenerate
+/// always-`Wait` policy §5.1's pairing exists to catch — scores `1.0` on both
+/// legs and `0.0` discrimination, while its Abstain Accuracy alone reads a
+/// flattering `1.0`.
+///
+/// Every field is derived from the graded pairs at the replay boundary. Nothing
+/// here reads an arm's posterior, so it is comparable across arms for the same
+/// reason [`score_false_acceptances`] is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct ConditionedAbstention {
+    /// Labeled `Abstain` halves — the condition under which abstaining is right.
+    pub abstain_halves: usize,
+    /// Of those, the ones where the policy did abstain.
+    pub abstained_when_warranted: usize,
+    /// Labeled `Act` halves — the condition under which abstaining is an error.
+    pub act_halves: usize,
+    /// Of those, the ones where the policy abstained anyway.
+    pub abstained_when_unwarranted: usize,
+    /// `abstained_when_warranted / abstain_halves`. `None` when the condition
+    /// was never exercised — an unexercised rate is not a rate of zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate_when_warranted: Option<f64>,
+    /// `abstained_when_unwarranted / act_halves`. `None` when unexercised.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate_when_unwarranted: Option<f64>,
+    /// `rate_when_warranted − rate_when_unwarranted`. Zero for any policy whose
+    /// abstention ignores the condition, however high its Abstain Accuracy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrimination: Option<f64>,
 }
 
 /// Did this outcome's action list constitute *acting*?
@@ -525,6 +742,11 @@ pub struct PairedArm {
     pub priority_model: Option<PriorityModel>,
     /// §5.1 primary plus its §5.2 act/abstain decomposition.
     pub paired: PairedScore,
+    /// §5.2's Conditioned Abstention Rate, derived from `paired`. Carried on
+    /// the arm rather than left as a method so it reaches every JSON consumer
+    /// of a paired run — a metric only computable in Rust is not a reported one.
+    #[serde(default)]
+    pub conditioned_abstention: ConditionedAbstention,
     /// §5.3 disqualifier input.
     pub false_rejections: FalseRejectionScore,
     /// §5.2 secondary, scored arm-independently — see
@@ -599,19 +821,25 @@ pub fn score_paired_all_arms(
         trace,
         labels,
         claims,
+        // Provenance governs whether a §8 verdict may be emitted at all
+        // (`fixture_provenance`); it is not an input to any grade.
+        provenance: _,
     } = fixture;
     // The null baseline replays the same trace under no policy at all.
     let unassisted_report = crate::replay_unassisted(trace.clone());
     let replay = compare_replay_three_way(trace, sl_config);
 
-    let grade =
-        |arm: &str, model: Option<PriorityModel>, report: &ResearchReplayReport| PairedArm {
+    let grade = |arm: &str, model: Option<PriorityModel>, report: &ResearchReplayReport| {
+        let paired = score_paired(report, &labels);
+        PairedArm {
             arm: arm.to_string(),
             priority_model: model,
-            paired: score_paired(report, &labels),
+            conditioned_abstention: paired.conditioned_abstention(),
+            paired,
             false_rejections: score_false_rejections(report, &claims),
             false_acceptances: score_false_acceptances(report, &claims),
-        };
+        }
+    };
 
     let unassisted = grade("ix_unassisted", None, &unassisted_report);
     let recency_decay = grade(
@@ -728,6 +956,13 @@ impl PairedDelta {
 pub struct TraceCluster {
     /// Identifier for the trace this cluster came from.
     pub trace: String,
+    /// [`PairedArm::arm`] of the arm whose `treatment_correct` column this
+    /// cluster carries. Set by [`cluster_from_arms`] from the arm itself, never
+    /// supplied by hand — see that function for why the binding is mechanical.
+    pub treatment: String,
+    /// [`PairedArm::arm`] of the arm whose `baseline_correct` column this
+    /// cluster carries.
+    pub baseline: String,
     /// Every pair gradeable in **both** arms.
     pub pairs: Vec<PairedDelta>,
     /// Pairs gradeable in exactly one arm. Excluded from the estimate and
@@ -742,6 +977,18 @@ pub struct TraceCluster {
 /// [`theorem_gradeability_is_arm_independent`](self) asserts the two arms grade
 /// the same pairs, so `unmatched` is expected to stay empty — which is exactly
 /// why it is reported rather than assumed.
+///
+/// # Arm identity travels with the data
+///
+/// The two [`PairedArm::arm`] identifiers are copied onto the cluster. They are
+/// the *only* source of the arm names on a published [`PairedBootstrap`]:
+/// [`bootstrap_paired_difference`] derives them from the clusters and refuses a
+/// corpus whose clusters disagree. Before that binding existed the estimator
+/// re-accepted arm identity as two free `&str` at the call site, so transposing
+/// two string literals published a sign-correct interval under swapped arm
+/// names — the shipped substrate credited with the cheap baseline's advantage —
+/// with the whole suite green. Every other number here is mechanically derived
+/// from the graded pairs; the label that says *which arm won* now is too.
 #[must_use]
 pub fn cluster_from_arms(trace: &str, treatment: &PairedArm, baseline: &PairedArm) -> TraceCluster {
     let base: BTreeMap<&str, bool> = baseline
@@ -779,10 +1026,65 @@ pub fn cluster_from_arms(trace: &str, treatment: &PairedArm, baseline: &PairedAr
 
     TraceCluster {
         trace: trace.to_string(),
+        treatment: treatment.arm.clone(),
+        baseline: baseline.arm.clone(),
         pairs,
         unmatched,
     }
 }
+
+/// Why a corpus of [`TraceCluster`]s cannot be aggregated into one interval.
+///
+/// Each variant names a state in which the arm labels a published
+/// [`PairedBootstrap`] would carry are not the arms its numbers came from.
+/// Refusing is the only safe response: a mislabeled interval is worse than no
+/// interval, because it reads as a result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArmBindingError {
+    /// Two clusters were built from different arm pairs.
+    Mismatch {
+        trace: String,
+        treatment: String,
+        baseline: String,
+        expected_treatment: String,
+        expected_baseline: String,
+    },
+    /// A cluster carries an empty arm identifier, so nothing binds its column.
+    Unlabeled { trace: String },
+    /// Both columns name the same arm — the difference would be zero by
+    /// construction and would read as two arms agreeing.
+    SameArm { trace: String, arm: String },
+}
+
+impl std::fmt::Display for ArmBindingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Mismatch {
+                trace,
+                treatment,
+                baseline,
+                expected_treatment,
+                expected_baseline,
+            } => write!(
+                f,
+                "cluster `{trace}` was built from {treatment} vs {baseline}, but the corpus is \
+                 {expected_treatment} vs {expected_baseline} — the arms a published interval \
+                 would be labeled with are not the arms it was computed from"
+            ),
+            Self::Unlabeled { trace } => write!(
+                f,
+                "cluster `{trace}` carries an empty arm identifier, so its column is unattributable"
+            ),
+            Self::SameArm { trace, arm } => write!(
+                f,
+                "cluster `{trace}` names `{arm}` as both treatment and baseline"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ArmBindingError {}
 
 /// §6's pre-registered aggregation parameters.
 ///
@@ -923,22 +1225,28 @@ impl SplitMix64 {
 /// correction; without it a p-value of exactly zero is reportable, which no
 /// finite resampling can justify.
 ///
+/// # Arm identity is derived, never supplied
+///
+/// The `treatment`/`baseline` labels on the result come from the clusters — see
+/// [`cluster_from_arms`] — and a corpus whose clusters disagree is refused
+/// rather than aggregated under one of the two candidate labelings.
+///
 /// # Returns
 ///
-/// `None` when no pair is gradeable in both arms. An empty corpus has no
-/// interval — which is not an interval of zero width at zero.
-#[must_use]
+/// `Ok(None)` when no pair is gradeable in both arms. An empty corpus has no
+/// interval — which is not an interval of zero width at zero, and is not the
+/// same thing as a corpus that could not be labeled.
 pub fn bootstrap_paired_difference(
-    treatment: &str,
-    baseline: &str,
     clusters: &[TraceCluster],
     config: BootstrapConfig,
-) -> Option<PairedBootstrap> {
+) -> Result<Option<PairedBootstrap>, ArmBindingError> {
     let usable: Vec<&TraceCluster> = clusters.iter().filter(|c| !c.pairs.is_empty()).collect();
     let total_pairs: usize = usable.iter().map(|c| c.pairs.len()).sum();
     if usable.is_empty() || total_pairs == 0 {
-        return None;
+        return Ok(None);
     }
+    let (treatment, baseline) = bind_arms(&usable)?;
+    let (treatment, baseline) = (treatment.as_str(), baseline.as_str());
 
     let deltas: Vec<f64> = usable
         .iter()
@@ -994,6 +1302,7 @@ pub fn bootstrap_paired_difference(
         .iter()
         .map(|c| c.pairs.iter().map(|p| p.delta() as i8).collect())
         .collect();
+    let degenerate = every_cluster_has_the_same_mean(&usable);
 
     let mut unmatched: Vec<String> = clusters
         .iter()
@@ -1001,7 +1310,7 @@ pub fn bootstrap_paired_difference(
         .collect();
     unmatched.sort();
 
-    Some(PairedBootstrap {
+    Ok(Some(PairedBootstrap {
         treatment: treatment.to_string(),
         baseline: baseline.to_string(),
         clusters: k,
@@ -1023,10 +1332,71 @@ pub fn bootstrap_paired_difference(
         effective_n,
         effective_n_overstates: signatures.len() <= 1,
         distinct_cluster_signatures: signatures.len(),
-        // Clones of one trace give the resampler nothing to vary (§9.4).
-        zero_between_cluster_variance: signatures.len() <= 1,
+        zero_between_cluster_variance: degenerate,
         every_delta_is_zero: deltas.iter().all(|d| *d == 0.0),
         unmatched,
+    }))
+}
+
+/// Derive the corpus's arm pair from its clusters, refusing anything that would
+/// publish an interval under labels its numbers did not come from.
+fn bind_arms(usable: &[&TraceCluster]) -> Result<(String, String), ArmBindingError> {
+    let first = usable[0];
+    for c in usable {
+        if c.treatment.is_empty() || c.baseline.is_empty() {
+            return Err(ArmBindingError::Unlabeled {
+                trace: c.trace.clone(),
+            });
+        }
+        if c.treatment == c.baseline {
+            return Err(ArmBindingError::SameArm {
+                trace: c.trace.clone(),
+                arm: c.treatment.clone(),
+            });
+        }
+        if c.treatment != first.treatment || c.baseline != first.baseline {
+            return Err(ArmBindingError::Mismatch {
+                trace: c.trace.clone(),
+                treatment: c.treatment.clone(),
+                baseline: c.baseline.clone(),
+                expected_treatment: first.treatment.clone(),
+                expected_baseline: first.baseline.clone(),
+            });
+        }
+    }
+    Ok((first.treatment.clone(), first.baseline.clone()))
+}
+
+/// §9.4's degeneracy condition: **no between-cluster variance**, so every
+/// resample returns the same statistic and the interval's width is a property
+/// of the corpus's design rather than of any sampling process.
+///
+/// Computed from equality of cluster *means*, which is what "no between-cluster
+/// variance" actually says. An earlier cut tested identity of the whole delta
+/// *sequence*, which is strictly stronger: two clusters with deltas `[+1, −1]`
+/// and `[−1, +1]` have distinct signatures, equal means, zero between-cluster
+/// variance and a zero-width interval — and would have been reported as **not**
+/// degenerate. A false negative in a degeneracy detector is the direction that
+/// matters, because [`apply_kill_keep`] refuses to read a dual-rule pass on a
+/// degenerate corpus as a pass.
+///
+/// [`PairedBootstrap::distinct_cluster_signatures`] and
+/// `effective_n_overstates` keep the stricter signature test: they answer §7's
+/// "is this corpus clones of one trace", which is a different question.
+fn every_cluster_has_the_same_mean(usable: &[&TraceCluster]) -> bool {
+    // Deltas are ±1 and 0, so a cluster mean is a ratio of small integers and
+    // is not generally exact in IEEE-754. Compare the cross-products instead,
+    // which are sums of ±1 over at most a few thousand pairs and so are exact.
+    let scaled = |c: &TraceCluster| {
+        let sum: f64 = c.pairs.iter().map(PairedDelta::delta).sum();
+        (sum, c.pairs.len() as f64)
+    };
+    let (s0, n0) = scaled(usable[0]);
+    usable.iter().all(|c| {
+        let (s, n) = scaled(c);
+        // s/n == s0/n0 without dividing: both sides are sums of ±1 over ≤ a few
+        // thousand pairs, so the cross-products are exact in f64.
+        (s * n0 - s0 * n).abs() < f64::EPSILON
     })
 }
 
@@ -1090,6 +1460,91 @@ pub fn pooling_violation(traces: &[&str]) -> Option<(String, String)> {
     let isolation = traces.iter().find(|t| t.ends_with("-isolation"))?;
     let task = traces.iter().find(|t| t.ends_with("-task"))?;
     Some(((*isolation).to_string(), (*task).to_string()))
+}
+
+/// The suffixes §9.3 declares a corpus by. A trace id ending in neither belongs
+/// to no declared corpus, and [`check_corpus`] refuses it.
+pub const DECLARED_CORPUS_SUFFIXES: [&str; 2] = ["-isolation", "-task"];
+
+/// Why a set of trace ids is not a corpus §6 may aggregate.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CorpusDefect {
+    /// §9.3.2's rule: the isolation and task corpora are never pooled.
+    Pooled { isolation: String, task: String },
+    /// A trace id belonging to neither declared corpus.
+    UndeclaredCorpus { trace: String },
+    /// The same trace id twice — one trace counted as two resampling units.
+    DuplicateTrace { trace: String },
+}
+
+impl std::fmt::Display for CorpusDefect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pooled { isolation, task } => write!(
+                f,
+                "#35 §9.3.2 forbids pooling the isolation and task corpora — got both \
+                 `{isolation}` and `{task}`. Run them separately."
+            ),
+            Self::UndeclaredCorpus { trace } => write!(
+                f,
+                "`{trace}` belongs to no corpus §9.3 declares (expected a name ending {}). A \
+                 fixture the non-pooling rule does not recognise would join any corpus it is \
+                 handed to and be published as one of its traces.",
+                DECLARED_CORPUS_SUFFIXES.join(" or ")
+            ),
+            Self::DuplicateTrace { trace } => write!(
+                f,
+                "`{trace}` appears twice — the same trace is not two independent resampling \
+                 units, and `clusters` would be published as a fact about the corpus."
+            ),
+        }
+    }
+}
+
+impl std::error::Error for CorpusDefect {}
+
+/// §9.3.2's rule, plus the two ways around it that the suffix match alone left
+/// open (#35 review S8).
+///
+/// [`pooling_violation`] refuses a run only when some id ends `-isolation`
+/// **and** some id ends `-task`. Two corpora that are not that mixture still get
+/// through:
+///
+/// * **A fixture belonging to neither.** `propositionless_abstention` — a
+///   committed paired fixture that is deliberately weak — pooled freely into the
+///   task corpus and made a corpus §9.4 calls degenerate *look* non-degenerate,
+///   which is the exact laundering §9.3.2 exists to prevent, achieved with a
+///   filename the rule did not recognise.
+/// * **The same fixture twice.** Repeating a path yielded `clusters: 3` from one
+///   trace. `distinct_cluster_signatures` flags it, but the cluster count is
+///   published as a fact about the corpus.
+///
+/// So membership is checked positively — every id must name a declared corpus —
+/// and ids must be distinct. Refusing is the conservative direction: a corpus
+/// this rejects can always be renamed or split, whereas a laundered interval is
+/// already published by the time anyone notices.
+pub fn check_corpus(traces: &[&str]) -> Result<(), CorpusDefect> {
+    if let Some(trace) = traces
+        .iter()
+        .find(|t| !DECLARED_CORPUS_SUFFIXES.iter().any(|s| t.ends_with(s)))
+    {
+        return Err(CorpusDefect::UndeclaredCorpus {
+            trace: (*trace).to_string(),
+        });
+    }
+    if let Some((isolation, task)) = pooling_violation(traces) {
+        return Err(CorpusDefect::Pooled { isolation, task });
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for t in traces {
+        if !seen.insert(*t) {
+            return Err(CorpusDefect::DuplicateTrace {
+                trace: (*t).to_string(),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Where a corpus came from. §9.4 adopted a **standing rule** that no §6 dual-rule
@@ -1160,6 +1615,21 @@ pub struct KillKeepDecision {
 ///
 /// On an [`Authored`](CorpusProvenance::Authored) corpus the clauses are still
 /// reported and the verdict is **withheld** per §9.4.
+///
+/// # Clause 1 does not read `dual_rule_passes` alone
+///
+/// A corpus with no between-cluster variance clears the §6 dual rule
+/// **automatically** whenever the point estimate is non-zero: every resample
+/// returns the same statistic, so the interval has zero width, excludes zero,
+/// and `p = 2/(B+1) < α` unconditionally. That is not a measured effect; it is
+/// the corpus's design. Clause 1 is therefore reported `Undefined` — not
+/// `Passes` — in that state, and a KEEP cannot be reached through it.
+///
+/// This matters because it is the one check §9.4's standing rule does *not*
+/// already cover. Provenance is asserted by the caller, so a corpus mis-declared
+/// `DriverRecorded` would otherwise convert a design artifact into a mechanical
+/// clause-1 pass. A **failing** dual rule is left as `Fails`: degeneracy can
+/// manufacture a pass, never a failure.
 #[must_use]
 pub fn apply_kill_keep(
     clause1_bootstrap: Option<&PairedBootstrap>,
@@ -1174,6 +1644,28 @@ pub fn apply_kill_keep(
                 "§8 clause 1: no bootstrap output — nothing was gradeable in both arms."
                     .to_string(),
             );
+            ClauseStatus::Undefined
+        }
+        // Checked before the pass branch: a degenerate corpus clears the dual
+        // rule by construction, so reading that as a pass would let the corpus's
+        // design decide §8.
+        Some(b) if b.dual_rule_passes && b.zero_between_cluster_variance => {
+            rationale.push(format!(
+                "§8 clause 1: UNDEFINED — {} vs {} clears the §6 dual rule ({:.4}, 95% CI \
+                 [{:.4}, {:.4}], p = {:.4}) on a corpus with **no between-cluster variance** \
+                 ({} distinct delta sequences over {} traces). Every resample returns the same \
+                 statistic, so the interval has zero width and clears the rule whatever the \
+                 point estimate is. §9.4: that interval is a property of the corpus's design, \
+                 not a sampling one, so it measures nothing clause 1 can read.",
+                b.treatment,
+                b.baseline,
+                b.difference,
+                b.ci_low,
+                b.ci_high,
+                b.p_value,
+                b.distinct_cluster_signatures,
+                b.clusters
+            ));
             ClauseStatus::Undefined
         }
         Some(b) if b.dual_rule_passes => {
@@ -1682,6 +2174,7 @@ mod tests {
                 proposition: "benchmark-x-is-reliable".to_string(),
                 outcome: ClaimOutcome::Stood,
             }],
+            provenance: None,
         }
     }
 

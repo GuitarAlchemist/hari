@@ -318,6 +318,134 @@ pub struct BeliefCalibration {
     pub mean_brier: Option<f64>,
 }
 
+/// One bin of a reliability diagram: forecasts whose stated probability fell in
+/// `[lower, upper)`, and how often the predicate actually held.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ReliabilityBin {
+    /// Inclusive lower edge of the predicted-probability bin.
+    pub lower: f64,
+    /// Exclusive upper edge — except the top bin, which includes `1.0`.
+    pub upper: f64,
+    /// Scored forecasts landing in this bin.
+    pub scored: usize,
+    /// Mean stated probability over those forecasts. `None` when the bin is
+    /// empty — an empty bin has no forecast, which is not a forecast of zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_predicted: Option<f64>,
+    /// Fraction of them that resolved `true` — the diagram's y-axis.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_frequency: Option<f64>,
+}
+
+impl ReliabilityBin {
+    /// `|mean_predicted − observed_frequency|`. `None` for an empty bin.
+    #[must_use]
+    pub fn gap(&self) -> Option<f64> {
+        self.mean_predicted
+            .zip(self.observed_frequency)
+            .map(|(p, o)| (p - o).abs())
+    }
+}
+
+/// A reliability diagram over resolved forecasts, plus the single number a
+/// regression probe can bind (#35 story 15).
+///
+/// # Why this exists beside per-belief mean Brier
+///
+/// Brier is a *proper score*: it folds calibration and discrimination into one
+/// number, so a policy can improve its Brier while getting systematically more
+/// overconfident, and a policy can degrade its calibration while its Brier
+/// barely moves. Story 15 asks for a **reliability-diagram** bound precisely
+/// because that is the failure a scalar score hides.
+///
+/// `expected_calibration_error` is the scored-count-weighted mean of the
+/// per-bin `|predicted − observed|` gaps — the standard ECE. It is the quantity
+/// `probe_reliability_diagram_bound_holds_at_the_replay_boundary` binds.
+///
+/// # What it does not measure
+///
+/// It reads the forecast ledger, which is *not* per-arm. Each arm emitting
+/// forecasts from its own posterior is #35 §9 item 2 and does not exist, so §8
+/// clause 2 stays `undefined` and nothing here can change that. This binds the
+/// calibration **instrument** against silent degradation; it does not compare
+/// policies.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ReliabilityDiagram {
+    pub bins: Vec<ReliabilityBin>,
+    /// Scored forecasts across every bin.
+    pub scored: usize,
+    /// Weighted mean absolute gap. `None` when nothing is scored — an unscored
+    /// ledger has no calibration error, which is distinct from an error of 0.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_calibration_error: Option<f64>,
+    /// Largest single-bin gap, which a weighted mean can average away.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_calibration_error: Option<f64>,
+}
+
+/// Build a [`ReliabilityDiagram`] over the resolved forecasts in `records`.
+///
+/// `bins` is the number of equal-width bins over `[0, 1]`; `0` is treated as
+/// `1`. Void and pending records are excluded — an unresolved forecast has no
+/// observed frequency to contribute, and counting it as either outcome would
+/// invent data.
+#[must_use]
+pub fn reliability_diagram(records: &[ForecastRecord], bins: usize) -> ReliabilityDiagram {
+    let bins = bins.max(1);
+    let width = 1.0 / bins as f64;
+    let mut sums = vec![(0usize, 0.0f64, 0usize); bins]; // (scored, Σp, #true)
+
+    for rec in records {
+        let Some(res) = &rec.resolution else { continue };
+        let hit = match res.outcome {
+            Outcome::True => true,
+            Outcome::False => false,
+            Outcome::Void => continue,
+        };
+        let p = rec.prediction.probability.clamp(0.0, 1.0);
+        // The top bin is closed on the right so a forecast of exactly 1.0 lands
+        // in it rather than one past the end.
+        let idx = ((p / width).floor() as usize).min(bins - 1);
+        sums[idx].0 += 1;
+        sums[idx].1 += p;
+        sums[idx].2 += usize::from(hit);
+    }
+
+    let bins_out: Vec<ReliabilityBin> = sums
+        .iter()
+        .enumerate()
+        .map(|(i, (scored, sum_p, hits))| ReliabilityBin {
+            lower: i as f64 * width,
+            upper: (i + 1) as f64 * width,
+            scored: *scored,
+            mean_predicted: (*scored > 0).then(|| sum_p / *scored as f64),
+            observed_frequency: (*scored > 0).then(|| *hits as f64 / *scored as f64),
+        })
+        .collect();
+
+    let scored: usize = bins_out.iter().map(|b| b.scored).sum();
+    let (ece, max) = if scored == 0 {
+        (None, None)
+    } else {
+        let weighted: f64 = bins_out
+            .iter()
+            .filter_map(|b| b.gap().map(|g| g * b.scored as f64))
+            .sum();
+        let max = bins_out
+            .iter()
+            .filter_map(ReliabilityBin::gap)
+            .fold(0.0f64, f64::max);
+        (Some(weighted / scored as f64), Some(max))
+    };
+
+    ReliabilityDiagram {
+        bins: bins_out,
+        scored,
+        expected_calibration_error: ece,
+        max_calibration_error: max,
+    }
+}
+
 pub fn calibration(records: &[ForecastRecord]) -> BTreeMap<String, BeliefCalibration> {
     let mut out: BTreeMap<String, BeliefCalibration> = BTreeMap::new();
     for rec in records {

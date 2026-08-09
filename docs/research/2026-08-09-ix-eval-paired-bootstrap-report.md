@@ -1,12 +1,16 @@
 # The §6 aggregator, and §8 applied to it — the #35 report
 
-**Status:** the tracer bullet is complete end to end except §9 item 4. **This is
-not a §8 verdict**, and §4 below says exactly why it cannot be one.
+**Status:** the tracer bullet is complete end to end, §9 item 4 included as of the
+2026-08-09 review amendment. **This is still not a §8 verdict on the corpora
+below**, and §4 says exactly why it cannot be one; §7 and §9.9 record what the
+driver did and did not settle.
 **Pre-registration:** `2026-07-28-ix-eval-preregistration.md` (binding; committed),
-amended at §9.8 by the branch carrying this report.
+amended at §9.8 and §9.9 by the branch carrying this report.
 **Issue:** [#35](https://github.com/GuitarAlchemist/hari/issues/35)
 **Date:** 2026-08-09 · **Author:** Stephane Pareilleux
-**Repo state:** `claude/35-counterfactual-replay`, 376 tests passing.
+**Repo state:** `claude/35-counterfactual-replay`, 408 tests passing.
+**Every number in §3, §4 and §5 is unchanged by the review amendment** and
+reproduces from §2's recipe exactly as first published.
 **Supersedes nothing.** `2026-07-30-ix-eval-interim-assessment.md` stands; this
 report adds the aggregator that document said could not run, and reaches the
 same conclusion by the mechanical route rather than by assembling instruments.
@@ -48,9 +52,24 @@ Two committed rules moved from prose into code:
 | rule | enforced by |
 |---|---|
 | §9.4 — no §8 verdict on an authored corpus | `CorpusProvenance::Authored` → `WithheldByStandingRule` |
-| §9.3.2 — the isolation and task corpora are never pooled | `pooling_violation`, which refuses the run |
+| §9.3.2 — the isolation and task corpora are never pooled | `check_corpus`, which refuses the run |
 
-Seventeen tests in `crates/hari-core/tests/paired_bootstrap.rs`. The load-bearing
+**Amended 2026-08-09 after review.** Five more of the report's own claims moved
+from prose into tests, and one from a command-line flag into the corpus. None
+moves a published number; §3 and §4 reproduce byte for byte.
+
+| claim | was | is now |
+|---|---|---|
+| the arm names on a published interval | two `&str` at the call site — transposing them credited the shipped substrate with SL's advantage, suite green | derived from `PairedArm::arm` through `TraceCluster`; a corpus whose clusters disagree is refused |
+| §9.4's provenance | `--corpus recorded` accepted over any file | read off each fixture's driver stamp and its trace digest; asserting `recorded` over unstamped fixtures is refused |
+| §8 clause 1 | `dual_rule_passes` alone | `undefined` when zero between-cluster variance makes the pass automatic (§4) |
+| zero between-cluster variance | identity of the whole delta sequence — a false negative on equal-mean clusters | equality of cluster means |
+| `(count+1)/(B+1)` and `unmatched` | asserted in prose, deletable with a green suite | pinned, each by one discriminating test |
+| §9.3.2's corpus rule | a suffix match that admitted any name it did not recognise, and duplicate paths | positive membership plus distinct trace ids |
+
+Thirty-four tests in `crates/hari-core/tests/paired_bootstrap.rs`, eleven CLI
+subprocess tests in `replay_cli_refusals.rs`, four calibration probes in
+`calibration_reliability_probe.rs`. The load-bearing
 one is `clustering_by_trace_refuses_the_significance_that_independence_would_manufacture`:
 the same forty decisions, presented as four correlated traces, must **fail** the
 dual rule that the same decisions presented as forty independent ones pass.
@@ -101,6 +120,16 @@ difference, but because **there is no difference at any decision**. All 10,000
 resamples return exactly 0.0. `every_delta_is_zero` is the field that carries
 this, and it is the distinction between "indistinguishable" and "identical".
 
+**This comparison carries no ICC, and the absence is a consequence rather than an
+omission.** §7 requires the report to state the realized ICC and effective *n*.
+For clause 1 they are **undefined**: every delta is zero, so the one-way ANOVA's
+`ms_between + (m₀ − 1)·ms_within` denominator is zero, and `icc`,
+`design_effect` and `effective_n` are absent from the JSON rather than reported
+as `0`. There is no variance to decompose when there is no variance. §5.3 below
+gives the realized values for the comparison that *has* them —
+`SubjectiveLogic` vs the shipped arm — which is the comparison §7's instruction
+turns out to be answerable for.
+
 ### 3.2 The cheap baseline against the shipped arm
 
 §4 names `SubjectiveLogic` the baseline the substrate must not lose to.
@@ -125,6 +154,38 @@ The sign flip between the corpora is §9.3.3's finding, unchanged: SL wins the
 task corpus because `True` clears its `b > 0.7` gate, and loses the isolation
 corpus because it accepts nothing there at all. Pooling would average the two
 into a wash; §9.3.2 forbids it and the tool now refuses.
+
+### 3.3 §5.2's fourth metric — Conditioned Abstention Rate
+
+The PRD's metric set names four (Act Accuracy, Abstain Accuracy, Paired Accuracy,
+**Conditioned Abstention Rate**) and §5.2 carries CAR forward as a secondary. It
+had no implementation until this change; it is now computed per policy and
+emitted per fixture under `corpus[].conditioned_abstention`.
+
+"Conditioned" means *conditioned on whether abstaining was the right call*, which
+is what the paired design makes available. Isolation corpus, one fixture (all six
+are clones, so one row is the corpus):
+
+| policy | abstains when abstaining is right | abstains when acting is right | discrimination |
+|---|---|---|---|
+| `IX-unassisted` | 0.3333 | 0.0000 | **+0.3333** |
+| `RecencyDecay` | 0.3333 | 0.0000 | **+0.3333** |
+| `Lie` | 0.3333 | 0.0000 | **+0.3333** |
+| `SubjectiveLogic` | **1.0000** | **1.0000** | **0.0000** |
+
+**One honest caveat, stated rather than left to be rediscovered.** Under §5.1's
+adopted taxonomy the first column is *numerically identical* to Abstain Accuracy
+— abstaining on a labeled abstain half is getting that half right, so the two
+count the same events. Presenting them as independent corroboration would
+double-count one measurement. The metric's information content over the existing
+three is the **second** column and the discrimination.
+
+That is not academic here. SL's `1.0000` in column one is the flattering reading
+of the degenerate always-`Wait` behaviour §9.3.2 recorded on the isolation
+corpus; column two shows it abstaining just as often when acting was correct, and
+the discrimination collapses to zero. A policy that abstains without reading the
+condition is exactly what §5.1's pairing exists to catch, and CAR is where it
+shows up as a number rather than as a footnote.
 
 ## 4. §8, applied mechanically
 
@@ -153,6 +214,17 @@ not a passing one. Neither more traces nor a different seed touches either.
 this a KILL would take the one liberty the pre-registration most explicitly
 forbids — and would do so in the direction that flatters the author, since KILL
 is the conclusion §9.6 and the interim assessment already point at.
+
+**Clause 1 no longer rests on `dual_rule_passes` alone.** A corpus with no
+between-cluster variance clears the §6 dual rule *automatically* whenever the
+point estimate is non-zero — every resample returns the same statistic, so the
+interval has zero width, excludes zero, and `p = 2/(B+1) < α` unconditionally.
+That is what §3.2's two intervals are. Clause 1 now reports **`undefined`**
+rather than `passes` in that state. The distinction matters because provenance is
+the caller's assertion: before this, a degenerate corpus plus one mis-set
+`--corpus recorded` would have converted the corpus's *design* into a mechanical
+clause-1 pass. A **failing** dual rule is still `fails` — degeneracy can
+manufacture a pass, never a failure — so the result above is unchanged.
 
 **The distinction is thinner than it looks, and saying so is the honest part.**
 The formal verdict awaits a driver-recorded corpus. But §9.6 pinned, over 400
@@ -224,17 +296,50 @@ effective n" was written to prevent while inadvertently inviting.
    §9.8. It formalises a zero rather than discovering one, which bounds but does
    not erase the concern.
 6. **`Lie` is not an arm** (§4) and appears nowhere in the decision.
+7. **The driver corpus is a smoke corpus, not the eval's corpus** (§9.9). Six
+   generated traces, 18 pairs, realized effective *n* ≈ 7. It demonstrates that a
+   mechanical §8 verdict is reachable and that provenance is enforced against the
+   corpus; it is nowhere near §7's planned 100–200 decisions, and §7's own
+   instruction bars reading an underpowered null as equivalence. Its `SPEC` is a
+   candidate distribution, not a ratified one.
+8. **The reliability-diagram probe binds the calibration instrument, not the
+   arms.** Story 15 is met at the forecast/report boundary
+   (`probe_reliability_diagram_bound_holds_at_the_replay_boundary`, ECE ≤ 0.05,
+   with a companion test showing a 0.20 confidence shift breaking it). It does
+   **not** touch §8 clause 2, which needs each arm to emit forecasts from its own
+   posterior (§9 item 2) and stays `undefined`.
 
 ## 7. What remains of #35
 
-**§9 item 4 — the paired driver in `clients/ix_reference` — is the only
-outstanding critical-path item, and it is the whole of what remains.** It is what
-supplies §6 a population, what makes the abstention and calibration measures
-exercisable, and what converts §4's withheld verdict into a verdict.
+**§9 item 4 — the paired driver in `clients/ix_reference` — now exists**
+(`paired_driver.py`), and §9.9 records what it did and did not settle. It draws
+traces from a declared generative spec, stamps each fixture with a digest
+`hari-core` recomputes and refuses on mismatch, and hands the corpus to the
+existing `replay --paired --compare3 --bootstrap` boundary in one command. §9.4's
+standing rule is therefore enforced **against the corpus** rather than against a
+command-line flag: `--corpus recorded` over the hand-authored fixtures is now
+refused.
 
-It should not be built in the expectation of a different answer on the primary
-metric (§9.6) or on `false_acceptance_count` (§9.7). Its value is that §8 cannot
-be *answered* without it, not that the answer might change.
+It was not built in the expectation of a different answer on the primary metric
+(§9.6) or on `false_acceptance_count` (§9.7), and it did not produce one: on the
+driver corpus the shipped arm and the null baseline still agree at every
+decision, clause 1 is still identically zero, and the mechanical verdict is
+**KILL** — reached through the rule rather than through narrative, which is what
+story 14 asks for.
+
+**What remains is not code.** Two things:
+
+1. **The task distribution is not ratified.** §9.4 states that choosing it is the
+   one remaining pre-registration decision and an owner call. The driver's `SPEC`
+   is a candidate, disclosed in one place; it is not §2's declared distribution
+   until an owner says so. No §8 verdict in this report rests on it — §3 and §4
+   are unchanged and still authored-corpus characterisation.
+2. **§7's pre-unblinding MDE obligation is unfulfilled and now diagnosable**
+   (§9.9). The driver corpus's realized effective *n* is ~7, far under §7's
+   planned 100–200, so §7's own instruction — *"add traces or abandon the run"* —
+   applies before any driver-recorded verdict may be read as a result.
+
+Also outstanding, and deliberately not attempted here: the per-arm forecast
 
 Also outstanding, and deliberately not attempted here: the per-arm forecast
 emission hook (§9 item 2), whose two design constraints — resolution must not be
@@ -246,8 +351,19 @@ and a six-valued one — are recorded in §9 and must be settled before it is bu
 Unchanged from the interim assessment, now reached mechanically rather than by
 assembling instruments: **the pre-registered KEEP condition is unreachable on
 every instrument that exists, and the substance of the pre-registered negative
-result — ~600 lines of Subjective Logic already deliver the benefit on both
-graded metrics; the additional substrate does not — is what the data supports.**
+result — ~600 lines of Subjective Logic already deliver the benefit **on the task
+corpus**, on both graded metrics; the additional substrate does not — is what the
+data supports.**
+
+**The corpus qualifier is load-bearing and is not a hedge.** §3.2's own table
+shows the sign flipping on the isolation corpus, where `SubjectiveLogic` scores
+`0.0000` against `RecencyDecay`'s `0.3333` and is disqualified under §5.3 by 108
+false rejections. §9.3.2 forbids pooling the two, so there is no corpus on which
+the sentence holds unqualified, and §9.3.3 already recorded why: SL wins the task
+corpus because `True` clears its `b > 0.7` gate, and loses the isolation corpus
+because it accepts nothing there at all. What survives on **both** corpora is the
+weaker and still decisive claim: the shipped substrate does not separate from
+naive acceptance at any decision on either.
 
 The formal §8 verdict stays withheld until item 4 records a corpus. Publishing
 that negative result, as §8 and the A/B doctrine commit to and as this project
