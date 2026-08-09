@@ -693,6 +693,569 @@ fn separations(
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// §6 — the trace-clustered paired bootstrap, and §8 applied to its output
+// ---------------------------------------------------------------------------
+
+/// One pair's contribution to the paired difference.
+///
+/// The estimator reads only `treatment_correct - baseline_correct`, so the two
+/// arms' identities live on [`PairedBootstrap`] rather than here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairedDelta {
+    /// The pair identifier, shared by both arms — the join key.
+    pub pair: String,
+    /// The treatment arm got **both** halves of this pair right (§5.1).
+    pub treatment_correct: bool,
+    /// The baseline arm got both halves right.
+    pub baseline_correct: bool,
+}
+
+impl PairedDelta {
+    /// `+1`, `0` or `-1` — the quantity §6 aggregates.
+    #[must_use]
+    pub fn delta(&self) -> f64 {
+        f64::from(self.treatment_correct) - f64::from(self.baseline_correct)
+    }
+}
+
+/// One trace's paired deltas — the **resampling unit** §6 pre-registers.
+///
+/// §6 resamples traces rather than decisions because ~20 decisions inside one
+/// trace share a belief state; treating them as independent would inflate the
+/// effective sample size by up to ~20× and manufacture significance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TraceCluster {
+    /// Identifier for the trace this cluster came from.
+    pub trace: String,
+    /// Every pair gradeable in **both** arms.
+    pub pairs: Vec<PairedDelta>,
+    /// Pairs gradeable in exactly one arm. Excluded from the estimate and
+    /// named, for the same reason [`PairDefect`] exists: a corpus that quietly
+    /// aggregates a subset reads as if it aggregated everything.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unmatched: Vec<String>,
+}
+
+/// Join two arms' per-pair verdicts into one resampling unit.
+///
+/// [`theorem_gradeability_is_arm_independent`](self) asserts the two arms grade
+/// the same pairs, so `unmatched` is expected to stay empty — which is exactly
+/// why it is reported rather than assumed.
+#[must_use]
+pub fn cluster_from_arms(trace: &str, treatment: &PairedArm, baseline: &PairedArm) -> TraceCluster {
+    let base: BTreeMap<&str, bool> = baseline
+        .paired
+        .per_pair
+        .iter()
+        .map(|p| (p.pair.as_str(), p.both_correct()))
+        .collect();
+
+    let mut pairs = Vec::new();
+    let mut unmatched = Vec::new();
+    for p in &treatment.paired.per_pair {
+        match base.get(p.pair.as_str()) {
+            Some(baseline_correct) => pairs.push(PairedDelta {
+                pair: p.pair.clone(),
+                treatment_correct: p.both_correct(),
+                baseline_correct: *baseline_correct,
+            }),
+            None => unmatched.push(p.pair.clone()),
+        }
+    }
+    let graded: std::collections::BTreeSet<&str> = treatment
+        .paired
+        .per_pair
+        .iter()
+        .map(|p| p.pair.as_str())
+        .collect();
+    for pair in base.keys() {
+        if !graded.contains(pair) {
+            unmatched.push((*pair).to_string());
+        }
+    }
+    unmatched.sort();
+    unmatched.dedup();
+
+    TraceCluster {
+        trace: trace.to_string(),
+        pairs,
+        unmatched,
+    }
+}
+
+/// §6's pre-registered aggregation parameters.
+///
+/// **The seed is deliberately not settable from the command line.** §6 requires
+/// a fixed seed so a re-run reproduces the interval exactly; a tunable seed
+/// would also make the interval shoppable, which is the failure mode
+/// pre-registration exists to prevent. It is a constant here and is echoed into
+/// every [`PairedBootstrap`] so a reader can reproduce the number.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BootstrapConfig {
+    /// §6: B = 10,000.
+    pub resamples: usize,
+    /// The fixed seed §6 requires. Defaults to the pre-registration's date.
+    pub seed: u64,
+    /// §6's dual rule is written for a 95% interval.
+    pub alpha: f64,
+}
+
+impl Default for BootstrapConfig {
+    fn default() -> Self {
+        Self {
+            resamples: 10_000,
+            seed: 20_260_728,
+            alpha: 0.05,
+        }
+    }
+}
+
+/// The §6 aggregator's output, carrying everything §7 and §8 need to read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PairedBootstrap {
+    /// The arm whose improvement is being tested.
+    pub treatment: String,
+    /// The arm it is tested against.
+    pub baseline: String,
+    /// Resampling units (§6 clusters by trace).
+    pub clusters: usize,
+    /// Pairs gradeable in both arms.
+    pub pairs: usize,
+    /// The treatment arm's Paired Accuracy over `pairs`.
+    pub treatment_accuracy: f64,
+    /// The baseline arm's Paired Accuracy over the same pairs.
+    pub baseline_accuracy: f64,
+    /// Point estimate of the paired difference (`treatment - baseline`).
+    pub difference: f64,
+    /// Percentile lower bound at `alpha`.
+    pub ci_low: f64,
+    /// Percentile upper bound at `alpha`.
+    pub ci_high: f64,
+    /// Two-sided bootstrap achieved significance level (see module notes).
+    pub p_value: f64,
+    /// Echo of [`BootstrapConfig::resamples`].
+    pub resamples: usize,
+    /// Echo of [`BootstrapConfig::seed`] — §6 requires it in the report.
+    pub seed: u64,
+    /// Echo of [`BootstrapConfig::alpha`].
+    pub alpha: f64,
+    /// §6 dual rule, first half.
+    pub ci_excludes_zero: bool,
+    /// §6 dual rule, second half.
+    pub p_below_alpha: bool,
+    /// Both halves — the only thing §8 clause 1 reads.
+    pub dual_rule_passes: bool,
+    /// §7's realized intra-cluster correlation. `None` when it is undefined
+    /// (fewer than two clusters, or a totally degenerate variance decomposition).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icc: Option<f64>,
+    /// §7's design effect, `1 + (m̄ − 1)·ICC`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_effect: Option<f64>,
+    /// §7's achieved effective *n*, which the report must state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_n: Option<f64>,
+    /// `true` when `effective_n` must not be read as what the corpus supports.
+    ///
+    /// The ICC design-effect correction is a correction for **between**-trace
+    /// correlation only. A corpus of clones has *no* between-trace variance, so
+    /// ICC comes out at 0, the design effect at 1, and the effective *n* equal
+    /// to the raw pair count — while the corpus in fact holds a handful of
+    /// distinct decision situations replicated many times. That is §9.4's
+    /// finding, and the arithmetic cannot see it, so it is flagged instead of
+    /// left to a reader to notice.
+    pub effective_n_overstates: bool,
+    /// How many distinct delta sequences the clusters hold. `1` means the
+    /// corpus is clones of one trace.
+    pub distinct_cluster_signatures: usize,
+    /// §9.4's condition: no between-cluster variance, so the interval is a
+    /// property of whoever wrote the corpus rather than of a population.
+    pub zero_between_cluster_variance: bool,
+    /// Every single decision agreed. Distinct from "not significant": the arms
+    /// are identical on this corpus, not merely indistinguishable on it.
+    pub every_delta_is_zero: bool,
+    /// `trace/pair` for every pair gradeable in exactly one arm.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unmatched: Vec<String>,
+}
+
+/// Deterministic PRNG (SplitMix64). Vendored rather than taken from `rand` so
+/// the interval is reproducible across dependency upgrades — §6 requires a
+/// re-run to reproduce it *exactly*, which a crate-versioned generator does not
+/// guarantee.
+struct SplitMix64(u64);
+
+impl SplitMix64 {
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// Uniform-ish index into `0..n`. The modulo bias is bounded by `n / 2^64`
+    /// and is irrelevant at these sizes; determinism is what matters here.
+    fn index(&mut self, n: usize) -> usize {
+        (self.next_u64() % n as u64) as usize
+    }
+}
+
+/// §6's aggregator: a **paired bootstrap clustered by trace**.
+///
+/// Pure — decision-outcome records in, CI and p out — so it is testable on
+/// hand-built inputs with no replay engine in the loop, which is the property
+/// §6 asks for.
+///
+/// # What it computes
+///
+/// The statistic is the difference in Paired Accuracy, `mean(delta)` over every
+/// gradeable pair. Each of `B` resamples draws `clusters.len()` **traces** with
+/// replacement and recomputes that mean over the drawn traces' pairs — so a
+/// trace contributing more pairs carries more weight, exactly as it does in the
+/// point estimate.
+///
+/// The interval is the percentile one at `alpha`. The p-value is the two-sided
+/// achieved significance level
+/// `2·min(Pr[θ* ≤ 0], Pr[θ* ≥ 0])`, each tail computed as `(count + 1)/(B + 1)`
+/// and the whole clamped to `1.0`. The `+1` is the standard finite-`B`
+/// correction; without it a p-value of exactly zero is reportable, which no
+/// finite resampling can justify.
+///
+/// # Returns
+///
+/// `None` when no pair is gradeable in both arms. An empty corpus has no
+/// interval — which is not an interval of zero width at zero.
+#[must_use]
+pub fn bootstrap_paired_difference(
+    treatment: &str,
+    baseline: &str,
+    clusters: &[TraceCluster],
+    config: BootstrapConfig,
+) -> Option<PairedBootstrap> {
+    let usable: Vec<&TraceCluster> = clusters.iter().filter(|c| !c.pairs.is_empty()).collect();
+    let total_pairs: usize = usable.iter().map(|c| c.pairs.len()).sum();
+    if usable.is_empty() || total_pairs == 0 {
+        return None;
+    }
+
+    let deltas: Vec<f64> = usable
+        .iter()
+        .flat_map(|c| c.pairs.iter().map(PairedDelta::delta))
+        .collect();
+    let difference = deltas.iter().sum::<f64>() / total_pairs as f64;
+    let treatment_hits: usize = usable
+        .iter()
+        .flat_map(|c| c.pairs.iter())
+        .filter(|p| p.treatment_correct)
+        .count();
+    let baseline_hits: usize = usable
+        .iter()
+        .flat_map(|c| c.pairs.iter())
+        .filter(|p| p.baseline_correct)
+        .count();
+
+    // Resample traces, never decisions.
+    let mut rng = SplitMix64(config.seed);
+    let k = usable.len();
+    let mut stats: Vec<f64> = Vec::with_capacity(config.resamples);
+    for _ in 0..config.resamples {
+        let mut sum = 0.0;
+        let mut n = 0usize;
+        for _ in 0..k {
+            let c = usable[rng.index(k)];
+            for p in &c.pairs {
+                sum += p.delta();
+                n += 1;
+            }
+        }
+        stats.push(if n == 0 { 0.0 } else { sum / n as f64 });
+    }
+    stats.sort_by(|a, b| a.partial_cmp(b).expect("bootstrap statistics are finite"));
+
+    let b = stats.len();
+    let lo_idx = ((config.alpha / 2.0) * b as f64).floor() as usize;
+    let hi_idx = (((1.0 - config.alpha / 2.0) * b as f64).ceil() as usize).saturating_sub(1);
+    let ci_low = stats[lo_idx.min(b - 1)];
+    let ci_high = stats[hi_idx.min(b - 1)];
+
+    let le = stats.iter().filter(|s| **s <= 0.0).count();
+    let ge = stats.iter().filter(|s| **s >= 0.0).count();
+    let tail = |count: usize| (count as f64 + 1.0) / (b as f64 + 1.0);
+    let p_value = (2.0 * tail(le).min(tail(ge))).min(1.0);
+
+    let ci_excludes_zero = (ci_low > 0.0 && ci_high > 0.0) || (ci_low < 0.0 && ci_high < 0.0);
+    let p_below_alpha = p_value < config.alpha;
+
+    let (icc, design_effect, effective_n) = cluster_correlation(&usable, difference);
+
+    let signatures: std::collections::BTreeSet<Vec<i8>> = usable
+        .iter()
+        .map(|c| c.pairs.iter().map(|p| p.delta() as i8).collect())
+        .collect();
+
+    let mut unmatched: Vec<String> = clusters
+        .iter()
+        .flat_map(|c| c.unmatched.iter().map(|p| format!("{}/{p}", c.trace)))
+        .collect();
+    unmatched.sort();
+
+    Some(PairedBootstrap {
+        treatment: treatment.to_string(),
+        baseline: baseline.to_string(),
+        clusters: k,
+        pairs: total_pairs,
+        treatment_accuracy: treatment_hits as f64 / total_pairs as f64,
+        baseline_accuracy: baseline_hits as f64 / total_pairs as f64,
+        difference,
+        ci_low,
+        ci_high,
+        p_value,
+        resamples: config.resamples,
+        seed: config.seed,
+        alpha: config.alpha,
+        ci_excludes_zero,
+        p_below_alpha,
+        dual_rule_passes: ci_excludes_zero && p_below_alpha,
+        icc,
+        design_effect,
+        effective_n,
+        effective_n_overstates: signatures.len() <= 1,
+        distinct_cluster_signatures: signatures.len(),
+        // Clones of one trace give the resampler nothing to vary (§9.4).
+        zero_between_cluster_variance: signatures.len() <= 1,
+        every_delta_is_zero: deltas.iter().all(|d| *d == 0.0),
+        unmatched,
+    })
+}
+
+/// §7's ICC, design effect and effective *n*, by one-way ANOVA on the per-pair
+/// deltas. Returns `None`s when the decomposition is undefined — fewer than two
+/// clusters, or no variance at all to attribute.
+fn cluster_correlation(
+    clusters: &[&TraceCluster],
+    grand_mean: f64,
+) -> (Option<f64>, Option<f64>, Option<f64>) {
+    let k = clusters.len();
+    let n: usize = clusters.iter().map(|c| c.pairs.len()).sum();
+    if k < 2 || n <= k {
+        return (None, None, None);
+    }
+
+    let mut ms_between = 0.0;
+    let mut ss_within = 0.0;
+    for c in clusters {
+        let m = c.pairs.len() as f64;
+        let mean = c.pairs.iter().map(PairedDelta::delta).sum::<f64>() / m;
+        ms_between += m * (mean - grand_mean).powi(2);
+        ss_within += c
+            .pairs
+            .iter()
+            .map(|p| (p.delta() - mean).powi(2))
+            .sum::<f64>();
+    }
+    ms_between /= (k - 1) as f64;
+    let ms_within = ss_within / (n - k) as f64;
+
+    let sum_sq: f64 = clusters
+        .iter()
+        .map(|c| (c.pairs.len() as f64).powi(2))
+        .sum();
+    let m0 = (n as f64 - sum_sq / n as f64) / (k - 1) as f64;
+    let denominator = ms_between + (m0 - 1.0) * ms_within;
+    if denominator <= 0.0 {
+        return (None, None, None);
+    }
+
+    let icc = ((ms_between - ms_within) / denominator).clamp(0.0, 1.0);
+    let mean_size = n as f64 / k as f64;
+    let design_effect = 1.0 + (mean_size - 1.0) * icc;
+    let effective_n = n as f64 / design_effect;
+    (Some(icc), Some(design_effect), Some(effective_n))
+}
+
+/// §9.3.2's non-pooling rule, checkable.
+///
+/// The `*-isolation` and `*-task` corpora measure different things — one holds
+/// the asserted `HexValue` fixed and varies corroboration alone, the other
+/// bundles asserted confidence with reproduction per §2's injected trigger —
+/// and §9.3.2 states plainly that **the two are never pooled**. Pooling them
+/// would average `SubjectiveLogic`'s degenerate always-`Wait` zero on isolation
+/// into its task result and launder it into one number.
+///
+/// Returns the first conflicting pair of trace ids, so a caller can name them.
+#[must_use]
+pub fn pooling_violation(traces: &[&str]) -> Option<(String, String)> {
+    let isolation = traces.iter().find(|t| t.ends_with("-isolation"))?;
+    let task = traces.iter().find(|t| t.ends_with("-task"))?;
+    Some(((*isolation).to_string(), (*task).to_string()))
+}
+
+/// Where a corpus came from. §9.4 adopted a **standing rule** that no §6 dual-rule
+/// test and no §8 verdict may ever be computed on an authored fixture, because
+/// hand-authored traces are not draws from any population and the resulting
+/// interval is a property of their author. Encoding it here means the rule is
+/// enforced rather than remembered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CorpusProvenance {
+    /// Hand-authored fixtures — instrument characterisation only.
+    Authored,
+    /// Recorded by the §9 item 4 driver from an IX session.
+    DriverRecorded,
+}
+
+/// One §8 clause's state. `Undefined` is distinct from `Fails`: it means the
+/// instrument the clause reads does not exist yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClauseStatus {
+    Passes,
+    Fails,
+    /// Not measurable — reported as such, never silently treated as a pass.
+    Undefined,
+}
+
+/// §8's outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KillKeepVerdict {
+    /// Both clauses hold on a recorded corpus.
+    Keep,
+    /// Either clause fails or is undefined.
+    Kill,
+    /// §9.4's standing rule: the corpus is authored, so no verdict is emitted.
+    WithheldByStandingRule,
+}
+
+/// §8 clause 2's input: mean Brier for the experimental arm and for
+/// `SubjectiveLogic`. Lower is better, so "does not lose" is `experimental ≤ sl`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CalibrationMargin {
+    pub experimental_mean_brier: f64,
+    pub subjective_logic_mean_brier: f64,
+}
+
+/// §8, applied mechanically.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KillKeepDecision {
+    pub verdict: KillKeepVerdict,
+    /// experimental beats `IX-unassisted` on Paired Accuracy under §6's dual rule.
+    pub clause1: ClauseStatus,
+    /// experimental does not lose to `SubjectiveLogic` on calibration.
+    pub clause2: ClauseStatus,
+    pub provenance: CorpusProvenance,
+    /// Why each clause landed where it did, and — when withheld — which rule
+    /// withheld it. Narrative in the report must follow this, not lead it.
+    pub rationale: Vec<String>,
+}
+
+/// Apply §8's kill/keep rule to the §6 output.
+///
+/// **KEEP only if both** clauses pass; **KILL** if either fails. An `Undefined`
+/// clause cannot satisfy KEEP — clause 2 is undefined today because per-arm
+/// calibration requires each arm to emit forecasts from its own posterior
+/// (§9 item 2), which does not exist.
+///
+/// On an [`Authored`](CorpusProvenance::Authored) corpus the clauses are still
+/// reported and the verdict is **withheld** per §9.4.
+#[must_use]
+pub fn apply_kill_keep(
+    clause1_bootstrap: Option<&PairedBootstrap>,
+    calibration: Option<CalibrationMargin>,
+    provenance: CorpusProvenance,
+) -> KillKeepDecision {
+    let mut rationale = Vec::new();
+
+    let clause1 = match clause1_bootstrap {
+        None => {
+            rationale.push(
+                "§8 clause 1: no bootstrap output — nothing was gradeable in both arms."
+                    .to_string(),
+            );
+            ClauseStatus::Undefined
+        }
+        Some(b) if b.dual_rule_passes => {
+            rationale.push(format!(
+                "§8 clause 1: {} beats {} by {:.4} (95% CI [{:.4}, {:.4}], p = {:.4}) — §6 dual rule holds.",
+                b.treatment, b.baseline, b.difference, b.ci_low, b.ci_high, b.p_value
+            ));
+            ClauseStatus::Passes
+        }
+        Some(b) => {
+            let how = if b.every_delta_is_zero {
+                " — the two arms agree at every single decision, so the difference is identically zero rather than merely insignificant"
+            } else {
+                ""
+            };
+            rationale.push(format!(
+                "§8 clause 1: {} vs {} is {:.4} (95% CI [{:.4}, {:.4}], p = {:.4}) — §6 dual rule fails{how}.",
+                b.treatment, b.baseline, b.difference, b.ci_low, b.ci_high, b.p_value
+            ));
+            ClauseStatus::Fails
+        }
+    };
+
+    let clause2 = match calibration {
+        None => {
+            rationale.push(
+                "§8 clause 2: undefined — per-arm calibration requires each arm to emit \
+                 forecasts from its own posterior (§9 item 2), which does not exist."
+                    .to_string(),
+            );
+            ClauseStatus::Undefined
+        }
+        Some(m) if m.experimental_mean_brier <= m.subjective_logic_mean_brier => {
+            rationale.push(format!(
+                "§8 clause 2: experimental mean Brier {:.4} ≤ SubjectiveLogic {:.4} — does not lose.",
+                m.experimental_mean_brier, m.subjective_logic_mean_brier
+            ));
+            ClauseStatus::Passes
+        }
+        Some(m) => {
+            rationale.push(format!(
+                "§8 clause 2: experimental mean Brier {:.4} > SubjectiveLogic {:.4} — loses on calibration.",
+                m.experimental_mean_brier, m.subjective_logic_mean_brier
+            ));
+            ClauseStatus::Fails
+        }
+    };
+
+    let verdict = match provenance {
+        CorpusProvenance::Authored => {
+            rationale.push(
+                "Verdict WITHHELD: §9.4's standing rule bars any §6 dual-rule test and any §8 \
+                 verdict on an authored fixture corpus — hand-authored traces are not draws \
+                 from a population, so the interval is a property of their author. The clauses \
+                 above are instrument characterisation."
+                    .to_string(),
+            );
+            KillKeepVerdict::WithheldByStandingRule
+        }
+        CorpusProvenance::DriverRecorded => {
+            if clause1 == ClauseStatus::Passes && clause2 == ClauseStatus::Passes {
+                KillKeepVerdict::Keep
+            } else {
+                rationale.push(
+                    "Verdict KILL: §8 keeps the substrate only if both clauses pass; an \
+                     undefined clause cannot satisfy KEEP."
+                        .to_string(),
+                );
+                KillKeepVerdict::Kill
+            }
+        }
+    };
+
+    KillKeepDecision {
+        verdict,
+        clause1,
+        clause2,
+        provenance,
+        rationale,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

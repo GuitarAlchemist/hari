@@ -1202,6 +1202,65 @@ establishes is that the driver should not be built in the expectation of a
 different answer on either metric.
 
 
+### 9.8 The §6 aggregator is built — and it changes no outcome
+
+**Amendment (2026-08-09).** §6 described a trace-clustered paired bootstrap in
+the present tense and then corrected itself on 2026-07-30: *"No bootstrap
+aggregator exists anywhere in the workspace."* It was the last missing §6
+prerequisite, and it mattered because §8 applies the kill/keep rule
+*"mechanically to the bootstrap output"* — of which there was none. It now
+exists: `paired_eval::bootstrap_paired_difference`, a pure function taking
+per-trace decision records and returning the interval, the p-value and the dual
+rule, with B = 10,000, resampling **traces** and never decisions, reachable as
+`replay --paired --compare3 --bootstrap`.
+
+**The seed is a constant in the source and is deliberately not settable from the
+command line.** §6 requires a re-run to reproduce the interval exactly; a
+tunable seed would also make the interval *shoppable*, which is the failure mode
+this document exists to prevent. It is `20260728` — this file's date — and is
+echoed into every result so a reader can reproduce the number. The generator is
+a vendored SplitMix64 rather than a crate, so a dependency upgrade cannot move a
+published interval.
+
+**Sequencing, disclosed rather than glossed.** This was built *after* §9.5 and
+§9.7 measured clause 1 at zero. It cannot be claimed blind, and §9.4's account
+of why blindness is unavailable to this author applies here too. What limits the
+damage is that no resampling scheme can move this particular outcome: the
+per-decision difference between the shipped arm and the null baseline is
+**identically zero at every one of the 54 pairs**, so every one of the 10,000
+resamples returns exactly 0.0 and the interval is `[0.0, 0.0]` with p = 1.0. The
+aggregator formalises a zero rather than discovering one.
+
+**Two committed rules are now enforced in code rather than remembered.**
+
+* §9.4's standing rule: `CorpusProvenance::Authored` yields
+  `KillKeepVerdict::WithheldByStandingRule`, whatever the clauses say. A passing
+  dual rule on an authored corpus still produces no verdict — pinned by
+  `an_authored_corpus_withholds_the_verdict_while_still_reporting_the_clauses`.
+* §9.3.2's non-pooling rule: `pooling_violation` refuses a corpus mixing
+  `*-isolation` and `*-task`, which would otherwise launder SL's degenerate
+  always-`Wait` zero into its task result.
+
+**A §7 finding, and it is not the reassuring reading.** §7 requires the report to
+state the realized ICC and effective *n*. On the task corpus, comparing
+`SubjectiveLogic` to the shipped arm, the aggregator returns **ICC = 0, design
+effect = 1, effective n = 54**. That is arithmetically correct and would be badly
+misread as "clustering costs nothing here". The ICC design-effect correction is a
+correction for **between**-trace correlation, and this corpus has none — because
+its six traces are clones (§9.4). The degeneracy is replication *within* the
+design, which the ICC cannot see at all. The output therefore carries an explicit
+`effective_n_overstates` flag, set whenever between-cluster variance is zero, and
+pinned by `a_corpus_of_clones_flags_that_its_effective_n_overstates`. §7's
+instruction to report the realized ICC stands; the number it produces on a
+degenerate corpus is not a measure of that corpus's information content.
+
+**Nothing in §5–§8 changed, and no eval outcome was newly inspected.** Every
+number the aggregator produces reproduces §9.3.3, §9.5 and §9.7 exactly. §8
+clause 2 remains `undefined` — per-arm calibration still requires each arm to
+emit forecasts from its own posterior (§9 item 2) — and an undefined clause
+cannot satisfy KEEP, so **KEEP is unreachable on every instrument that exists**.
+The report is `2026-08-09-ix-eval-paired-bootstrap-report.md`.
+
 ## 10. Amendment policy
 
 This document may be amended **only** by a git commit that (a) states what

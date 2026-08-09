@@ -28,12 +28,18 @@ fn main() {
         //       (the same ground truth graded against all three arms at once —
         //        §5.1 defines the primary metric per arm, so this is the shape
         //        the eval actually consumes)
+        //   replay --paired --compare3 --bootstrap [--corpus recorded] <f1.json> …
+        //       (#35 §6: aggregate a whole corpus by the trace-clustered paired
+        //        bootstrap and apply §8's kill/keep rule to the output)
         let mut compare = false;
         let mut compare3 = false;
         let mut session_mode = false;
         let mut calibration = false;
         let mut paired = false;
+        let mut bootstrap = false;
+        let mut provenance = hari_core::CorpusProvenance::Authored;
         let mut path: Option<&str> = None;
+        let mut corpus: Vec<&str> = Vec::new();
         let mut i = 2;
         while i < args.len() {
             let a = &args[i];
@@ -43,13 +49,53 @@ fn main() {
                 "--session" => session_mode = true,
                 "--calibration" => calibration = true,
                 "--paired" => paired = true,
-                other if !other.starts_with("--") => path = Some(other),
+                "--bootstrap" => bootstrap = true,
+                // §9.4's standing rule is enforced in code, so the caller has
+                // to say where the corpus came from. The default is the
+                // conservative one: everything committed in this repo today is
+                // authored, and an authored corpus never yields a §8 verdict.
+                "--corpus" => {
+                    i += 1;
+                    match args.get(i).map(String::as_str) {
+                        Some("authored") => provenance = hari_core::CorpusProvenance::Authored,
+                        Some("recorded") => {
+                            provenance = hari_core::CorpusProvenance::DriverRecorded;
+                        }
+                        other => {
+                            eprintln!(
+                                "hari-core replay: --corpus takes `authored` or `recorded`, got {}",
+                                other.unwrap_or("nothing")
+                            );
+                            process::exit(2);
+                        }
+                    }
+                }
+                other if !other.starts_with("--") => {
+                    path = Some(other);
+                    corpus.push(other);
+                }
                 other => {
                     eprintln!("hari-core replay: unknown flag {other}");
                     process::exit(2);
                 }
             }
             i += 1;
+        }
+        // The bootstrap aggregates a corpus, so it is the one mode that takes
+        // more than one path — and it only makes sense over the paired scorer.
+        if bootstrap && !(paired && compare3) {
+            eprintln!(
+                "hari-core replay: --bootstrap requires --paired --compare3 (it aggregates the \
+                 paired scores of several fixtures)"
+            );
+            process::exit(2);
+        }
+        if !bootstrap && corpus.len() > 1 {
+            eprintln!(
+                "hari-core replay: only --bootstrap takes more than one fixture path; got {}",
+                corpus.len()
+            );
+            process::exit(2);
         }
         // `--paired --compare3` is the one legal combination: `--paired`
         // selects the scorer, `--compare3` selects how many arms it grades.
@@ -86,6 +132,8 @@ fn main() {
         }
         let result = if session_mode {
             replay_session(path)
+        } else if bootstrap {
+            replay_paired_bootstrap(&corpus, provenance)
         } else if paired_three_way {
             replay_paired_three_way(path)
         } else if compare3 {
@@ -886,6 +934,161 @@ fn replay_paired_three_way(path: Option<&str>) -> Result<(), Box<dyn std::error:
     }
 
     serde_json::to_writer_pretty(std::io::stdout(), &graded)?;
+    println!();
+    Ok(())
+}
+
+/// `replay --paired --compare3 --bootstrap <f1.json> …` — #35 §6 and §8.
+///
+/// Replays each paired fixture through the existing `--paired --compare3`
+/// boundary, treats **one fixture as one trace cluster** (§6's resampling
+/// unit), aggregates by the trace-clustered paired bootstrap, and applies §8's
+/// kill/keep rule mechanically to the result.
+///
+/// Two comparisons are emitted, both of which the pre-registration names:
+/// `RecencyDecay` (the §9.5 `experimental` arm) against `IX-unassisted` — which
+/// is §8 clause 1 itself — and `SubjectiveLogic` against `RecencyDecay`, the
+/// §4 "does the expensive machinery beat the cheap machinery" comparison.
+///
+/// The per-fixture detail stays reachable through `--paired --compare3` on a
+/// single file; this mode emits accuracies only, so the corpus roll-up is
+/// readable.
+fn replay_paired_bootstrap(
+    paths: &[&str],
+    provenance: hari_core::CorpusProvenance,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if paths.is_empty() {
+        return Err("usage: hari-core replay --paired --compare3 --bootstrap \
+                    [--corpus authored|recorded] <fixture.json> …"
+            .into());
+    }
+
+    // §9.3.2: the isolation and task corpora are never pooled. Refuse rather
+    // than silently average one into the other.
+    let stems: Vec<&str> = paths
+        .iter()
+        .map(|p| {
+            std::path::Path::new(p)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(p)
+        })
+        .collect();
+    if let Some((isolation, task)) = hari_core::pooling_violation(&stems) {
+        return Err(format!(
+            "#35 §9.3.2 forbids pooling the isolation and task corpora — got both `{isolation}` \
+             and `{task}`. Run them separately."
+        )
+        .into());
+    }
+
+    let mut summaries = Vec::new();
+    let mut clause1_clusters = Vec::new();
+    let mut cheap_clusters = Vec::new();
+
+    for path in paths {
+        let fixture: hari_core::PairedFixture = serde_json::from_str(&fs::read_to_string(path)?)?;
+        let graded = hari_core::score_paired_all_arms(fixture, SubjectiveLogicConfig::default());
+
+        // One fixture is one cluster. The cluster id is the file stem, so a
+        // reader can trace any resampling unit back to the file it came from.
+        let trace = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path);
+
+        for (name, arm) in [
+            ("ix_unassisted", &graded.unassisted),
+            ("recency_decay", &graded.recency_decay),
+            ("lie", &graded.lie),
+            ("subjective_logic", &graded.subjective_logic),
+        ] {
+            for defect in &arm.paired.defects {
+                warn!("paired fixture defect [{trace}/{name}]: {defect:?}");
+            }
+            if arm.paired.is_ungraded() {
+                warn!("[{trace}/{name}] no pair was gradeable — this trace contributes nothing");
+            }
+        }
+
+        clause1_clusters.push(hari_core::cluster_from_arms(
+            trace,
+            &graded.recency_decay,
+            &graded.unassisted,
+        ));
+        cheap_clusters.push(hari_core::cluster_from_arms(
+            trace,
+            &graded.subjective_logic,
+            &graded.recency_decay,
+        ));
+        summaries.push(serde_json::json!({
+            "fixture": path,
+            "trace": trace,
+            "pairs": graded.recency_decay.paired.pairs,
+            "paired_accuracy": {
+                "ix_unassisted": graded.unassisted.paired.paired_accuracy,
+                "recency_decay": graded.recency_decay.paired.paired_accuracy,
+                "lie": graded.lie.paired.paired_accuracy,
+                "subjective_logic": graded.subjective_logic.paired.paired_accuracy,
+            },
+            "false_acceptances": {
+                "ix_unassisted": graded.unassisted.false_acceptances.false_acceptances,
+                "recency_decay": graded.recency_decay.false_acceptances.false_acceptances,
+                "subjective_logic": graded.subjective_logic.false_acceptances.false_acceptances,
+            },
+            "false_rejections": {
+                "ix_unassisted": graded.unassisted.false_rejections.false_rejections,
+                "recency_decay": graded.recency_decay.false_rejections.false_rejections,
+                "subjective_logic": graded.subjective_logic.false_rejections.false_rejections,
+            },
+            "separating_pairs": graded.separating_pairs.len(),
+        }));
+    }
+
+    let config = hari_core::BootstrapConfig::default();
+    let clause1 = hari_core::bootstrap_paired_difference(
+        "recency_decay",
+        "ix_unassisted",
+        &clause1_clusters,
+        config,
+    );
+    let cheap = hari_core::bootstrap_paired_difference(
+        "subjective_logic",
+        "recency_decay",
+        &cheap_clusters,
+        config,
+    );
+
+    // §8 clause 2 reads per-arm calibration, which needs each arm to emit
+    // forecasts from its own posterior (#35 §9 item 2). That does not exist, so
+    // the clause is passed `None` and reports `undefined` — never silently
+    // treated as satisfied.
+    let decision = hari_core::apply_kill_keep(clause1.as_ref(), None, provenance);
+
+    if let Some(b) = &clause1 {
+        if b.zero_between_cluster_variance {
+            warn!(
+                "the corpus has zero between-cluster variance ({} distinct delta sequences over \
+                 {} traces) — the interval is a design artifact, not a sampling one (§9.4)",
+                b.distinct_cluster_signatures, b.clusters
+            );
+        }
+    }
+    for line in &decision.rationale {
+        info!("{line}");
+    }
+
+    serde_json::to_writer_pretty(
+        std::io::stdout(),
+        &serde_json::json!({
+            "corpus": summaries,
+            "bootstrap": {
+                "clause1_experimental_vs_unassisted": clause1,
+                "cheap_baseline_sl_vs_experimental": cheap,
+            },
+            "kill_keep": decision,
+        }),
+    )?;
     println!();
     Ok(())
 }
