@@ -11,7 +11,9 @@
 //! cargo populates for integration tests against the crate's binary
 //! target. No extra build step is required.
 
-use hari_core::{Request, ResearchEvent, ResearchTrace, Response, SessionConfig};
+use hari_core::{
+    Request, ResearchEvent, ResearchReplayReport, ResearchTrace, Response, SessionConfig,
+};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -74,12 +76,20 @@ impl ServeChild {
     }
 
     fn recv(&mut self) -> Response {
+        let line = self.recv_raw();
+        serde_json::from_str(&line).unwrap_or_else(|e| {
+            panic!("response not parseable as Response: {e}\nraw line: {line:?}")
+        })
+    }
+
+    /// Read one response line without typing it — used by the wire-shape
+    /// test, which asserts on the JSON that actually crosses the boundary
+    /// rather than on whatever the Rust enum happens to deserialize it to.
+    fn recv_raw(&mut self) -> String {
         let mut line = String::new();
         let n = self.stdout.read_line(&mut line).expect("read response");
         assert!(n > 0, "unexpected EOF on stdout while expecting a response");
-        serde_json::from_str(line.trim_end()).unwrap_or_else(|e| {
-            panic!("response not parseable as Response: {e}\nraw line: {line:?}")
-        })
+        line.trim_end().to_string()
     }
 
     /// Close stdin so the server sees EOF. Used by the unclean-shutdown
@@ -726,6 +736,110 @@ fn serve_operator_status_rejects_non_canonical_now() {
         Response::OperatorStatus { .. } => {}
         other => panic!("expected OperatorStatus after canonical now, got {other:?}"),
     }
+
+    assert!(s.wait().success());
+}
+
+// ---------------------------------------------------------------------------
+// 9. Wire contract: the `closed` reply's JSON is unaffected by the Rust-side
+//    indirection on `final_report`
+// ---------------------------------------------------------------------------
+
+/// `Response::Closed::final_report` is a `Box<ResearchReplayReport>` purely to
+/// keep the enum's variant-size spread under `clippy::large_enum_variant`. The
+/// JSON that crosses the Hari↔IX boundary is the contract (`phase6-design.md`
+/// §3; `clients/ix_reference/hari_client.py` reads `final_report` / `unclean`
+/// off the raw object), so the indirection must be invisible on the wire.
+///
+/// This asserts on the bytes the server actually emitted — not on whatever the
+/// Rust enum deserializes them to — and pins three things:
+///
+///   1. the `closed` object carries exactly `op` / `final_report` / `unclean`,
+///      with `op == "closed"` and `unclean` a JSON bool;
+///   2. `final_report` is the bare report object, byte-identical to
+///      serializing an unboxed [`ResearchReplayReport`] — a `Box` is
+///      serde-transparent, but a newtype or nested-struct indirection would
+///      not be, and would break IX here;
+///   3. re-serializing the parsed `Response` reproduces the emitted JSON
+///      exactly, so the boxed round-trip is a fixpoint.
+#[test]
+fn closed_wire_shape_is_unchanged_by_boxed_final_report() {
+    let trace = load_trace("../../fixtures/ix/cognition_divergence.json");
+    let mut s = ServeChild::spawn();
+
+    s.send(&Request::Open {
+        config: SessionConfig {
+            dimension: trace.dimension,
+            ..SessionConfig::default()
+        },
+    });
+    let _ = s.recv();
+    for event in trace.events.iter() {
+        s.send(&Request::Event {
+            event: event.clone(),
+        });
+        let _ = s.recv();
+    }
+
+    s.send(&Request::Close);
+    let raw = s.recv_raw();
+    let wire: serde_json::Value =
+        serde_json::from_str(&raw).expect("closed line must be a JSON object");
+
+    // 1. Exact key set and value kinds.
+    let obj = wire
+        .as_object()
+        .expect("closed reply must be a JSON object");
+    let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        vec!["final_report", "op", "unclean"],
+        "closed reply's key set is the IX wire contract\nraw line: {raw}"
+    );
+    assert_eq!(
+        obj["op"],
+        serde_json::json!("closed"),
+        "the serde tag for a close reply must stay \"closed\""
+    );
+    assert_eq!(
+        obj["unclean"],
+        serde_json::json!(false),
+        "clean close must serialize unclean as JSON false, not a string or null"
+    );
+    assert!(
+        obj["final_report"].is_object(),
+        "final_report must be the report object itself, not a wrapper or a \
+         nested {{\"final_report\": …}}\nraw line: {raw}"
+    );
+
+    // 2. The wire report is exactly an unboxed ResearchReplayReport — the
+    //    same shape `replay` prints to stdout.
+    let unboxed: ResearchReplayReport = serde_json::from_value(obj["final_report"].clone())
+        .expect("final_report must deserialize as a bare ResearchReplayReport");
+    assert_eq!(
+        serde_json::to_value(&unboxed).expect("report re-serializes"),
+        obj["final_report"],
+        "Box<ResearchReplayReport> must serialize identically to the unboxed report"
+    );
+
+    // 3. Round-tripping through the boxed Rust type is a fixpoint.
+    let typed: Response = serde_json::from_str(&raw).expect("closed line parses as Response");
+    match &typed {
+        Response::Closed {
+            final_report,
+            unclean,
+        } => {
+            assert!(!unclean);
+            assert_eq!(final_report.event_count, trace.events.len());
+        }
+        other => panic!("expected Closed, got {other:?}"),
+    }
+    assert_eq!(
+        serde_json::to_value(&typed).expect("Response re-serializes"),
+        wire,
+        "re-serializing the parsed Closed response must reproduce the emitted JSON exactly"
+    );
 
     assert!(s.wait().success());
 }

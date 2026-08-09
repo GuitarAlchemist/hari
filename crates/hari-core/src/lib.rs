@@ -118,10 +118,15 @@ pub mod unassisted;
 pub use unassisted::replay_unassisted;
 
 pub use paired_eval::{
-    outcome_acted, score_false_acceptances, score_false_rejections, score_paired,
-    score_paired_all_arms, ClaimLabel, ClaimOutcome, DecisionLabel, ExpectedDecision,
-    FalseAcceptanceScore, FalseRejectionScore, PairDefect, PairOutcome, PairSeparation, PairedArm,
-    PairedComparison, PairedFixture, PairedScore,
+    apply_kill_keep, bootstrap_paired_difference, check_corpus, cluster_from_arms,
+    fixture_provenance, outcome_acted, pooling_violation, reconcile_provenance,
+    score_false_acceptances, score_false_rejections, score_paired, score_paired_all_arms,
+    trace_digest, ArmBindingError, BootstrapConfig, CalibrationMargin, ClaimLabel, ClaimOutcome,
+    ClauseStatus, ConditionedAbstention, CorpusDefect, CorpusProvenance, DecisionLabel,
+    ExpectedDecision, FalseAcceptanceScore, FalseRejectionScore, FixtureProvenance,
+    KillKeepDecision, KillKeepVerdict, PairDefect, PairOutcome, PairSeparation, PairedArm,
+    PairedBootstrap, PairedComparison, PairedDelta, PairedFixture, PairedScore, ProvenanceDefect,
+    TraceCluster,
 };
 
 // ---------------------------------------------------------------------------

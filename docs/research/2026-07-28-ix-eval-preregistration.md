@@ -1202,6 +1202,200 @@ establishes is that the driver should not be built in the expectation of a
 different answer on either metric.
 
 
+### 9.8 The §6 aggregator is built — and it changes no outcome
+
+**Amendment (2026-08-09).** §6 described a trace-clustered paired bootstrap in
+the present tense and then corrected itself on 2026-07-30: *"No bootstrap
+aggregator exists anywhere in the workspace."* It was the last missing §6
+prerequisite, and it mattered because §8 applies the kill/keep rule
+*"mechanically to the bootstrap output"* — of which there was none. It now
+exists: `paired_eval::bootstrap_paired_difference`, a pure function taking
+per-trace decision records and returning the interval, the p-value and the dual
+rule, with B = 10,000, resampling **traces** and never decisions, reachable as
+`replay --paired --compare3 --bootstrap`.
+
+**The seed is a constant in the source and is deliberately not settable from the
+command line.** §6 requires a re-run to reproduce the interval exactly; a
+tunable seed would also make the interval *shoppable*, which is the failure mode
+this document exists to prevent. It is `20260728` — this file's date — and is
+echoed into every result so a reader can reproduce the number. The generator is
+a vendored SplitMix64 rather than a crate, so a dependency upgrade cannot move a
+published interval.
+
+**Sequencing, disclosed rather than glossed.** This was built *after* §9.5 and
+§9.7 measured clause 1 at zero. It cannot be claimed blind, and §9.4's account
+of why blindness is unavailable to this author applies here too. What limits the
+damage is that no resampling scheme can move this particular outcome: the
+per-decision difference between the shipped arm and the null baseline is
+**identically zero at every one of the 54 pairs**, so every one of the 10,000
+resamples returns exactly 0.0 and the interval is `[0.0, 0.0]` with p = 1.0. The
+aggregator formalises a zero rather than discovering one.
+
+**Two committed rules are now enforced in code rather than remembered.**
+
+* §9.4's standing rule: `CorpusProvenance::Authored` yields
+  `KillKeepVerdict::WithheldByStandingRule`, whatever the clauses say. A passing
+  dual rule on an authored corpus still produces no verdict — pinned by
+  `an_authored_corpus_withholds_the_verdict_while_still_reporting_the_clauses`.
+* §9.3.2's non-pooling rule: `pooling_violation` refuses a corpus mixing
+  `*-isolation` and `*-task`, which would otherwise launder SL's degenerate
+  always-`Wait` zero into its task result.
+
+**A §7 finding, and it is not the reassuring reading.** §7 requires the report to
+state the realized ICC and effective *n*. On the task corpus, comparing
+`SubjectiveLogic` to the shipped arm, the aggregator returns **ICC = 0, design
+effect = 1, effective n = 54**. That is arithmetically correct and would be badly
+misread as "clustering costs nothing here". The ICC design-effect correction is a
+correction for **between**-trace correlation, and this corpus has none — because
+its six traces are clones (§9.4). The degeneracy is replication *within* the
+design, which the ICC cannot see at all. The output therefore carries an explicit
+`effective_n_overstates` flag, set whenever between-cluster variance is zero, and
+pinned by `a_corpus_of_clones_flags_that_its_effective_n_overstates`. §7's
+instruction to report the realized ICC stands; the number it produces on a
+degenerate corpus is not a measure of that corpus's information content.
+
+**Nothing in §5–§8 changed, and no eval outcome was newly inspected.** Every
+number the aggregator produces reproduces §9.3.3, §9.5 and §9.7 exactly. §8
+clause 2 remains `undefined` — per-arm calibration still requires each arm to
+emit forecasts from its own posterior (§9 item 2) — and an undefined clause
+cannot satisfy KEEP, so **KEEP is unreachable on every instrument that exists**.
+The report is `2026-08-09-ix-eval-paired-bootstrap-report.md`.
+
+### 9.9 Item 4 lands — and §7's pre-unblinding obligation is disclosed as unfulfilled
+
+**Amendment (2026-08-09, after independent review of the §9.8 branch.)** Nothing
+here changes a published number. §9.3.3, §9.5, §9.7, §9.8 and the report's §3–§5
+stand exactly as recorded.
+
+**The driver exists.** `clients/ix_reference/paired_driver.py` draws traces from
+a declared generative spec (`flaky-vs-real/v1`, one dict in one file), writes
+paired fixtures, and hands the corpus to the existing
+`replay --paired --compare3 --bootstrap` boundary in one command — user story 12,
+and §9.4's item 4. It generates rather than records a live IX session, which is
+the route §9.4's own 2026-07-30 correction names: *"A pre-registered generative
+distribution over decision-relevant parameters, mechanically sampled, would give
+the bootstrap a population in exactly the same conditional sense this section
+grants the IX driver."*
+
+**Provenance is now a fact about the corpus.** §9.4 said the standing rule is
+*"enforced rather than remembered"*. As first built it was enforced against
+forgetfulness only: `--corpus recorded` over the six hand-authored task fixtures
+was accepted and printed `provenance: driver_recorded`, with nothing inspecting
+the fixture. Each generated fixture now carries a `provenance` stamp including a
+digest of its trace; `hari-core` recomputes the digest and refuses a mismatch,
+and refuses `--corpus recorded` over unstamped fixtures outright. This is
+tamper-evidence, not tamper-proofing — the failure mode it closes is the one that
+actually happened, a corpus declared recorded because the operator believed it
+was.
+
+**§9.6 is confirmed on recorded data, not merely predicted.** On the driver
+corpus the shipped arm and the null baseline agree at **every** decision:
+difference 0.0000, CI [0.0000, 0.0000], p = 1.0000, `every_delta_is_zero`. Clause
+1 fails, clause 2 is undefined, and the mechanical verdict is **KILL**. §9.6
+pinned this over 400 generated traces before the driver existed; the driver
+produced exactly the corpus §9.6 said it would.
+
+**What the driver did change.** The cheap comparison on the driver corpus is the
+first non-degenerate one in this document's history: 3 distinct cluster
+signatures, realized **ICC 0.7222**, design effect 2.4444, effective *n*
+**7.36** against 18 raw pairs. §7's clustering correction finally bites, which is
+what §7 was written for and what no authored corpus could ever show.
+
+**What the driver's pairing is, and what it is not — a construct-validity
+disclosure.** The halves of every driver pair are separated **structurally**, not
+by the injected trigger: the act half is a corroborated `belief_update` carrying
+a proposition, and the abstain half is a `goal_update` carrying none. That is
+§9.3's **G2 commitability** ground verbatim — *"an event carrying no
+proposition… there is no claim to commit to"* — and it is the ground of all 18
+pairs, where the authored corpora at least mixed G1/G2/G3 in equal thirds.
+Consequently `SPEC`'s `real_regression_rate_in_16ths` does **not** reach the
+primary paired metric. Regenerating the whole corpus at 0 (never a real
+regression) and at 16 (always one) leaves clause 1 at 0.0000, CI
+[0.0000, 0.0000], p 1.0000; the cheap comparison at −0.7778, CI
+[−1.0000, −0.4444], p 0.0002; and the verdict at **KILL** — every primary figure
+identical to the committed rate of 7. Only §5.3's secondary false-acceptance and
+false-rejection counts move with it. The mechanism is that the
+`injected: regression|variance` evidence key is decorative under §9.3.2 (no arm
+reads evidence content, and `.len()` is 3 either way), `asserted` is drawn
+independently of `real`, and the act/abstain labels are structural rather than
+derived from `real`. The visible consequence in the committed fixture: pair
+`accuracy-regression-01` records `injected: "variance"` and a claim outcome of
+`"withdrawn"`, and its act half is still labeled `expect: "act"` — so the
+primary metric rewards acting on it while §5.3 charges the same decision as a
+false acceptance, and `IX-unassisted` scores a perfect 1.0000 on a corpus that is
+trivially separable by payload type.
+
+**Adding traces does not repair this, and the power disclosure below must not be
+read as though it did.** Both constraints are real, but they are different
+constraints with different remedies. A corpus of any size drawn from this `SPEC`
+would still measure G2 commitability rather than §2's flaky-vs-real
+discrimination — at effective *n* far above 7, and still construct-invalid for
+the pre-registered task. **Construct validity, not sample size, is the first
+thing the distribution ratification named in §9.4 must fix.** The repair is to
+make the abstain half a should-abstain *claim* — an uncorroborated
+`belief_update` whose perturbation was drawn as variance — so that the injected
+trigger becomes the thing that separates the halves and §2's task is measured on
+its own terms. That is a corpus redesign and an owner scoping call; it is
+**deliberately left to a separate future slice** and is not attempted here. Until
+it is taken, this remains the first-named reason no §8 verdict on a driver corpus
+drawn from `flaky-vs-real/v1` may be read as a result.
+
+**§7's pre-unblinding obligation was not met, and this is the disclosure.** §7
+commits: *"the ICC will be estimated from the first recorded traces, and the MDE
+recomputed and committed as an amendment (§10) before any outcome is
+inspected."* No such amendment was made before §9.8's numbers were inspected.
+
+* Until this amendment there were **no recorded traces**, so the obligation had
+  nothing to attach to — and §9.4's standing rule independently barred every §6
+  and §8 reading of the authored corpora, which is why no verdict was ever
+  exposed to the gap. That is a defence of the *outcome*, not of the *record*:
+  §7 does not say the obligation is conditional, and §9.8 was where it should
+  have been said. It is said here.
+* The obligation **cannot now be met blind for this branch**, and claiming
+  otherwise would be worse than the omission. The driver was written after §9.5,
+  §9.7 and §9.8 measured clause 1 at zero, and its corpus was generated and read
+  in the same sitting. §9.4's account of why blindness is unavailable to this
+  author applies unchanged.
+* **The recomputed MDE, disclosed as post-hoc.** At effective *n* ≈ 7 for the
+  discriminating comparison, the detectable difference in Paired Accuracy is far
+  above §7's 0.20 threshold — §7's table already puts ~31 effective decisions at
+  the edge of usefulness. §7's own instruction therefore governs: *"add traces or
+  abandon the run, not report an underpowered null as evidence of
+  equivalence."* **Consequence, adopted here: no §8 verdict computed on the
+  current driver corpus may be read as a result.** The KILL it produces
+  demonstrates that the rule is mechanically reachable; it does not settle §8.
+* The obligation itself **survives unspent**. Before any driver-recorded corpus
+  is used for a verdict, the sequence §7 specifies must actually run: fix the
+  corpus size, estimate ICC from it, recompute the MDE, commit it as a §10
+  amendment, and only then inspect outcomes. The distribution ratification §9.4
+  names as the outstanding owner call is the natural moment for it.
+
+**§7's reporting obligation, and where it is silently unmeetable.** §7 also
+requires the report to state the achieved effective *n* and realized ICC. For the
+**primary** comparison — clause 1 — they are undefined on every corpus measured
+so far, because all deltas are zero and the one-way ANOVA's denominator vanishes;
+the three fields are `skip_serializing_if` and so are absent from the JSON rather
+than reported as zero. The first cut of the report stated them only for the
+comparison that has them (SL vs the shipped arm) without saying why the primary
+carried none. The report now says so at §3.1.
+
+**§11's falsifiers, for completeness.** §11's first two clauses are numerically
+met on both authored corpora — `RecencyDecay` scores 0.3333 Paired Accuracy
+(≤ 50%) and shows no significant gain over `IX-unassisted` under the dual rule.
+§9.4's standing rule bars reading that as falsification on an authored corpus.
+Recorded here because the silence ran *against* the substrate and should not be
+mistaken for an omission of an inconvenient fact.
+
+**Conditioned Abstention Rate is implemented** (§5.2's fourth metric, PRD story
+11), per policy, at the replay boundary. One property is worth pinning in this
+document because it constrains how the metric may be reported: under §5.1's
+adopted taxonomy, abstention rate *conditioned on abstaining being correct* is
+numerically identical to Abstain Accuracy. The two may never be presented as
+independent corroboration. The metric's content over §5.2's existing three is the
+unwarranted-abstention leg and the discrimination between the legs — which is
+what exposes `SubjectiveLogic`'s always-`Wait` degeneracy on the isolation corpus
+as a 0.0000 discrimination behind a 1.0000 Abstain Accuracy.
+
 ## 10. Amendment policy
 
 This document may be amended **only** by a git commit that (a) states what
