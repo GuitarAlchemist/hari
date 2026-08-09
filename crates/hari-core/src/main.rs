@@ -1376,7 +1376,7 @@ fn handle_request(session: &mut Option<StreamingSession>, req: Request) -> Respo
             s.mark_closed();
             let final_report = s.snapshot_report();
             Response::Closed {
-                final_report,
+                final_report: Box::new(final_report),
                 unclean: false,
             }
         }
@@ -1456,7 +1456,7 @@ fn write_unclean_close<W: Write>(writer: &mut W, mut session: StreamingSession) 
     session.mark_closed();
     let final_report = session.snapshot_report();
     let resp = Response::Closed {
-        final_report,
+        final_report: Box::new(final_report),
         unclean: true,
     };
     write_response(writer, &resp)

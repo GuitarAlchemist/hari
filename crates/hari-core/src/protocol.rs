@@ -234,7 +234,12 @@ pub enum Response {
     /// Reply to `close`. Final report has the same shape `replay`
     /// produces today.
     Closed {
-        final_report: ResearchReplayReport,
+        /// Boxed only to keep `Response`'s variant-size spread inside
+        /// `clippy::large_enum_variant` — `Box<T>` is serde-transparent,
+        /// so the `closed` reply's JSON is byte-identical to the
+        /// unboxed form. Pinned by
+        /// `closed_wire_shape_is_unchanged_by_boxed_final_report`.
+        final_report: Box<ResearchReplayReport>,
         /// True when the session was finalized after stdin EOF (or some
         /// other mid-flight termination). Replay-parity files for unclean
         /// sessions still parse — replay applies events up to the last
