@@ -360,7 +360,7 @@ impl ReliabilityBin {
 ///
 /// `expected_calibration_error` is the scored-count-weighted mean of the
 /// per-bin `|predicted − observed|` gaps — the standard ECE. It is the quantity
-/// `probe_reliability_diagram_bound_holds_at_the_replay_boundary` binds.
+/// `probe_reliability_diagram_bound_holds_over_a_synthetic_ledger` binds.
 ///
 /// # What it does not measure
 ///
@@ -369,6 +369,11 @@ impl ReliabilityBin {
 /// clause 2 stays `undefined` and nothing here can change that. This binds the
 /// calibration **instrument** against silent degradation; it does not compare
 /// policies.
+///
+/// Nothing in `src/` consumes this yet: [`crate::ReplayCalibration`] carries no
+/// diagram, and neither `with_calibration` nor the `forecast calibration`
+/// subcommand emits one. It is reached only from the `probe_*` suite, so it is
+/// an instrument bound in tests rather than a metric reported at a boundary.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ReliabilityDiagram {
     pub bins: Vec<ReliabilityBin>,

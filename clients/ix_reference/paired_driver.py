@@ -82,7 +82,10 @@ SPEC = {
     "corroborations": [1, 2, 3],
     "asserted": ["Probable", "True", "Doubtful"],
     # Whether the injected perturbation was a real regression. Ground truth by
-    # construction — this is the value the labels are derived from.
+    # construction — but only for each pair's *claim outcome*, which feeds §5.3's
+    # secondary counts. The act/abstain labels are structural (§9.3's G2 ground)
+    # and do not read it, so this parameter does not move the primary paired
+    # metric. See `generate_trace` and pre-registration §9.9.
     "real_regression_rate_in_16ths": 7,
     "themes": ["accuracy", "cache", "cost", "latency", "memory", "throughput"],
     "pairs_per_trace": 3,
@@ -157,12 +160,21 @@ def belief_update(cycle: int, source: str, proposition: str, value: str, evidenc
 def generate_trace(theme: str, rng: SplitMix64) -> tuple[dict, list, list]:
     """One trace plus its ground truth, drawn from ``SPEC``.
 
-    Each pair is a should-act / should-abstain couple differing by one injected
-    trigger, per §2 and user story 2. The act half asserts a corroborated
-    regression; the abstain half is the same benchmark with the perturbation
-    drawn as pure variance and no corroboration, expressed as a payload that
-    carries no proposition — the shape §9.3 established is the only one every
-    arm treats as a non-decision.
+    Each pair is a should-act / should-abstain couple. The halves are separated
+    structurally, not by the injected trigger. The act half asserts a
+    corroborated regression; the abstain half carries no proposition at all
+    (`goal_update`) — §9.3's G2 "commitability" ground, the shape every arm
+    treats as a non-decision. It draws no `real` and no corroboration, so
+    ``SPEC["real_regression_rate_in_16ths"]`` reaches only the claim outcomes
+    feeding §5.3's secondary counts and never the primary paired metric:
+    regenerating this corpus at 0 or 16 sixteenths leaves clause 1, the cheap
+    comparison and the verdict identical.
+
+    That is a construct-validity limit on this corpus, not a power limit, and
+    adding traces does not repair it — see pre-registration §9.9 and report §6
+    limit 7. Making the abstain half a should-abstain *claim* (an uncorroborated
+    ``belief_update`` whose perturbation was drawn as variance) is the repair,
+    and is an owner scoping call left to a separate future slice.
     """
     events: list[dict] = []
     labels: list[dict] = []

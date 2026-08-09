@@ -91,10 +91,22 @@ cargo build --release -p hari-core
   fixtures/ix/paired/{accuracy,cache,cost,latency,memory,throughput}-isolation.json
 ```
 
-Both default to `--corpus authored`, which is the conservative reading: every
-fixture committed in this repo is authored, and an authored corpus never yields
-a verdict. `--corpus recorded` exists for the §9 item 4 driver and has no input
-to consume today.
+Neither command passes `--corpus`, and neither needs to. **Provenance is derived
+from the fixtures**, not declared on the command line: each fixture's driver
+stamp plus a trace digest `hari-core` recomputes and refuses on mismatch.
+`--corpus` is an optional assertion checked against what was derived — asserting
+`recorded` over unstamped fixtures is refused, and asserting `authored` over
+stamped ones downgrades to `authored` and withholds. The twelve fixtures above
+carry no stamp, so both corpora derive as `authored`, and an authored corpus
+never yields a verdict (§9.4).
+
+Driver-recorded fixtures do exist. One is committed as a worked example —
+`fixtures/ix/paired/driver/accuracy-task.json`, stamped
+`{driver, spec, seed, trace_digest}` and derived as `driver_recorded` — and the
+six-trace driver corpus it belongs to is regenerated on demand by
+`clients/ix_reference/paired_driver.py` (§7). That corpus is never pooled with
+either corpus above, and §6 limit 7 records why no §8 verdict computed on it may
+be read as a result.
 
 ## 3. Results
 
@@ -302,12 +314,39 @@ effective n" was written to prevent while inadvertently inviting.
    corpus; it is nowhere near §7's planned 100–200 decisions, and §7's own
    instruction bars reading an underpowered null as equivalence. Its `SPEC` is a
    candidate distribution, not a ratified one.
-8. **The reliability-diagram probe binds the calibration instrument, not the
-   arms.** Story 15 is met at the forecast/report boundary
-   (`probe_reliability_diagram_bound_holds_at_the_replay_boundary`, ECE ≤ 0.05,
-   with a companion test showing a 0.20 confidence shift breaking it). It does
-   **not** touch §8 clause 2, which needs each arm to emit forecasts from its own
-   posterior (§9 item 2) and stays `undefined`.
+
+   **Power is not the binding constraint, and this is the more serious half.**
+   The driver's pairing is **structural**: every one of its 18 pairs is §9.3's
+   **G2 commitability** ground — an act half carrying a corroborated proposition
+   against an abstain half (`goal_update`) carrying none — where the authored
+   corpora at least mixed G1/G2/G3. `SPEC`'s `real_regression_rate_in_16ths`
+   consequently reaches only §5.3's secondary false-acceptance and
+   false-rejection counts and **not the primary paired metric**: regenerating the
+   corpus at 0 and at 16 sixteenths leaves clause 1 at 0.0000 [0.0000, 0.0000]
+   p 1.0000, the cheap comparison at −0.7778 [−1.0000, −0.4444], and the verdict
+   at KILL — identical to the committed 7. The corpus is trivially separable by
+   payload type, which is why `IX-unassisted` scores a perfect 1.0000 on it. So
+   it does not measure flaky-vs-real discrimination at all, and **adding traces
+   cannot repair that**: a corpus of any size drawn from this `SPEC` would still
+   measure commitability, at effective *n* far above 7 and still construct-invalid
+   for §2's task. Construct validity, not sample size, is the first thing the
+   distribution ratification of §9.4 must fix. Rebuilding the abstain half as a
+   should-abstain *claim*, so that the injected trigger is what separates the
+   halves, is an owner scoping call left to a separate future slice and is not
+   attempted here (§9.9).
+8. **The reliability-diagram probe binds a pure function over a synthetic
+   ledger, not a boundary.** Story 15's literal ask is met — a `probe_*`
+   regression bound with a working negative control
+   (`probe_reliability_diagram_bound_holds_over_a_synthetic_ledger`, ECE ≤ 0.05,
+   with a companion test showing a 0.20 confidence shift breaking it) — and that
+   is the whole of what it binds. The probe builds a `Vec<ForecastRecord>` in
+   memory and calls `forecast::reliability_diagram` directly; it does **not**
+   traverse `ReplayCalibration`, `with_calibration`, the on-disk forecast ledger,
+   or the report/CLI boundary. `ReplayCalibration` carries no diagram, so there
+   is no such boundary to reach today, and emptying `with_calibration` leaves
+   this probe green — the two `lib` tests pinning that wiring are what catch it.
+   It also does **not** touch §8 clause 2, which needs each arm to emit forecasts
+   from its own posterior (§9 item 2) and stays `undefined`.
 
 ## 7. What remains of #35
 
@@ -337,9 +376,11 @@ story 14 asks for.
 2. **§7's pre-unblinding MDE obligation is unfulfilled and now diagnosable**
    (§9.9). The driver corpus's realized effective *n* is ~7, far under §7's
    planned 100–200, so §7's own instruction — *"add traces or abandon the run"* —
-   applies before any driver-recorded verdict may be read as a result.
-
-Also outstanding, and deliberately not attempted here: the per-arm forecast
+   applies before any driver-recorded verdict may be read as a result. **Adding
+   traces is necessary and not sufficient**, and it is the second thing to fix,
+   not the first: the current pairing is structural G2 commitability, the
+   primary metric is invariant to `SPEC`'s ground-truth parameter, and no corpus
+   size repairs that (§6 limit 7, §9.9).
 
 Also outstanding, and deliberately not attempted here: the per-arm forecast
 emission hook (§9 item 2), whose two design constraints — resolution must not be

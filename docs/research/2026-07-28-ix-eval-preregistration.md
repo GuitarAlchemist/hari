@@ -1301,6 +1301,45 @@ signatures, realized **ICC 0.7222**, design effect 2.4444, effective *n*
 **7.36** against 18 raw pairs. §7's clustering correction finally bites, which is
 what §7 was written for and what no authored corpus could ever show.
 
+**What the driver's pairing is, and what it is not — a construct-validity
+disclosure.** The halves of every driver pair are separated **structurally**, not
+by the injected trigger: the act half is a corroborated `belief_update` carrying
+a proposition, and the abstain half is a `goal_update` carrying none. That is
+§9.3's **G2 commitability** ground verbatim — *"an event carrying no
+proposition… there is no claim to commit to"* — and it is the ground of all 18
+pairs, where the authored corpora at least mixed G1/G2/G3 in equal thirds.
+Consequently `SPEC`'s `real_regression_rate_in_16ths` does **not** reach the
+primary paired metric. Regenerating the whole corpus at 0 (never a real
+regression) and at 16 (always one) leaves clause 1 at 0.0000, CI
+[0.0000, 0.0000], p 1.0000; the cheap comparison at −0.7778, CI
+[−1.0000, −0.4444], p 0.0002; and the verdict at **KILL** — every primary figure
+identical to the committed rate of 7. Only §5.3's secondary false-acceptance and
+false-rejection counts move with it. The mechanism is that the
+`injected: regression|variance` evidence key is decorative under §9.3.2 (no arm
+reads evidence content, and `.len()` is 3 either way), `asserted` is drawn
+independently of `real`, and the act/abstain labels are structural rather than
+derived from `real`. The visible consequence in the committed fixture: pair
+`accuracy-regression-01` records `injected: "variance"` and a claim outcome of
+`"withdrawn"`, and its act half is still labeled `expect: "act"` — so the
+primary metric rewards acting on it while §5.3 charges the same decision as a
+false acceptance, and `IX-unassisted` scores a perfect 1.0000 on a corpus that is
+trivially separable by payload type.
+
+**Adding traces does not repair this, and the power disclosure below must not be
+read as though it did.** Both constraints are real, but they are different
+constraints with different remedies. A corpus of any size drawn from this `SPEC`
+would still measure G2 commitability rather than §2's flaky-vs-real
+discrimination — at effective *n* far above 7, and still construct-invalid for
+the pre-registered task. **Construct validity, not sample size, is the first
+thing the distribution ratification named in §9.4 must fix.** The repair is to
+make the abstain half a should-abstain *claim* — an uncorroborated
+`belief_update` whose perturbation was drawn as variance — so that the injected
+trigger becomes the thing that separates the halves and §2's task is measured on
+its own terms. That is a corpus redesign and an owner scoping call; it is
+**deliberately left to a separate future slice** and is not attempted here. Until
+it is taken, this remains the first-named reason no §8 verdict on a driver corpus
+drawn from `flaky-vs-real/v1` may be read as a result.
+
 **§7's pre-unblinding obligation was not met, and this is the disclosure.** §7
 commits: *"the ICC will be estimated from the first recorded traces, and the MDE
 recomputed and committed as an amendment (§10) before any outcome is

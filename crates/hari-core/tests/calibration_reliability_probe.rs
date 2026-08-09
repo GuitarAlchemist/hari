@@ -12,8 +12,13 @@
 //!
 //! # What this probe does and does not bind
 //!
-//! It binds the **instrument**: `forecast::reliability_diagram` and the ledger
-//! it reads, at the boundary `ResearchReplayReport::with_calibration` consumes.
+//! It binds the **instrument as a pure function**: `forecast::reliability_diagram`
+//! over a synthetic `Vec<ForecastRecord>` built here in memory. It does **not**
+//! traverse `ReplayCalibration`, `ResearchReplayReport::with_calibration`, the
+//! on-disk forecast ledger, or the report/CLI boundary — `ReplayCalibration`
+//! carries no diagram, so there is no such boundary to reach today. Emptying
+//! `with_calibration` leaves every test in this file green; the two `lib` tests
+//! that pin that wiring are what catch it.
 //!
 //! It does **not** compare policies, and it does not touch #35 §8 clause 2.
 //! Clause 2 needs each arm to emit forecasts from its own posterior (§9 item 2),
@@ -79,7 +84,7 @@ fn well_calibrated_ledger() -> Vec<ForecastRecord> {
 const MAX_EXPECTED_CALIBRATION_ERROR: f64 = 0.05;
 
 #[test]
-fn probe_reliability_diagram_bound_holds_at_the_replay_boundary() {
+fn probe_reliability_diagram_bound_holds_over_a_synthetic_ledger() {
     let ledger = well_calibrated_ledger();
     let diagram = reliability_diagram(&ledger, 10);
 
