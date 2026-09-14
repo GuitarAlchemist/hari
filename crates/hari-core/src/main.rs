@@ -268,6 +268,15 @@ fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 field: flag(args, "--field").ok_or(usage)?.to_string(),
                 predicate: flag(args, "--predicate").ok_or(usage)?.to_string(),
             };
+            if !forecast::is_scorable_predicate(&observable.predicate) {
+                return Err(format!(
+                    "--predicate {:?} is not mechanically scorable: resolve only \
+                     understands `== <literal>` or `!= <literal>`, so this \
+                     forecast could only ever resolve void",
+                    observable.predicate
+                )
+                .into());
+            }
             let horizon = flag(args, "--horizon").ok_or(usage)?;
             if !forecast::is_canonical_utc(horizon) {
                 return Err(format!(

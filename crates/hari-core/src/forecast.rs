@@ -186,6 +186,14 @@ pub fn eval_predicate(predicate: &str, value: &Value) -> Option<bool> {
     Some((lhs == rhs.trim()) != negated)
 }
 
+/// Whether `resolve` can score `predicate` at all, decided by the same
+/// operator parse `eval_predicate` uses so the two cannot drift. `emit`
+/// refuses anything else: an unscorable predicate would otherwise surface
+/// only at horizon, as a forecast that can do nothing but resolve `void`.
+pub fn is_scorable_predicate(predicate: &str) -> bool {
+    eval_predicate(predicate, &Value::Null).is_some()
+}
+
 /// Score one record against the artifact content (or its absence).
 /// Unreadable artifact, missing field, or unscorable predicate → `void`.
 pub fn resolve(record: &ForecastRecord, artifact: Option<&Value>, resolved_at: &str) -> Resolution {
@@ -617,6 +625,17 @@ mod tests {
         // No operator, or a non-scalar field: not mechanically scorable.
         assert_eq!(eval_predicate("green", &json!("green")), None);
         assert_eq!(eval_predicate("== x", &json!(["x"])), None);
+    }
+
+    #[test]
+    fn scorable_predicate_is_exactly_the_resolver_grammar() {
+        assert!(is_scorable_predicate("== green"));
+        assert!(is_scorable_predicate("  != 3"));
+        // The shapes the 2026-07-20 forecasts used: resolve can only void them.
+        assert!(!is_scorable_predicate("< 4"));
+        assert!(!is_scorable_predicate(">= 2026-08-01"));
+        assert!(!is_scorable_predicate("green"));
+        assert!(!is_scorable_predicate(""));
     }
 
     #[test]
