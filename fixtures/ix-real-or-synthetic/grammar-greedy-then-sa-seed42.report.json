@@ -1,0 +1,79 @@
+{
+  "schema": "hari/ix-autoresearch-run-report/v0.1",
+  "runs": [
+    {
+      "run_id": "01a0a000-8b9a-7367-b427-d4c2ffc92dd5",
+      "target": "ix_autoresearch::target_grammar::GrammarTarget",
+      "strategy": {
+        "kind": "greedy"
+      },
+      "seed": 42,
+      "iterations": 100,
+      "ix_accepted": 5,
+      "complete": true
+    },
+    {
+      "run_id": "01a0a000-8c18-7321-93b5-8aeea52e332c",
+      "target": "ix_autoresearch::target_grammar::GrammarTarget",
+      "strategy": {
+        "cooling_rate": 0.95,
+        "initial_temperature": 0.02623712817360514,
+        "kind": "simulated_annealing"
+      },
+      "seed": 42,
+      "iterations": 100,
+      "ix_accepted": 13,
+      "complete": true
+    }
+  ],
+  "claims": 200,
+  "distinct_propositions": 197,
+  "repeated_propositions": 3,
+  "conflicting_propositions": 0,
+  "label_rule": "improved := reward > reward of the incumbent before this iteration (previous iteration's previous_hash); iteration 0 and errored iterations unlabeled. Candidate rule, not pre-registered.",
+  "arms": [
+    {
+      "arm": "ix_policy",
+      "endorse": 18,
+      "reject": 182,
+      "withhold": 0,
+      "differs_from_ix_policy": 0,
+      "graded": 198,
+      "false_endorsements": 2,
+      "missed_improvements": 0
+    },
+    {
+      "arm": "ix_unassisted",
+      "endorse": 18,
+      "reject": 182,
+      "withhold": 0,
+      "differs_from_ix_policy": 0,
+      "graded": 198,
+      "false_endorsements": 2,
+      "missed_improvements": 0,
+      "contradictory_final_beliefs": 0
+    },
+    {
+      "arm": "recency_decay",
+      "endorse": 18,
+      "reject": 182,
+      "withhold": 0,
+      "differs_from_ix_policy": 0,
+      "graded": 198,
+      "false_endorsements": 2,
+      "missed_improvements": 0,
+      "contradictory_final_beliefs": 0
+    },
+    {
+      "arm": "subjective_logic",
+      "endorse": 0,
+      "reject": 0,
+      "withhold": 200,
+      "differs_from_ix_policy": 200,
+      "graded": 198,
+      "false_endorsements": 0,
+      "missed_improvements": 14,
+      "contradictory_final_beliefs": 0
+    }
+  ]
+}
