@@ -10,15 +10,29 @@
 //! Recorded logs, not live runs: pairing needs one recording replayed under
 //! every arm (pre-registration `2026-07-28` §3). The projected events are
 //! ordinary `ResearchEvent`s, so the same stream also drives the Phase-6
-//! `serve` session — `stream_parity` in the tests pins that the two paths agree.
+//! `serve` session — `projected_stream_through_a_serve_session_matches_batch_replay`
+//! in the tests pins that the two paths agree.
 //!
 //! # Projection (SCHEMA.md layer 2, as Hari reads it)
 //!
 //! One `iteration` line becomes one `experiment_result`:
 //!
-//! * `proposition` — `{target}/config-{hash12}-is-an-improvement`, where
-//!   `target` is the module segment of `run_start.target`
-//!   (`ix_autoresearch::target_grammar::GrammarTarget` → `target_grammar`).
+//! * `proposition` —
+//!   `{target}/config-{hash12}-is-an-improvement-over-{incumbent12}`, where
+//!   `target` is `run_start.target` verbatim and `incumbent12` is the config
+//!   the candidate was judged against: the previous iteration line's
+//!   `previous_hash` (the post-decision incumbent), or `baseline` for a log's
+//!   first iteration.
+//!
+//!   The incumbent is part of the identity because "is an improvement" is
+//!   relative. Without it, a Greedy re-evaluation of a config once the
+//!   incumbent has moved to it is *correctly* rejected, yet reads as the same
+//!   proposition as its earlier acceptance and would merge into a spurious
+//!   `Contradictory`. With it, two observations share a proposition only when
+//!   the same config was judged against the same incumbent, so a conflict
+//!   needs the evidence itself to disagree — which on a deterministic target
+//!   under Greedy it cannot. (Under SA or random search `accepted` is not an
+//!   improvement test, so a conflict there reflects the accept rule.)
 //! * `value` — `Probable` when IX accepted, `Doubtful` when it rejected,
 //!   `Unknown` when the evaluation errored. SCHEMA.md pegs an errored line at
 //!   confidence 0.10; Hari reads a failed evaluation as *no evidence* about the
@@ -144,6 +158,12 @@ pub fn parse_log(raw: &str) -> Result<IxRun, IxLogError> {
         }
         match v.get("event").and_then(Value::as_str) {
             Some("run_start") => {
+                // SCHEMA.md: exactly one run_start per log. Replacing the run
+                // would silently drop every iteration read so far (e.g. two
+                // logs concatenated with `cat >>`).
+                if run.is_some() {
+                    return Err(shape("second run_start in one log"));
+                }
                 let field = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
                 run = Some(IxRun {
                     run_id: field("run_id").ok_or_else(|| shape("run_start without run_id"))?,
@@ -157,10 +177,22 @@ pub fn parse_log(raw: &str) -> Result<IxRun, IxLogError> {
             Some("iteration") => {
                 let it: IxIteration =
                     serde_json::from_value(v.clone()).map_err(|e| shape(&e.to_string()))?;
-                run.as_mut()
-                    .ok_or(IxLogError::MissingRunStart)?
-                    .iterations
-                    .push(it);
+                let run = run.as_mut().ok_or(IxLogError::MissingRunStart)?;
+                // Numbering is contiguous from 0, including across
+                // `resume_experiment`, which continues at last + 1 — so a gap
+                // is a lost line, not a resumed run.
+                let expected = run.iterations.len() as u64;
+                if it.iteration != expected {
+                    return Err(shape(&format!(
+                        "iteration {} where {expected} was expected: a line is missing",
+                        it.iteration
+                    )));
+                }
+                // An iteration after run_complete is a resume appending to the
+                // same log; the run is complete again only once its own
+                // run_complete lands.
+                run.complete = false;
+                run.iterations.push(it);
             }
             Some("run_complete") => {
                 run.as_mut().ok_or(IxLogError::MissingRunStart)?.complete = true
@@ -171,24 +203,35 @@ pub fn parse_log(raw: &str) -> Result<IxRun, IxLogError> {
     run.ok_or(IxLogError::MissingRunStart)
 }
 
-/// `ix_autoresearch::target_grammar::GrammarTarget` → `target_grammar`.
-fn target_slug(target: &str) -> &str {
-    let segments: Vec<&str> = target.split("::").collect();
-    if segments.len() >= 2 {
-        segments[segments.len() - 2]
-    } else {
-        target
-    }
+fn short_hash(config_hash: &str) -> String {
+    config_hash
+        .strip_prefix("autoresearch:")
+        .unwrap_or(config_hash)
+        .chars()
+        .take(12)
+        .collect()
 }
 
-/// The proposition an iteration asserts about its candidate config.
+/// The proposition an iteration asserts: its candidate config improves on the
+/// incumbent it was judged against (`None` = the run's baseline).
 #[must_use]
-pub fn claim_for(target: &str, config_hash: &str) -> String {
-    let hex = config_hash
-        .strip_prefix("autoresearch:")
-        .unwrap_or(config_hash);
-    let short: String = hex.chars().take(12).collect();
-    format!("{}/config-{short}-is-an-improvement", target_slug(target))
+pub fn claim_for(target: &str, config_hash: &str, incumbent: Option<&str>) -> String {
+    let over = incumbent.map_or_else(|| "baseline".to_string(), short_hash);
+    format!(
+        "{target}/config-{}-is-an-improvement-over-{over}",
+        short_hash(config_hash)
+    )
+}
+
+/// The incumbent each iteration was judged against: the previous line's
+/// post-decision `previous_hash`, `None` for the first line.
+#[must_use]
+pub fn incumbents(run: &IxRun) -> Vec<Option<&str>> {
+    let mut incumbent: Option<&str> = None;
+    run.iterations
+        .iter()
+        .map(|it| std::mem::replace(&mut incumbent, it.previous_hash.as_deref()))
+        .collect()
 }
 
 fn asserted_value(it: &IxIteration) -> HexValue {
@@ -204,7 +247,7 @@ fn asserted_value(it: &IxIteration) -> HexValue {
 pub fn project(runs: &[IxRun]) -> ResearchTrace {
     let mut events = Vec::new();
     for run in runs {
-        for it in &run.iterations {
+        for (it, incumbent) in run.iterations.iter().zip(incumbents(run)) {
             let mut evidence = BTreeMap::new();
             evidence.insert("run_id".to_string(), Value::from(run.run_id.clone()));
             evidence.insert("iteration".to_string(), Value::from(it.iteration));
@@ -229,7 +272,7 @@ pub fn project(runs: &[IxRun]) -> ResearchTrace {
                 cycle: events.len() as u64 + 1,
                 source: format!("ix-autoresearch/{}", run.run_id),
                 payload: ResearchEventPayload::ExperimentResult {
-                    proposition: claim_for(&run.target, &it.config_hash),
+                    proposition: claim_for(&run.target, &it.config_hash, incumbent),
                     value: asserted_value(it),
                     evidence,
                 },
@@ -239,30 +282,31 @@ pub fn project(runs: &[IxRun]) -> ResearchTrace {
     ResearchTrace::from(events)
 }
 
-/// Candidate ground truth for one iteration: did the candidate's reward beat
-/// the incumbent it was proposed against?
+/// Descriptive label for one iteration: did the candidate's reward beat the
+/// reward of the incumbent it was judged against (see [`incumbents`])?
 ///
-/// The incumbent before iteration *i* is the config named by iteration *i−1*'s
-/// `previous_hash` (the post-decision incumbent). Iteration 0 of a run is
-/// unlabeled — its incumbent is the baseline, whose reward the log does not
-/// carry — and so is any errored iteration. Derived mechanically from recorded
-/// rewards, never from any arm's output, and never transmitted to Hari.
+/// The incumbent's reward is its most recent evaluation *before* this line, so
+/// a re-evaluated config is compared against what was known at the time.
+/// Unlabeled: a log's first iteration (the baseline's reward is not logged) and
+/// any iteration without a reward on either side. Derived from recorded rewards,
+/// never from any arm's output, and never transmitted to Hari.
+///
+/// This is IX Greedy's own accept rule (`candidate_reward > prev_reward`), so on
+/// an error-free Greedy run `ix_policy` agrees with it by construction.
 #[must_use]
 pub fn improvement_labels(run: &IxRun) -> Vec<Option<bool>> {
-    let rewards: BTreeMap<&str, f64> = run
-        .iterations
-        .iter()
-        .filter_map(|it| it.reward.map(|r| (it.config_hash.as_str(), r)))
-        .collect();
-    let mut incumbent: Option<&str> = None;
+    let mut rewards: BTreeMap<&str, f64> = BTreeMap::new();
     run.iterations
         .iter()
-        .map(|it| {
+        .zip(incumbents(run))
+        .map(|(it, incumbent)| {
             let label = match (incumbent.and_then(|h| rewards.get(h)), it.reward) {
                 (Some(prev), Some(r)) => Some(r > *prev),
                 _ => None,
             };
-            incumbent = it.previous_hash.as_deref();
+            if let Some(r) = it.reward {
+                rewards.insert(it.config_hash.as_str(), r);
+            }
             label
         })
         .collect()
@@ -418,8 +462,8 @@ pub fn run_report(runs: &[IxRun]) -> IxRunReport {
     let mut by_claim: BTreeMap<String, BTreeSet<bool>> = BTreeMap::new();
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     for run in runs {
-        for it in &run.iterations {
-            let claim = claim_for(&run.target, &it.config_hash);
+        for (it, incumbent) in run.iterations.iter().zip(incumbents(run)) {
+            let claim = claim_for(&run.target, &it.config_hash, incumbent);
             *counts.entry(claim.clone()).or_default() += 1;
             by_claim.entry(claim).or_default().insert(it.accepted);
         }
@@ -443,9 +487,10 @@ pub fn run_report(runs: &[IxRun]) -> IxRunReport {
         distinct_propositions: counts.len(),
         repeated_propositions: counts.values().filter(|n| **n > 1).count(),
         conflicting_propositions: by_claim.values().filter(|s| s.len() > 1).count(),
-        label_rule: "improved := reward > reward of the incumbent before this iteration \
-                     (previous iteration's previous_hash); iteration 0 and errored \
-                     iterations unlabeled. Descriptive rule, not a pre-registered ground truth."
+        label_rule: "improved := reward > most recent reward of the incumbent (previous \
+                     iteration's previous_hash); first and reward-less iterations unlabeled. \
+                     This is IX Greedy's accept rule, so ix_policy matches it by construction \
+                     on Greedy. Descriptive rule, not a pre-registered ground truth."
             .to_string(),
         arms: vec![
             summarize("ix_policy", &ix, &ix, &labels, None),

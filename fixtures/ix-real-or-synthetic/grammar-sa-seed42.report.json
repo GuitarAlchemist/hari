@@ -19,7 +19,7 @@
   "distinct_propositions": 30,
   "repeated_propositions": 0,
   "conflicting_propositions": 0,
-  "label_rule": "improved := reward > reward of the incumbent before this iteration (previous iteration's previous_hash); iteration 0 and errored iterations unlabeled. Descriptive rule, not a pre-registered ground truth.",
+  "label_rule": "improved := reward > most recent reward of the incumbent (previous iteration's previous_hash); first and reward-less iterations unlabeled. This is IX Greedy's accept rule, so ix_policy matches it by construction on Greedy. Descriptive rule, not a pre-registered ground truth.",
   "arms": [
     {
       "arm": "ix_policy",

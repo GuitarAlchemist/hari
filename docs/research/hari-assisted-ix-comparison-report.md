@@ -36,7 +36,7 @@ pre-registration.
 | `grammar-greedy-seed42.log.jsonl` | **real**: `ix-autoresearch run --target grammar --iterations 30 --strategy greedy --seed 42`, unedited |
 | `grammar-sa-seed42.log.jsonl` | **real**: the same command with `--strategy sa`, unedited |
 | `grammar-{greedy,sa,greedy-then-sa}-seed42.report.json` | derived: the committed output of `hari-from-ix-autoresearch --report` on the real logs |
-| conflicting-repeat stream in `a_conflicting_repeat_of_one_config_ends_contradictory` | **synthetic**: built in memory in the test by splicing a copy of iteration 1, with its accept flag flipped, into the real Greedy log; it is never committed as a fixture |
+| streams in the tests marked *synthetic* (§3.4, plus parser-robustness tests) | **synthetic**: built in memory from a copy of a real log; never committed as fixtures |
 
 **Where the logs were recorded:** `git_sha` `d922cbd`, the branch of
 GuitarAlchemist/ix#339. That branch changes only a contract test and
@@ -58,7 +58,15 @@ Without `--report`, the command emits the `ResearchTrace`. That trace replays wi
 **Projection** (`crates/hari-extractor/src/ix_autoresearch.rs`, SCHEMA.md layer
 2). Each `iteration` becomes one `experiment_result`:
 
-- **proposition:** `target_grammar/config-{hash12}-is-an-improvement`
+- **proposition:**
+  `{target}/config-{hash12}-is-an-improvement-over-{incumbent12}`
+  - `target` is `run_start.target` verbatim.
+  - `incumbent12` is the config the candidate was judged against: the previous
+    line's `previous_hash`, or `baseline` for a log's first iteration.
+  - The incumbent is part of the identity because "is an improvement" is
+    relative. Without it, a Greedy re-evaluation of a config after the incumbent
+    has moved to it is correctly rejected, yet would merge with the config's
+    earlier acceptance into a spurious `Contradictory`.
 - **value:**
   - `Probable` when IX accepted
   - `Doubtful` when IX rejected
@@ -88,13 +96,15 @@ decisions:
 | *reject* | `Accept` at `Doubtful` or `False` |
 | *withhold* | anything else |
 
-**Descriptive label.** A claim is *improved* when the candidate's reward beats its
-incumbent's reward. The incumbent is the previous line's `previous_hash`.
-Iteration 0 is unlabeled.
+**Descriptive label.** A claim is *improved* when the candidate's reward beats the
+most recent reward of its incumbent. A log's first iteration is unlabeled.
 
 - This rule is a disclosed description, not a pre-registered ground truth.
-- SA accepts worse configs by design, so an SA "false endorsement" is exploration,
-  not an error.
+- **It is IX Greedy's own accept rule** (`candidate_reward > prev_reward`). On an
+  error-free Greedy run, `ix_policy` therefore scores 0 / 0 on the last two
+  columns **by construction**, and those columns say nothing about IX there.
+- SA accepts worse configs by design, so an SA "endorsed, not improved" is
+  exploration, not an error.
 
 ## 3. What the instrument shows
 
@@ -122,15 +132,28 @@ Iteration 0 is unlabeled.
   Greedy and SA diverge at a shared seed), and **0 conflict**.
 - **Contradictory beliefs:** every arm ends with 0.
 
-### 3.4 Synthetic only: a conflicting repeat
+### 3.4 Synthetic only: what a contradiction needs
 
-When the test splices a flipped repeat into a real log:
+No recorded run produces either case below.
 
-- `recency_decay` ends that proposition `Contradictory` and escalates instead of
-  rejecting.
-- `ix_unassisted` does neither.
+- **Genuine conflict.** The test takes the same config, judged twice against the
+  same incumbent, with rewards on opposite sides of the incumbent's reward (what a
+  noisy evaluator could produce). Greedy rejects the first evaluation and accepts
+  the second.
+  - Both observations are one proposition.
+  - `recency_decay` ends it `Contradictory` and escalates.
+  - `ix_unassisted` does neither.
+- **Not a conflict.** The test re-evaluates an accepted config after the incumbent
+  has moved to it. Greedy correctly rejects it.
+  - Because the claim names the incumbent, this is a different proposition from
+    the earlier acceptance.
+  - Every arm ends with 0 `Contradictory`.
+  - Before the incumbent was part of the identity, this case was reported as a
+    contradiction.
 
-**No recorded run produces this case.**
+On a deterministic target under Greedy, the same (config, incumbent) pair always
+gets the same reward and the same decision. So a genuine conflict requires a
+nondeterministic evaluator.
 
 ## 4. Reading
 
@@ -142,10 +165,10 @@ When the test splices a flipped repeat into a real log:
 2. **No config repeats within a run.** This is the precondition the §6 gate
    (2026-07-19) identified, now pinned by a test on both sides. Contradiction
    preservation is therefore unobserved on real IX data. It is exercised only on
-   the synthetic stream in §3.4.
+   the synthetic genuine-conflict stream in §3.4.
 3. **`subjective_logic` withholds on every single-observation claim.** One
    observation fuses to `b = 0.55`, below its 0.7 accept gate.
-4. **Cost of the boundary:** a 475-line module, a 57-line binary and 227 lines of
+4. **Cost of the boundary:** a 520-line module, a 57-line binary and 412 lines of
    tests. Replaying a 30-iteration run takes well under a second.
 
 ## 5. Limits
@@ -156,3 +179,7 @@ When the test splices a flipped repeat into a real log:
 3. The *improved* label is descriptive. SA's exploration contradicts it by design.
 4. `ix_policy` is IX's decision recorded once. No loop in this branch follows
    Hari's recommendation (#13's candidate flow, step 5).
+5. Serve-session parity is exact for `recency_decay`. For `subjective_logic` it
+   holds per event only: `StreamingSession::close` returns empty `final_beliefs`
+   on the SL path, so its closed report differs from batch replay. This is a
+   pre-existing `hari-core` gap and is not fixed here.

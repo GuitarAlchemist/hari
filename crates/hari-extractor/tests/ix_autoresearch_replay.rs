@@ -2,16 +2,19 @@
 //!
 //! The logs under `fixtures/ix-real-or-synthetic/` are real, unedited
 //! `ix-autoresearch run --target grammar --iterations 30 --seed 42` output
-//! (Greedy and SA). Every assertion below runs on those recordings, except the
-//! conflicting-repeat test, which splices a repeat into a copy in memory because
-//! no recorded run contains one — which is itself what the recorded tests pin.
+//! (Greedy and SA). Tests marked *synthetic* build a stream in memory from a
+//! copy of a real log; nothing synthetic is committed as a fixture.
 
 use std::path::PathBuf;
 
-use hari_core::{CognitiveLoop, PriorityModel, SessionConfig, StreamingSession};
-use hari_extractor::ix_autoresearch::{
-    claim_for, parse_log, project, run_report, IxLogError, IxRun, IxRunReport,
+use hari_core::{
+    process_research_trace_subjective_logic, CognitiveLoop, PriorityModel, SessionConfig,
+    StreamingSession, SubjectiveLogicConfig,
 };
+use hari_extractor::ix_autoresearch::{
+    claim_for, parse_log, project, run_report, ArmSummary, IxLogError, IxRun, IxRunReport,
+};
+use hari_lattice::HexValue;
 use serde_json::Value;
 
 fn fixture(name: &str) -> PathBuf {
@@ -28,7 +31,18 @@ fn run(strategy: &str) -> IxRun {
     parse_log(&raw(&format!("grammar-{strategy}-seed42.log.jsonl"))).expect("recorded log parses")
 }
 
-fn arm<'a>(report: &'a IxRunReport, name: &str) -> &'a hari_extractor::ix_autoresearch::ArmSummary {
+fn lines(strategy: &str) -> Vec<String> {
+    raw(&format!("grammar-{strategy}-seed42.log.jsonl"))
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+fn line(text: &str) -> Value {
+    serde_json::from_str(text).unwrap()
+}
+
+fn arm<'a>(report: &'a IxRunReport, name: &str) -> &'a ArmSummary {
     report
         .arms
         .iter()
@@ -37,7 +51,7 @@ fn arm<'a>(report: &'a IxRunReport, name: &str) -> &'a hari_extractor::ix_autore
 }
 
 #[test]
-fn committed_run_reports_regenerate_from_committed_logs() {
+fn committed_run_reports_regenerate_byte_for_byte_from_committed_logs() {
     for (report_name, runs) in [
         ("grammar-greedy-seed42.report.json", vec![run("greedy")]),
         ("grammar-sa-seed42.report.json", vec![run("sa")]),
@@ -46,8 +60,10 @@ fn committed_run_reports_regenerate_from_committed_logs() {
             vec![run("greedy"), run("sa")],
         ),
     ] {
-        let committed: Value = serde_json::from_str(&raw(report_name)).unwrap();
-        let regenerated = serde_json::to_value(run_report(&runs)).unwrap();
+        // Exactly what the binary writes: pretty JSON plus a trailing newline.
+        // CRLF is normalised because a Windows checkout converts the fixture.
+        let regenerated = serde_json::to_string_pretty(&run_report(&runs)).unwrap() + "\n";
+        let committed = raw(report_name).replace("\r\n", "\n");
         assert_eq!(committed, regenerated, "{report_name} drifted from its log");
     }
 }
@@ -63,9 +79,9 @@ fn recorded_logs_are_complete_thirty_iteration_runs() {
     }
 }
 
-/// hari#13's §6 abandon gate, bound to recordings instead of a deleted probe:
-/// a continuous-perturbation target never re-observes a config, so no
-/// proposition is asserted twice and no arm can end holding a contradiction.
+/// hari#13's §6 gate, bound to recordings: a continuous-perturbation target
+/// never re-observes a config, so no proposition is asserted twice and no arm
+/// can end holding a contradiction.
 #[test]
 fn a_recorded_grammar_run_never_asserts_a_proposition_twice() {
     for strategy in ["greedy", "sa"] {
@@ -83,11 +99,10 @@ fn a_recorded_grammar_run_never_asserts_a_proposition_twice() {
     }
 }
 
-/// Pooling both strategies at one seed does repeat configs — the early
-/// iterations before the strategies diverge — but they agree, so there is
-/// still nothing to contradict.
+/// Pooling both strategies at one seed repeats the early (config, incumbent)
+/// pairs from before the strategies diverge, but they agree.
 #[test]
-fn pooled_strategies_repeat_configs_but_never_disagree_on_them() {
+fn pooled_strategies_repeat_claims_but_never_disagree_on_them() {
     let report = run_report(&[run("greedy"), run("sa")]);
     assert_eq!(report.repeated_propositions, 3);
     assert_eq!(report.conflicting_propositions, 0);
@@ -114,9 +129,18 @@ fn neither_the_default_arm_nor_pass_through_departs_from_ix_on_a_recorded_run() 
     }
 }
 
+/// The label is IX Greedy's own accept rule, so `ix_policy` scores 0/0 on a
+/// Greedy run by construction — the columns carry no information about IX there.
+#[test]
+fn ix_policy_matches_the_label_by_construction_on_greedy() {
+    let report = run_report(&[run("greedy")]);
+    let ix = arm(&report, "ix_policy");
+    assert_eq!((ix.false_endorsements, ix.missed_improvements), (0, 0));
+}
+
 /// Characterisation, not a verdict: one observation fuses to b = 0.55, under
-/// SL's 0.7 accept gate, so SL commits to nothing on a single-pass stream. Its
-/// zero false endorsements are bought by missing every real improvement.
+/// SL's 0.7 accept gate, so SL commits to nothing on a single-pass stream, and
+/// misses every labeled improvement.
 #[test]
 fn subjective_logic_withholds_on_every_single_observation_claim() {
     let report = run_report(&[run("sa")]);
@@ -127,26 +151,59 @@ fn subjective_logic_withholds_on_every_single_observation_claim() {
     assert_eq!(sl.missed_improvements, 4);
 }
 
-/// SCHEMA.md's "contradictory findings preserved" criterion, which no recorded
-/// run can exercise: splice a repeat of iteration 1 with its accept flag
-/// flipped, and the hexavalent arm must end `Contradictory` and escalate.
+/// Synthetic. The genuine conflict: the same config judged against the same
+/// incumbent twice, with evidence on opposite sides of the incumbent's reward —
+/// what a noisy evaluator can produce. Greedy rejects the first evaluation
+/// (below the incumbent) and accepts the second (above it). Same proposition,
+/// opposite evidence: the hexavalent arm must end `Contradictory` and escalate.
 #[test]
-fn a_conflicting_repeat_of_one_config_ends_contradictory() {
-    let log = raw("grammar-greedy-seed42.log.jsonl");
-    let lines: Vec<&str> = log.lines().collect();
-    let mut repeat: Value = serde_json::from_str(lines[2]).unwrap();
-    assert_eq!(repeat["iteration"], 1);
-    repeat["iteration"] = Value::from(3);
-    repeat["accepted"] = Value::from(!repeat["accepted"].as_bool().unwrap());
-    let spliced = [lines[0], lines[1], lines[2], lines[3], &repeat.to_string()].join("\n");
+fn a_config_judged_twice_against_one_incumbent_with_opposite_evidence_ends_contradictory() {
+    let l = lines("greedy");
+    // Recorded: it0 accepted, it1 accepted (incumbent becomes it1), it2 rejected
+    // against it1.
+    let (it1, it2) = (line(&l[2]), line(&l[3]));
+    assert_eq!(
+        (it1["accepted"].as_bool(), it2["accepted"].as_bool()),
+        (Some(true), Some(false))
+    );
+    let incumbent_reward = it1["reward"].as_f64().unwrap();
+    assert!(it2["reward"].as_f64().unwrap() < incumbent_reward);
 
-    let report = run_report(&[parse_log(&spliced).unwrap()]);
+    let mut again = it2.clone();
+    again["iteration"] = Value::from(3);
+    again["reward"] = Value::from(incumbent_reward + 0.05);
+    again["accepted"] = Value::from(true);
+    again["previous_hash"] = it2["config_hash"].clone();
+    let spliced = [
+        l[0].clone(),
+        l[1].clone(),
+        l[2].clone(),
+        l[3].clone(),
+        again.to_string(),
+    ]
+    .join("\n");
+
+    let parsed = parse_log(&spliced).unwrap();
+    let trace = project(std::slice::from_ref(&parsed));
+    let proposition = |i: usize| match &trace.events[i].payload {
+        hari_core::ResearchEventPayload::ExperimentResult { proposition, .. } => {
+            proposition.clone()
+        }
+        other => panic!("unexpected payload {other:?}"),
+    };
+    assert_eq!(
+        proposition(2),
+        proposition(3),
+        "same config, same incumbent"
+    );
+
+    let report = run_report(&[parsed]);
     assert_eq!(report.conflicting_propositions, 1);
     let decay = arm(&report, "recency_decay");
     assert_eq!(decay.contradictory_final_beliefs, Some(1));
     assert_eq!(
         decay.differs_from_ix_policy, 1,
-        "the repeat escalates instead of rejecting"
+        "escalates instead of endorsing"
     );
     assert_eq!(
         arm(&report, "ix_unassisted").contradictory_final_beliefs,
@@ -154,26 +211,112 @@ fn a_conflicting_repeat_of_one_config_ends_contradictory() {
     );
 }
 
+/// Synthetic. The false positive the incumbent-scoped claim exists to prevent:
+/// re-evaluate an accepted config after the incumbent has moved to it. Greedy
+/// correctly rejects it (it cannot beat itself), so it is a different
+/// proposition from its earlier acceptance and nothing is contradictory.
+#[test]
+fn a_greedy_re_evaluation_of_the_incumbent_is_not_a_contradiction() {
+    let l = lines("greedy");
+    let mut repeat = line(&l[2]);
+    assert_eq!(repeat["accepted"], true);
+    repeat["iteration"] = Value::from(3);
+    repeat["accepted"] = Value::from(false);
+    let spliced = [
+        l[0].clone(),
+        l[1].clone(),
+        l[2].clone(),
+        l[3].clone(),
+        repeat.to_string(),
+    ]
+    .join("\n");
+
+    let report = run_report(&[parse_log(&spliced).unwrap()]);
+    assert_eq!(report.repeated_propositions, 0);
+    for a in report.arms.iter().skip(1) {
+        assert_eq!(a.contradictory_final_beliefs, Some(0), "{}", a.arm);
+    }
+}
+
+/// Synthetic. The one place the projection departs from SCHEMA.md's confidence
+/// column: an errored evaluation is no evidence either way — `Unknown`, withheld
+/// by IX and by the default arm, and unlabeled.
+#[test]
+fn an_errored_iteration_is_unknown_withheld_and_unlabeled() {
+    let l = lines("greedy");
+    let clean = run_report(&[run("greedy")]);
+    let mut errored = line(&l[7]);
+    assert_eq!(errored["accepted"], false);
+    errored["error"] = Value::from("eval failed: synthetic");
+    errored["reward"] = Value::Null;
+    errored["score"] = Value::Null;
+    let mut spliced = l.clone();
+    spliced[7] = errored.to_string();
+    let parsed = parse_log(&spliced.join("\n")).unwrap();
+
+    match &project(std::slice::from_ref(&parsed)).events[6].payload {
+        hari_core::ResearchEventPayload::ExperimentResult {
+            value, evidence, ..
+        } => {
+            assert_eq!(*value, HexValue::Unknown);
+            assert_eq!(evidence["error"], "eval failed: synthetic");
+        }
+        other => panic!("unexpected payload {other:?}"),
+    }
+
+    let report = run_report(&[parsed]);
+    let ix = arm(&report, "ix_policy");
+    assert_eq!(
+        (ix.reject, ix.withhold),
+        (arm(&clean, "ix_policy").reject - 1, 1)
+    );
+    let decay = arm(&report, "recency_decay");
+    assert_eq!(decay.withhold, 1);
+    assert_eq!(decay.differs_from_ix_policy, 0);
+    // Its own line and the next one (whose incumbent reward is unchanged but
+    // whose label still resolves) — only the errored line loses its label.
+    assert_eq!(decay.graded, arm(&clean, "recency_decay").graded - 1);
+}
+
 /// The projected stream is what a live IX session would send over `serve`:
-/// streaming it event by event must reproduce the batch replay exactly.
+/// streaming it event by event must reproduce the batch replay. Checked on the
+/// pooled stream (the only one with repeated propositions, where merge order
+/// matters) under the default arm and the SL arm.
 #[test]
 fn projected_stream_through_a_serve_session_matches_batch_replay() {
-    let trace = project(&[run("sa")]);
-    let batch = CognitiveLoop::with_model(trace.dimension, PriorityModel::RecencyDecay)
-        .process_research_trace(trace.clone());
+    let trace = project(&[run("greedy"), run("sa")]);
 
-    let mut session = StreamingSession::open(SessionConfig {
-        dimension: trace.dimension,
-        priority_model: PriorityModel::RecencyDecay,
-        ..SessionConfig::default()
-    })
-    .expect("session opens");
-    for event in trace.events {
-        session.apply_event(event).expect("event accepted");
-    }
-    assert_eq!(
-        serde_json::to_string(&batch).unwrap(),
+    let stream = |model: PriorityModel| {
+        let mut session = StreamingSession::open(SessionConfig {
+            dimension: trace.dimension,
+            priority_model: model,
+            ..SessionConfig::default()
+        })
+        .expect("session opens");
+        for event in trace.events.clone() {
+            session.apply_event(event).expect("event accepted");
+        }
         serde_json::to_string(&session.close()).unwrap()
+    };
+
+    let decay = CognitiveLoop::with_model(trace.dimension, PriorityModel::RecencyDecay)
+        .process_research_trace(trace.clone());
+    assert_eq!(
+        serde_json::to_string(&decay).unwrap(),
+        stream(PriorityModel::RecencyDecay)
+    );
+
+    // SL arm: per-event outcomes only. The session's closed report for SL does
+    // not match batch — `final_beliefs` comes back empty, so the summary and
+    // the intrinsic `false_rejection_count` differ too. That gap is in
+    // hari-core's `StreamingSession::close` (SL bypasses the primary loop's
+    // belief network), predates this adapter, and is not papered over here.
+    let sl =
+        process_research_trace_subjective_logic(trace.clone(), SubjectiveLogicConfig::default());
+    let streamed: Value = serde_json::from_str(&stream(PriorityModel::SubjectiveLogic)).unwrap();
+    assert_eq!(
+        serde_json::to_value(&sl.outcomes).unwrap(),
+        streamed["outcomes"]
     );
 }
 
@@ -191,37 +334,79 @@ fn projection_is_deterministic_and_stamps_position() {
 }
 
 #[test]
-fn claim_matches_the_schema_md_example() {
+fn claim_uses_the_full_target_and_the_incumbent() {
+    let target = "ix_autoresearch::target_grammar::GrammarTarget";
     assert_eq!(
-        claim_for(
-            "ix_autoresearch::target_grammar::GrammarTarget",
-            "autoresearch:abc123def456789"
-        ),
-        "target_grammar/config-abc123def456-is-an-improvement"
+        claim_for(target, "autoresearch:abc123def456789", None),
+        "ix_autoresearch::target_grammar::GrammarTarget/config-abc123def456-is-an-improvement-over-baseline"
+    );
+    assert_eq!(
+        claim_for(target, "autoresearch:abc123def456789", Some("autoresearch:0123456789abcdef")),
+        "ix_autoresearch::target_grammar::GrammarTarget/config-abc123def456-is-an-improvement-over-0123456789ab"
     );
 }
 
 #[test]
 fn crash_truncation_is_tolerated_and_mid_stream_corruption_is_not() {
-    let log = raw("grammar-greedy-seed42.log.jsonl");
-    let lines: Vec<&str> = log.lines().collect();
+    let l = lines("greedy");
 
-    let truncated = format!("{}\n{}\n{{\"event\":\"itera", lines[0], lines[1]);
+    let truncated = format!("{}\n{}\n{{\"event\":\"itera", l[0], l[1]);
     let r = parse_log(&truncated).expect("trailing garbage is crash truncation");
     assert_eq!(r.iterations.len(), 1);
     assert!(!r.complete);
 
-    let corrupt = format!("{}\nnot json\n{}", lines[0], lines[1]);
+    let corrupt = format!("{}\nnot json\n{}", l[0], l[1]);
     assert!(matches!(
         parse_log(&corrupt),
         Err(IxLogError::MidStreamParse { line: 2, .. })
     ));
 
-    let future = lines[0].replace("\"schema_version\":1", "\"schema_version\":2");
+    let future = l[0].replace("\"schema_version\":1", "\"schema_version\":2");
     assert!(matches!(
         parse_log(&future),
         Err(IxLogError::SchemaVersion { found: 2, .. })
     ));
 
-    assert_eq!(parse_log(lines[1]), Err(IxLogError::MissingRunStart));
+    assert_eq!(parse_log(&l[1]), Err(IxLogError::MissingRunStart));
+}
+
+#[test]
+fn two_logs_concatenated_into_one_file_are_rejected() {
+    let both = format!(
+        "{}\n{}",
+        raw("grammar-greedy-seed42.log.jsonl"),
+        raw("grammar-sa-seed42.log.jsonl")
+    );
+    assert!(matches!(
+        parse_log(&both),
+        Err(IxLogError::Shape { ref detail, .. }) if detail.contains("second run_start")
+    ));
+}
+
+#[test]
+fn a_missing_iteration_line_is_rejected() {
+    let mut l = lines("greedy");
+    l.remove(10);
+    assert!(matches!(
+        parse_log(&l.join("\n")),
+        Err(IxLogError::Shape { ref detail, .. }) if detail.contains("iteration 10 where 9 was expected")
+    ));
+}
+
+/// `resume_experiment` appends iterations after a `run_complete` in the same
+/// log and closes with its own. Until that lands the run is not complete.
+#[test]
+fn an_iteration_after_run_complete_reopens_the_run_until_its_own_run_complete() {
+    let l = lines("greedy");
+    let mut next = line(&l[30]);
+    assert_eq!(next["iteration"], 29);
+    next["iteration"] = Value::from(30);
+
+    let appended = format!("{}\n{}", l.join("\n"), next);
+    let r = parse_log(&appended).unwrap();
+    assert_eq!(r.iterations.len(), 31);
+    assert!(!r.complete, "appended iteration without its run_complete");
+
+    let resumed = format!("{appended}\n{}", l[31]);
+    assert!(parse_log(&resumed).unwrap().complete);
 }
