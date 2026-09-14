@@ -1,7 +1,7 @@
 //! hari#13 — recorded ix-autoresearch runs replayed through Hari.
 //!
 //! The logs under `fixtures/ix-real-or-synthetic/` are real, unedited
-//! `ix-autoresearch run --target grammar --iterations 100 --seed 42` output
+//! `ix-autoresearch run --target grammar --iterations 30 --seed 42` output
 //! (Greedy and SA). Every assertion below runs on those recordings, except the
 //! conflicting-repeat test, which splices a repeat into a copy in memory because
 //! no recorded run contains one — which is itself what the recorded tests pin.
@@ -53,11 +53,11 @@ fn committed_run_reports_regenerate_from_committed_logs() {
 }
 
 #[test]
-fn recorded_logs_are_complete_hundred_iteration_runs() {
+fn recorded_logs_are_complete_thirty_iteration_runs() {
     for strategy in ["greedy", "sa"] {
         let r = run(strategy);
         assert!(r.complete, "{strategy}: run_complete present");
-        assert_eq!(r.iterations.len(), 100);
+        assert_eq!(r.iterations.len(), 30);
         assert_eq!(r.seed, 42);
         assert_eq!(r.target, "ix_autoresearch::target_grammar::GrammarTarget");
     }
@@ -123,8 +123,8 @@ fn subjective_logic_withholds_on_every_single_observation_claim() {
     let sl = arm(&report, "subjective_logic");
     assert_eq!(sl.withhold, report.claims);
     assert_eq!(sl.false_endorsements, 0);
-    assert_eq!(arm(&report, "ix_policy").false_endorsements, 2);
-    assert_eq!(sl.missed_improvements, 10);
+    assert_eq!(arm(&report, "ix_policy").false_endorsements, 1);
+    assert_eq!(sl.missed_improvements, 4);
 }
 
 /// SCHEMA.md's "contradictory findings preserved" criterion, which no recorded

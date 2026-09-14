@@ -38,8 +38,8 @@
 //! # What the run report may and may not be used for
 //!
 //! It is instrument characterisation over a recorded IX stream. It is **not** a
-//! §8 keep/kill input: the task distribution is unratified (§9.4) and the label
-//! rule below is a disclosed candidate, not a pre-registered one.
+//! §8 keep/kill input and makes no decision-quality claim: the label rule below
+//! is descriptive, not a pre-registered ground truth.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -445,7 +445,7 @@ pub fn run_report(runs: &[IxRun]) -> IxRunReport {
         conflicting_propositions: by_claim.values().filter(|s| s.len() > 1).count(),
         label_rule: "improved := reward > reward of the incumbent before this iteration \
                      (previous iteration's previous_hash); iteration 0 and errored \
-                     iterations unlabeled. Candidate rule, not pre-registered."
+                     iterations unlabeled. Descriptive rule, not a pre-registered ground truth."
             .to_string(),
         arms: vec![
             summarize("ix_policy", &ix, &ix, &labels, None),
