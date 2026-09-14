@@ -186,12 +186,50 @@ pub fn eval_predicate(predicate: &str, value: &Value) -> Option<bool> {
     Some((lhs == rhs.trim()) != negated)
 }
 
-/// Whether `resolve` can score `predicate` at all, decided by the same
-/// operator parse `eval_predicate` uses so the two cannot drift. `emit`
-/// refuses anything else: an unscorable predicate would otherwise surface
+/// Emit-time guard: `Err(reason)` for a predicate that cannot do its job.
+///
+/// Scorability is decided by the same operator parse `eval_predicate` uses,
+/// so the two cannot drift. An unscorable predicate would otherwise surface
 /// only at horizon, as a forecast that can do nothing but resolve `void`.
-pub fn is_scorable_predicate(predicate: &str) -> bool {
-    eval_predicate(predicate, &Value::Null).is_some()
+///
+/// A scorable predicate can still be dead on arrival: the literal is
+/// compared as raw text against `scalar_string`'s unquoted, lowercase JSON
+/// rendering, so a quoted (`"green"`), `=`-prefixed (`=== 4`), empty, or
+/// non-lowercase `true`/`false`/`null` literal can never equal it and
+/// scores a guaranteed miss with a real Brier penalty. Those are refused
+/// too. Resolution of already-ledgered records is unchanged.
+pub fn check_predicate(predicate: &str) -> Result<(), String> {
+    if eval_predicate(predicate, &Value::Null).is_none() {
+        return Err(
+            "resolve only understands `== <literal>` or `!= <literal>`, \
+                    so this forecast could only ever resolve void"
+                .into(),
+        );
+    }
+    let p = predicate.trim();
+    let literal = p
+        .strip_prefix("==")
+        .or_else(|| p.strip_prefix("!="))
+        .unwrap_or_default()
+        .trim();
+    if literal.is_empty() {
+        return Err("the literal is empty".into());
+    }
+    if literal.starts_with('=') {
+        return Err("the literal starts with `=`; the operators are `==` and `!=`".into());
+    }
+    if literal.starts_with(['"', '\'']) || literal.ends_with(['"', '\'']) {
+        return Err(
+            "the literal is quoted; values are compared unquoted (write `== green`)".into(),
+        );
+    }
+    if ["true", "false", "null"]
+        .iter()
+        .any(|kw| literal.eq_ignore_ascii_case(kw) && literal != *kw)
+    {
+        return Err("JSON true/false/null render lowercase; this literal can never match".into());
+    }
+    Ok(())
 }
 
 /// Score one record against the artifact content (or its absence).
@@ -295,7 +333,11 @@ pub fn load(dir: &Path) -> io::Result<(Vec<ForecastRecord>, usize)> {
 
 /// The tripwire condition: forecasts whose horizon has passed but which
 /// still carry no resolution. A healthy ledger returns empty — every past
-/// forecast has been scored (or superseded). Read-only; `now` is injected
+/// forecast has been scored. Superseding does NOT clear this: per the
+/// contract ("one forecast, one resolution") `links.supersedes` records a
+/// pre-horizon belief update, and the superseded forecast is still scored on
+/// its own claim, so a missed prediction cannot be escaped by superseding it
+/// after the fact. Read-only; `now` is injected
 /// so CI can run it deterministically. Order matches ledger order.
 ///
 /// This is the "writer is the CI check" loop shape from the compounding
@@ -629,13 +671,38 @@ mod tests {
 
     #[test]
     fn scorable_predicate_is_exactly_the_resolver_grammar() {
-        assert!(is_scorable_predicate("== green"));
-        assert!(is_scorable_predicate("  != 3"));
+        assert_eq!(check_predicate("== green"), Ok(()));
+        assert_eq!(check_predicate("  != 3"), Ok(()));
+        assert_eq!(check_predicate("== true"), Ok(()));
+        assert_eq!(check_predicate("== null"), Ok(()));
         // The shapes the 2026-07-20 forecasts used: resolve can only void them.
-        assert!(!is_scorable_predicate("< 4"));
-        assert!(!is_scorable_predicate(">= 2026-08-01"));
-        assert!(!is_scorable_predicate("green"));
-        assert!(!is_scorable_predicate(""));
+        for p in ["< 4", ">= 2026-08-01", "green", ""] {
+            assert!(check_predicate(p).is_err(), "{p:?} should be refused");
+        }
+    }
+
+    #[test]
+    fn predicate_literals_that_could_never_match_are_refused() {
+        // Each parses as `==`/`!=`, so resolve would score it, but against
+        // the unquoted lowercase scalar text it can never equal, so it scores
+        // a guaranteed false (or true for `!=`) with a real Brier penalty.
+        for p in [
+            "== \"green\"",
+            "== 'green'",
+            "=== 4",
+            "!== 4",
+            "==",
+            "!=   ",
+            "== True",
+            "== FALSE",
+            "== Null",
+        ] {
+            assert!(check_predicate(p).is_err(), "{p:?} should be refused");
+        }
+        // And these literals really would not match what resolve compares.
+        assert_eq!(eval_predicate("== \"green\"", &json!("green")), Some(false));
+        assert_eq!(eval_predicate("== True", &json!(true)), Some(false));
+        assert_eq!(eval_predicate("=== 4", &json!(4)), Some(false));
     }
 
     #[test]

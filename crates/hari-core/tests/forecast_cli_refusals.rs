@@ -19,6 +19,10 @@ fn state_dir(tag: &str) -> PathBuf {
 }
 
 fn emit(state: &Path, predicate: &str) -> Output {
+    emit_with(state, predicate, &[])
+}
+
+fn emit_with(state: &Path, predicate: &str, extra: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_hari-core"))
         .env("HARI_STATE_DIR", state)
         .args([
@@ -37,6 +41,7 @@ fn emit(state: &Path, predicate: &str) -> Output {
             "--horizon",
             "2026-07-03T18:00:00Z",
         ])
+        .args(extra)
         .output()
         .expect("spawn hari-core forecast emit")
 }
@@ -76,5 +81,48 @@ fn an_equality_predicate_is_still_emitted() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(ledger_has_records(&state));
+    let _ = std::fs::remove_dir_all(&state);
+}
+
+#[test]
+fn a_literal_that_could_never_match_is_refused() {
+    for predicate in ["== \"green\"", "=== green", "== True"] {
+        let state = state_dir("literal");
+        let out = emit(&state, predicate);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "{predicate}: {stderr}");
+        assert!(!ledger_has_records(&state), "{predicate}: written anyway");
+        let _ = std::fs::remove_dir_all(&state);
+    }
+}
+
+#[test]
+fn supersedes_must_name_a_forecast_already_in_the_ledger() {
+    let state = state_dir("supersedes");
+    let out = emit_with(
+        &state,
+        "== green",
+        &["--supersedes", "019f0000-0000-7000-8000-000000000000"],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("no forecast"), "{stderr}");
+    assert!(
+        !ledger_has_records(&state),
+        "dangling supersedes was written"
+    );
+
+    // Positive control: superseding a real id is accepted.
+    let first = emit(&state, "== green");
+    assert!(first.status.success());
+    let record: serde_json::Value =
+        serde_json::from_slice(&first.stdout).expect("emit prints JSON");
+    let id = record["forecast_id"].as_str().unwrap();
+    let second = emit_with(&state, "== red", &["--supersedes", id]);
+    assert!(
+        second.status.success(),
+        "{}",
+        String::from_utf8_lossy(&second.stderr)
+    );
     let _ = std::fs::remove_dir_all(&state);
 }

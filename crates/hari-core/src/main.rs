@@ -268,14 +268,23 @@ fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 field: flag(args, "--field").ok_or(usage)?.to_string(),
                 predicate: flag(args, "--predicate").ok_or(usage)?.to_string(),
             };
-            if !forecast::is_scorable_predicate(&observable.predicate) {
+            if let Err(reason) = forecast::check_predicate(&observable.predicate) {
                 return Err(format!(
-                    "--predicate {:?} is not mechanically scorable: resolve only \
-                     understands `== <literal>` or `!= <literal>`, so this \
-                     forecast could only ever resolve void",
+                    "--predicate {:?} is not mechanically scorable: {reason}",
                     observable.predicate
                 )
                 .into());
+            }
+            let supersedes = flag(args, "--supersedes");
+            if let Some(id) = supersedes {
+                let (records, _) = forecast::load(&dir)?;
+                if !records.iter().any(|r| r.forecast_id == id) {
+                    return Err(format!(
+                        "--supersedes {id:?}: no forecast with that id in {}",
+                        dir.display()
+                    )
+                    .into());
+                }
             }
             let horizon = flag(args, "--horizon").ok_or(usage)?;
             if !forecast::is_canonical_utc(horizon) {
@@ -291,7 +300,7 @@ fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 probability,
                 flag(args, "--rationale").map(String::from),
                 horizon,
-                flag(args, "--supersedes").map(String::from),
+                supersedes.map(String::from),
                 &forecast::rfc3339_now(),
             );
             let path = forecast::append(&dir, &record)?;
@@ -389,8 +398,9 @@ fn run_forecast_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             Err(format!(
-                "{} forecast(s) overdue for resolution — run `forecast resolve` \
-                 or supersede them",
+                "{} forecast(s) overdue for resolution — run `forecast resolve`; \
+                 superseding does not discharge a forecast, each is still \
+                 resolved on its own claim",
                 overdue.len()
             )
             .into())
