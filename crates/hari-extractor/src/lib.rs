@@ -50,6 +50,8 @@ use serde::{Deserialize, Serialize};
 pub mod error;
 pub use error::ExtractError;
 
+pub mod ix_autoresearch;
+
 /// Default Inception Labs Mercury endpoint. Override via [`MercuryConfig::base_url`].
 pub const DEFAULT_BASE_URL: &str = "https://api.inceptionlabs.ai/v1";
 

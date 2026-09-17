@@ -1,0 +1,66 @@
+{
+  "schema": "hari/ix-autoresearch-run-report/v0.1",
+  "runs": [
+    {
+      "run_id": "01a0a007-f466-74bb-95fe-7c03296826e0",
+      "target": "ix_autoresearch::target_grammar::GrammarTarget",
+      "strategy": {
+        "kind": "greedy"
+      },
+      "seed": 42,
+      "iterations": 30,
+      "ix_accepted": 3,
+      "complete": true
+    }
+  ],
+  "claims": 30,
+  "distinct_propositions": 30,
+  "repeated_propositions": 0,
+  "conflicting_propositions": 0,
+  "label_rule": "improved := reward > most recent reward of the incumbent (previous iteration's previous_hash); first and reward-less iterations unlabeled. This is IX Greedy's accept rule, so ix_policy matches it by construction on Greedy. Descriptive rule, not a pre-registered ground truth.",
+  "arms": [
+    {
+      "arm": "ix_policy",
+      "endorse": 3,
+      "reject": 27,
+      "withhold": 0,
+      "differs_from_ix_policy": 0,
+      "graded": 29,
+      "false_endorsements": 0,
+      "missed_improvements": 0
+    },
+    {
+      "arm": "ix_unassisted",
+      "endorse": 3,
+      "reject": 27,
+      "withhold": 0,
+      "differs_from_ix_policy": 0,
+      "graded": 29,
+      "false_endorsements": 0,
+      "missed_improvements": 0,
+      "contradictory_final_beliefs": 0
+    },
+    {
+      "arm": "recency_decay",
+      "endorse": 3,
+      "reject": 27,
+      "withhold": 0,
+      "differs_from_ix_policy": 0,
+      "graded": 29,
+      "false_endorsements": 0,
+      "missed_improvements": 0,
+      "contradictory_final_beliefs": 0
+    },
+    {
+      "arm": "subjective_logic",
+      "endorse": 0,
+      "reject": 0,
+      "withhold": 30,
+      "differs_from_ix_policy": 30,
+      "graded": 29,
+      "false_endorsements": 0,
+      "missed_improvements": 2,
+      "contradictory_final_beliefs": 0
+    }
+  ]
+}
