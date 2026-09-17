@@ -1320,7 +1320,7 @@ impl CognitiveLoop {
         let mut action_cycles: Vec<u64> = Vec::new();
 
         // --- PERCEIVE ---
-        let perceptions: Vec<Perception> = self.perception_buffer.drain(..).collect();
+        let perceptions: Vec<Perception> = std::mem::take(&mut self.perception_buffer);
         // Maximum perception cycle this turn (used as the "freshness" stamp
         // for actions that don't have an obvious source perception).
         let cycle_stamp = perceptions
