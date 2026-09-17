@@ -203,7 +203,7 @@ impl Agent {
     /// Query and text messages are neither applied nor filtered — they
     /// don't touch beliefs in either mode.
     pub fn process_inbox_with(&mut self, model: TrustModel) -> InboxStats {
-        let messages: Vec<Message> = self.inbox.drain(..).collect();
+        let messages: Vec<Message> = std::mem::take(&mut self.inbox);
         let mut stats = InboxStats::default();
         let trust_gates = matches!(model, TrustModel::RoleWeighted)
             && self.role.message_trust < MESSAGE_TRUST_THRESHOLD;
