@@ -5,14 +5,43 @@
 //! env var is missing). In CI, the GitHub repo secret of the same name is
 //! mapped to the env var, so this test exercises the full path.
 
-use hari_core::ResearchEventPayload;
-use hari_extractor::{MercuryConfig, MercuryExtractor, API_KEY_ENV_VAR};
+use hari_core::{ResearchEvent, ResearchEventPayload};
+use hari_extractor::{
+    ExtractError, MercuryConfig, MercuryExtractor, API_KEY_ENV_VAR, DEFAULT_BASE_URL,
+};
 use hari_lattice::HexValue;
 
 fn key_available() -> bool {
     std::env::var(API_KEY_ENV_VAR)
         .map(|v| !v.trim().is_empty())
         .unwrap_or(false)
+}
+
+/// Unwrap an extraction, naming a credential rejection for what it is.
+///
+/// An *absent* key is benign — a fork PR has no secret, and the workflow
+/// skips this test entirely. A *present but rejected* key is not: the
+/// weekly canary exists to catch it, so it must stay red. But `.expect`
+/// on the raw error reported HTTP 401 under the words "Mercury extracts
+/// cleanly", which reads as model drift and sends the reader hunting
+/// through the prompt instead of rotating the secret. Same failure,
+/// legible cause.
+fn extracted(result: Result<ResearchEvent, ExtractError>) -> ResearchEvent {
+    match result {
+        Ok(event) => event,
+        Err(ExtractError::ApiStatus { status, body }) if matches!(status.as_u16(), 401 | 403) => {
+            panic!(
+                "Mercury rejected the credential (HTTP {status}) — this is an auth failure, \
+                 not extraction or model drift. The {API_KEY_ENV_VAR} given to this job is \
+                 stale, revoked, or wrongly scoped. Rotate the GitHub repo secret \
+                 {API_KEY_ENV_VAR}, then re-run. Check a candidate key against \
+                 POST {DEFAULT_BASE_URL}/chat/completions — note that \
+                 GET {DEFAULT_BASE_URL}/models is unauthenticated and answers 200 for any \
+                 key, so it proves nothing. Response body: {body}"
+            )
+        }
+        Err(other) => panic!("Mercury extraction failed: {other}"),
+    }
 }
 
 #[tokio::test]
@@ -29,10 +58,7 @@ async fn extract_belief_update_from_research_note() {
     let note = "Agent ix-agent-evaluator: benchmark-x ran 5 times and held a stable pass-rate. \
                 Probably reliable.";
 
-    let event = extractor
-        .extract(42, "ix-agent-evaluator", note)
-        .await
-        .expect("Mercury extracts cleanly");
+    let event = extracted(extractor.extract(42, "ix-agent-evaluator", note).await);
 
     assert_eq!(event.cycle, 42);
     assert_eq!(event.source, "ix-agent-evaluator");
@@ -88,10 +114,7 @@ async fn extract_retraction_carries_reason() {
     let note = "Retract the earlier claim that benchmark-x is reliable. \
                 The result changes after prompt paraphrase, so the prior conclusion is invalid.";
 
-    let event = extractor
-        .extract(43, "ix-agent-critic", note)
-        .await
-        .expect("Mercury extracts cleanly");
+    let event = extracted(extractor.extract(43, "ix-agent-critic", note).await);
 
     match event.payload {
         ResearchEventPayload::Retraction {

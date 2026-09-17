@@ -4,6 +4,11 @@ name: Inception Mercury Smoke (Hari)
 # The provider is optional: builds/unit tests always run, while the live smoke
 # executes only when INCEPTION_API_KEY is available to the workflow.
 #
+# "Optional" covers an ABSENT key only (a fork PR gets no secret, so the smoke
+# is skipped). A key that is present but REJECTED is a real failure and stays
+# red — a rotted credential is precisely what the weekly canary is for. The
+# test names that case explicitly so the red does not read as model drift.
+#
 # Triggered on:
 #   - PR to main that touches hari-extractor or this workflow
 #   - manual workflow_dispatch
