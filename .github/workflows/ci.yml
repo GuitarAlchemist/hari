@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The merge queue runs this on the merged result before it lands on main
+  merge_group:
 
 # Cancel in-progress runs when a new commit lands on the same ref —
 # avoids piling up redundant builds while a feature branch is iterating.
